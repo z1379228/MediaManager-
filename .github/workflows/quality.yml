@@ -39,4 +39,7 @@ jobs:
           main.py desktop.py
 
       - name: Pytest
-        run: python -m pytest -q -rs --basetemp=.work/pytest-ci
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force .work | Out-Null
+          python -m pytest -q -rs --basetemp=.work/pytest-ci
