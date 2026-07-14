@@ -1,0 +1,81 @@
+﻿"""MediaManager application entry point."""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+from core.bootstrap.bootstrap import Bootstrap
+from core.version import CORE_VERSION
+from trusted_ui.main_window import run_main_window
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="MediaManager")
+    parser.add_argument("--version", action="version", version=f"MediaManager {CORE_VERSION}")
+    parser.add_argument("--portable", action="store_true", help="store runtime data beside the application")
+    parser.add_argument("--headless", action="store_true", help="do not start the graphical security UI")
+    parser.add_argument("--verify-only", action="store_true", help="verify core integrity and exit")
+    parser.add_argument("--provider-host", help=argparse.SUPPRESS)
+    parser.add_argument("--plugin-host", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--plugin-id", help=argparse.SUPPRESS)
+    parser.add_argument("--plugin-root", help=argparse.SUPPRESS)
+    parser.add_argument("--entry-point", help=argparse.SUPPRESS)
+    parser.add_argument("--nonce", help=argparse.SUPPRESS)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    if args.plugin_host:
+        if args.provider_host or not all(
+            (args.plugin_id, args.plugin_root, args.entry_point, args.nonce)
+        ):
+            return 2
+        from plugin_host.stdio import restore_frozen_host_stdio
+
+        if not restore_frozen_host_stdio():
+            return 2
+        from plugin_host.main import run_plugin
+
+        return run_plugin(
+            args.plugin_id,
+            args.plugin_root,
+            args.entry_point,
+            args.nonce,
+        )
+    if args.provider_host:
+        from plugin_host.stdio import restore_frozen_host_stdio
+
+        if not restore_frozen_host_stdio():
+            return 2
+        from plugin_host.external_provider import run_provider
+
+        application_root = Path(
+            sys.executable if getattr(sys, "frozen", False) else __file__
+        ).resolve().parent
+        return run_provider(Path(args.provider_host), application_root)
+    bootstrap = Bootstrap(portable=args.portable)
+    if args.verify_only:
+        security = bootstrap.verify_only()
+        print(f"MediaManager security mode: {security.mode}")
+        if security.reason:
+            print(security.reason)
+        return 2 if security.mode == "BLOCKED" else 0
+    context = bootstrap.initialize()
+    try:
+        if args.headless:
+            print(f"MediaManager ready ({context.security.mode})")
+            return 2 if context.security.mode == "BLOCKED" else 0
+        return run_main_window(context)
+    finally:
+        context.lifecycle.shutdown()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+
+
+

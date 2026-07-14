@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "max_rules": 200,
+  "max_rate_per_run": 100,
+  "minimum_interval_minutes": 1,
+  "candidate_ledger": "sqlite-unique-key",
+  "clipboard_scheme": "https",
+  "automatic_rule_enable": false
+}

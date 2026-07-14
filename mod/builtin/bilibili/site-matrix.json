@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "provider_id": "bilibili",
+  "last_live_check": "2026-07-14",
+  "features": [
+    {
+      "feature_id": "public-video-analysis",
+      "support_status": "verified-public-analysis"
+    },
+    {
+      "feature_id": "multipart-playlist",
+      "support_status": "offline-contract"
+    },
+    {
+      "feature_id": "bangumi-public-episode",
+      "support_status": "offline-contract"
+    },
+    {
+      "feature_id": "subtitles",
+      "support_status": "offline-contract"
+    },
+    {
+      "feature_id": "danmaku-xml-ass-mkv",
+      "support_status": "verified-local-ffmpeg"
+    }
+  ],
+  "boundaries": [
+    "No cookie import or automated sign-in",
+    "No region, payment, DRM or membership bypass",
+    "Unavailable and restricted content returns a precise failure"
+  ]
+}

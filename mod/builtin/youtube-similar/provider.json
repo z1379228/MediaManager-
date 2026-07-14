@@ -1,0 +1,7 @@
+{
+  "provider_id": "youtube-similar",
+  "display_name": "YouTube Similar",
+  "entry_point": "provider.py",
+  "url_hosts": ["youtube.com"],
+  "permissions": []
+}

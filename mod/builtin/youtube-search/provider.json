@@ -1,0 +1,7 @@
+{
+  "provider_id": "youtube-search",
+  "display_name": "YouTube Search",
+  "entry_point": "provider.py",
+  "url_hosts": ["youtube.com", "www.youtube.com", "youtu.be"],
+  "permissions": ["network.youtube", "process.javascript"]
+}

@@ -1,0 +1,7 @@
+{
+  "provider_id": "youtube-recovery",
+  "display_name": "YouTube Recovery",
+  "entry_point": "provider.py",
+  "url_hosts": ["youtube.com"],
+  "permissions": []
+}

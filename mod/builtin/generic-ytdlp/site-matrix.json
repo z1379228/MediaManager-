@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "provider_id": "generic-ytdlp",
+  "verification": "offline-extractor-and-contract",
+  "sites": [
+    {
+      "site_id": "vimeo",
+      "display_name": "Vimeo",
+      "extractor_prefix": "vimeo",
+      "support_status": "verified-public-analysis",
+      "last_live_check": "2026-07-14",
+      "hosts": ["vimeo.com", "www.vimeo.com", "player.vimeo.com"]
+    },
+    {
+      "site_id": "dailymotion",
+      "display_name": "Dailymotion",
+      "extractor_prefix": "dailymotion",
+      "support_status": "verified-public-analysis",
+      "last_live_check": "2026-07-14",
+      "hosts": ["dailymotion.com", "www.dailymotion.com", "dai.ly"]
+    },
+    {
+      "site_id": "soundcloud",
+      "display_name": "SoundCloud",
+      "extractor_prefix": "soundcloud",
+      "support_status": "verified-public-analysis",
+      "last_live_check": "2026-07-14",
+      "hosts": ["soundcloud.com", "www.soundcloud.com", "on.soundcloud.com"]
+    },
+    {
+      "site_id": "tiktok",
+      "display_name": "TikTok",
+      "extractor_prefix": "tiktok",
+      "support_status": "verified-public-analysis",
+      "last_live_check": "2026-07-14",
+      "hosts": ["tiktok.com", "www.tiktok.com", "m.tiktok.com", "vm.tiktok.com"]
+    },
+    {
+      "site_id": "twitch",
+      "display_name": "Twitch",
+      "extractor_prefix": "twitch",
+      "support_status": "verified-public-analysis",
+      "last_live_check": "2026-07-14",
+      "hosts": ["twitch.tv", "www.twitch.tv", "m.twitch.tv", "clips.twitch.tv"]
+    },
+    {
+      "site_id": "twitter",
+      "display_name": "X / Twitter",
+      "extractor_prefix": "twitter",
+      "support_status": "verified-public-analysis",
+      "last_live_check": "2026-07-14",
+      "hosts": ["x.com", "www.x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com"]
+    }
+  ],
+  "excluded": [
+    {
+      "site_id": "youtube",
+      "reason": "Owned by the dedicated YouTube MOD"
+    },
+    {
+      "site_id": "bilibili",
+      "reason": "Reserved for the dedicated danmaku-capable MOD"
+    },
+    {
+      "site_id": "facebook-instagram-threads",
+      "reason": "Excluded from automated access; official-page bridges remain separate"
+    }
+  ]
+}
