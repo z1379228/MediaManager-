@@ -13,4 +13,7 @@
 3. Windows runner 安裝專案、執行 Ruff 與 Pytest。
 4. 必要檢查成功後才合併，失敗則保持開啟。
 
+雲端測試對每個測試設定 60 秒上限，避免 Windows subprocess 或外部工具異常時
+讓必要檢查永久停在 pending；逾時會顯示實際測試名稱並阻止合併。
+
 Pull Request 作者不能批准自己的變更；此流程不產生虛假的 Approve review。

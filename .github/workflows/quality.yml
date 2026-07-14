@@ -31,7 +31,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,ui]" ruff
+          python -m pip install -e ".[dev,ui]" ruff pytest-timeout
 
       - name: Ruff
         run: >-
@@ -42,4 +42,4 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force .work | Out-Null
-          python -m pytest -q -rs --basetemp=.work/pytest-ci
+          python -m pytest -vv -rs --timeout=60 --basetemp=.work/pytest-ci
