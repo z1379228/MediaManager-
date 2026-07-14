@@ -99,6 +99,7 @@ def test_core_panels_expose_accessible_controls_at_minimum_width(
     paths = AppPaths.discover(portable=True, app_root=tmp_path)
     monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
 
+    from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance() or QApplication([])
@@ -118,7 +119,10 @@ def test_core_panels_expose_accessible_controls_at_minimum_width(
         assert search.query.accessibleName() == "YouTube 搜尋文字"
         assert search.limit.accessibleName() == "搜尋結果數量"
         assert search.table.accessibleName() == "YouTube 搜尋結果"
-        assert download.scroll_area.horizontalScrollBar().maximum() == 0
+        assert (
+            download.scroll_area.horizontalScrollBarPolicy()
+            == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
     finally:
         search.shutdown()
         search.close()
