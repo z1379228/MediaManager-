@@ -57,6 +57,23 @@ def test_audit_versions_accepts_complete_version_history(tmp_path: Path) -> None
     assert all(version.checked == 4 for version in report.versions)
 
 
+def test_daily_audit_keeps_only_current_and_previous(tmp_path: Path) -> None:
+    version_root = tmp_path / "Version"
+    _write_release(version_root, "1.0.0")
+    _write_release(version_root, "1.1.0")
+    _write_release(version_root, "2.0.0")
+
+    daily = audit_versions(version_root)
+    full = audit_versions(version_root, full_history=True)
+
+    assert tuple(version.folder for version in daily.versions) == ("1.1", "2.0")
+    assert tuple(version.folder for version in full.versions) == (
+        "1.0",
+        "1.1",
+        "2.0",
+    )
+
+
 def test_audit_version_detects_tampering_and_unlisted_files(tmp_path: Path) -> None:
     release = _write_release(tmp_path / "Version", "1.3.2")
     (release / "MediaManager.exe").write_bytes(b"tampered")

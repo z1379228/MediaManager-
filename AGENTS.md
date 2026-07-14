@@ -59,3 +59,7 @@
 - 新功能必須有測試；安全或資料格式變更必須補充失敗案例與遷移說明。
 - 不修改已保留歷史版本內容；每次發行重新產生 `release-info.json` 與
   `SHA256SUMS.txt`。
+- 日常本機只保留目前版與上一版，並使用預設稽核；大版本封版、資安事件或
+  定期維護才還原 GitHub 歷史附件並執行 `--full-history`。
+- GitHub Releases 上已公開的 EXE、`SHA256SUMS.txt` 與 `release-info.json`
+  不得刪除；即將公開的附件在上傳前後都必須驗證 SHA-256。

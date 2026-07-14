@@ -1,4 +1,4 @@
-"""Read-only integrity audit for every staged MediaManager version folder."""
+"""Read-only integrity audit for retained MediaManager version folders."""
 
 from __future__ import annotations
 
@@ -204,7 +204,9 @@ def audit_version(root: Path) -> VersionAudit:
     )
 
 
-def audit_versions(root: Path) -> VersionAuditReport:
+def audit_versions(
+    root: Path, *, full_history: bool = False
+) -> VersionAuditReport:
     root = root.resolve()
     errors: list[str] = []
     if not root.is_dir() or root.is_symlink():
@@ -223,6 +225,8 @@ def audit_versions(root: Path) -> VersionAuditReport:
     version_roots.sort(key=lambda path: tuple(int(part) for part in path.name.split(".")))
     if not version_roots:
         errors.append("no version folders found")
+    elif not full_history:
+        version_roots = version_roots[-2:]
     versions = tuple(audit_version(path) for path in version_roots)
     unique_errors = tuple(dict.fromkeys(errors))
     return VersionAuditReport(
@@ -235,12 +239,19 @@ def audit_versions(root: Path) -> VersionAuditReport:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Audit every staged MediaManager version without modifying it."
+        description=(
+            "Audit the current and previous MediaManager versions by default."
+        )
     )
     parser.add_argument("--root", type=Path, default=Path("Version"))
+    parser.add_argument(
+        "--full-history",
+        action="store_true",
+        help="audit every locally retained version (major-release maintenance)",
+    )
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args()
-    report = audit_versions(args.root)
+    report = audit_versions(args.root, full_history=args.full_history)
     if args.as_json:
         print(json.dumps(asdict(report), ensure_ascii=False, indent=2))
     else:

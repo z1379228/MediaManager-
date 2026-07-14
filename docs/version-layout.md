@@ -29,10 +29,17 @@ Each version folder contains the EXE, wheel, portable tools, built-in MOD files,
 transactional staging directory and removes stale files from the older staged
 copy. Build caches are not included.
 
-Audit every retained version after building, copying or signing:
+日常只稽核目前版與上一版：
 
 ```powershell
 .\.venv\Scripts\python.exe -m tools.audit_versions --root Version
+```
+
+大版本封版、資安事件或定期維護時，先從 GitHub Releases 還原需要的歷史版本，
+再執行完整本機歷史稽核：
+
+```powershell
+.\.venv\Scripts\python.exe -m tools.audit_versions --root Version --full-history
 ```
 
 The audit validates folder/version alignment, wheel metadata, portable tools,
@@ -40,6 +47,10 @@ safe checksum paths, every listed hash, missing files, unlisted files and
 interrupted staging residue. A post-stage release manifest and signature are
 accepted only when both are present; cryptographic release readiness remains
 the responsibility of `tools.release_preflight`.
+
+本機日常只保留 current + previous。更舊版本由 GitHub Releases 保存，公開的
+EXE、`SHA256SUMS.txt` 與 `release-info.json` 不得刪除。次版本若依發行政策只
+提供簡介，則不要求永久保存其本機大型封裝。
 
 Never run portable GUI or headless smoke tests directly inside a retained
 `Version/<major>.<minor>` folder. Portable mode writes `UserData` beside the
