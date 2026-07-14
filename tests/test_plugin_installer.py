@@ -156,8 +156,8 @@ def test_rejects_incompatible_core_version(tmp_path: Path) -> None:
     package = tmp_path / "future.modpkg"
     build_package(
         package,
-        minimum_core_version="9.0.0",
-        maximum_core_version="9.9.9",
+        minimum_core_version="10.0.0",
+        maximum_core_version="10.9.9",
     )
     registry = PluginRegistry(tmp_path / "mod" / "registry.sqlite3")
     installer = PluginInstaller(

@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 from dataclasses import dataclass
+import hashlib
+import hmac
+import json
 from pathlib import Path
+import secrets
 from typing import Protocol
 
 from contracts.discovery_v1 import DiscoveryItemV1
@@ -42,6 +48,15 @@ class SearchSourceStatus:
     display_name: str
     enabled: bool
     health: str
+    message: str = ""
+    consecutive_failures: int = 0
+    successful_searches: int = 0
+
+
+@dataclass(slots=True)
+class _SearchHealth:
+    consecutive_failures: int = 0
+    successful_searches: int = 0
     message: str = ""
 
 
@@ -161,7 +176,8 @@ class DiscoveryService:
         self._registry = DownloadProviderRegistry(state_path)
         self._providers: dict[str, SearchProvider] = {}
         self._search_adapters = SearchAdapterRegistry()
-        self._search_failures: dict[str, str] = {}
+        self._search_health: dict[str, _SearchHealth] = {}
+        self._search_cursor_key = secrets.token_bytes(32)
         self._history_providers: dict[str, HistoryProvider] = {}
         self._recovery_providers: dict[str, RecoveryProvider] = {}
         self._similar_providers: dict[str, SimilarProvider] = {}
@@ -226,10 +242,20 @@ class DiscoveryService:
                     "disabled"
                     if not status.enabled
                     else "error"
-                    if status.provider_id in self._search_failures
+                    if self._search_health.get(
+                        status.provider_id, _SearchHealth()
+                    ).consecutive_failures
                     else "ready"
                 ),
-                self._search_failures.get(status.provider_id, ""),
+                self._search_health.get(
+                    status.provider_id, _SearchHealth()
+                ).message,
+                self._search_health.get(
+                    status.provider_id, _SearchHealth()
+                ).consecutive_failures,
+                self._search_health.get(
+                    status.provider_id, _SearchHealth()
+                ).successful_searches,
             )
             for status in self._registry.statuses()
             if status.provider_id in search_ids
@@ -251,8 +277,16 @@ class DiscoveryService:
         )
         if cursor and len(selected) != 1:
             raise ValueError("pagination requires one selected search MOD")
+        provider_cursor = ""
+        if cursor:
+            provider_cursor = self._decode_search_cursor(
+                cursor,
+                provider_id=selected[0],
+                query=query,
+                content_type=content_type,
+            )
         result = self._search_adapters.search(
-            SearchQueryV2(query, content_type, limit, cursor),
+            SearchQueryV2(query, content_type, limit, provider_cursor),
             provider_ids=selected,
             limit=limit,
         )
@@ -260,11 +294,129 @@ class DiscoveryService:
             failure.provider_id: failure.message for failure in result.failures
         }
         for provider_id in selected:
+            health = self._search_health.setdefault(provider_id, _SearchHealth())
             if provider_id in failures:
-                self._search_failures[provider_id] = failures[provider_id]
+                health.consecutive_failures = min(
+                    health.consecutive_failures + 1, 1_000_000
+                )
+                health.message = failures[provider_id]
             else:
-                self._search_failures.pop(provider_id, None)
-        return result
+                health.consecutive_failures = 0
+                health.successful_searches = min(
+                    health.successful_searches + 1, 1_000_000
+                )
+                health.message = ""
+        return FederatedSearchResult(
+            result.items,
+            result.failures,
+            result.sources,
+            tuple(
+                (
+                    provider_id,
+                    self._encode_search_cursor(
+                        provider_id=provider_id,
+                        query=query,
+                        content_type=content_type,
+                        provider_cursor=next_cursor,
+                    ),
+                )
+                for provider_id, next_cursor in result.next_cursors
+            ),
+        )
+
+    @staticmethod
+    def _normalized_search_text(query: str) -> str:
+        if not isinstance(query, str):
+            raise ValueError("search query invalid")
+        normalized = " ".join(query.split())[:200]
+        if not normalized:
+            raise ValueError("search query is empty")
+        return normalized
+
+    def _encode_search_cursor(
+        self,
+        *,
+        provider_id: str,
+        query: str,
+        content_type: str,
+        provider_cursor: str,
+    ) -> str:
+        payload = json.dumps(
+            [
+                1,
+                provider_id,
+                self._normalized_search_text(query),
+                content_type,
+                provider_cursor,
+            ],
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        signature = hmac.new(
+            self._search_cursor_key, payload, hashlib.sha256
+        ).digest()[:16]
+        encoded_payload = base64.urlsafe_b64encode(payload).rstrip(b"=")
+        encoded_signature = base64.urlsafe_b64encode(signature).rstrip(b"=")
+        token = b"sc1." + encoded_payload + b"." + encoded_signature
+        if len(token) > 2048:
+            raise ValueError("search cursor is too large")
+        return token.decode("ascii")
+
+    def _decode_search_cursor(
+        self,
+        token: str,
+        *,
+        provider_id: str,
+        query: str,
+        content_type: str,
+    ) -> str:
+        if not isinstance(token, str) or not 1 <= len(token) <= 2048:
+            raise ValueError("search cursor invalid")
+        try:
+            prefix, payload_text, signature_text = token.split(".")
+            if prefix != "sc1":
+                raise ValueError
+            payload = base64.urlsafe_b64decode(
+                payload_text + "=" * (-len(payload_text) % 4)
+            )
+            signature = base64.urlsafe_b64decode(
+                signature_text + "=" * (-len(signature_text) % 4)
+            )
+            if (
+                base64.urlsafe_b64encode(payload).rstrip(b"=").decode("ascii")
+                != payload_text
+                or base64.urlsafe_b64encode(signature)
+                .rstrip(b"=")
+                .decode("ascii")
+                != signature_text
+            ):
+                raise ValueError
+            expected = hmac.new(
+                self._search_cursor_key, payload, hashlib.sha256
+            ).digest()[:16]
+            if not hmac.compare_digest(signature, expected):
+                raise ValueError
+            values = json.loads(payload.decode("utf-8"))
+        except (
+            binascii.Error,
+            UnicodeDecodeError,
+            ValueError,
+            TypeError,
+            json.JSONDecodeError,
+        ):
+            raise ValueError("search cursor invalid") from None
+        if (
+            not isinstance(values, list)
+            or len(values) != 5
+            or values[0] != 1
+            or values[1] != provider_id
+            or values[2] != self._normalized_search_text(query)
+            or values[3] != content_type
+            or not isinstance(values[4], str)
+            or len(values[4]) > 500
+        ):
+            raise ValueError("search cursor does not match this search")
+        return values[4]
 
     def register_video_preview(
         self, provider: VideoPreviewProvider, *, enabled: bool = False

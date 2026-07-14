@@ -122,7 +122,10 @@ def check_release(
                     errors.append("signed release file list does not match required files")
 
     executable = root / "MediaManager.exe"
-    if require_authenticode and identity_valid and executable.is_file():
+    # Authenticode and the release-manifest identity are independent publish
+    # gates.  Report both failures in one pass so release operators do not
+    # discover an unsigned executable only after configuring Ed25519.
+    if require_authenticode and executable.is_file():
         status = authenticode_checker(executable)
         if status != "Valid":
             errors.append(f"Authenticode signature is not valid: {status}")
