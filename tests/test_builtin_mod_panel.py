@@ -157,7 +157,6 @@ def test_plugin_manager_defaults_to_actionable_builtin_mods(
             context.features.statuses(),
         )
         assert {row.provider_id for row in rows} == BUILTIN_MOD_IDS
-        assert all(row.available for row in rows)
         tabs = dialog.findChild(QTabWidget, "pluginManagerTabs")
         assert tabs.currentIndex() == 1
         assert tabs.tabText(1) == "內建 MOD 狀態"

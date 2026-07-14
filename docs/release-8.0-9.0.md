@@ -28,8 +28,12 @@
   搜尋頁、下載頁與 MOD 管理器統一透過相同控制器發布跨頁同步事件。
 - Media Convert、Speech to Text、Automation 在 MOD 管理頁與各自分頁補上中文
   使用順序、入口與 FFmpeg／whisper-cli／模型依賴說明。
+- Portable 根目錄新增 `安裝必備軟體.bat`：雙擊後自動偵測並補齊 FFmpeg、ffprobe
+  與 Deno；已安裝或內附的元件會略過，缺少 winget 或選用的 whisper-cli 時會明確提示。
+- 一鍵安裝不夾帶 Git、GitHub CLI 或 Python 等開發工具，也不含任意網址下載、靜默安裝
+  或繞過系統政策。
 - MOD 接線稽核加入正式版候選必要證據；未通過不得封裝 Stable。
-- Ruff 與 545 項測試通過，另有 2 項 Windows symlink 測試因帳戶權限跳過。
+- Ruff 與 547 項測試通過，另有 2 項 Windows symlink 測試因帳戶權限跳過。
 
 ## 正式版 1.0 候選
 

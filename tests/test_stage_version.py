@@ -21,7 +21,7 @@ def _prepare_source(root: Path, version: str = "1.2.3") -> None:
     for name in SOURCE_RELEASE_FILES[1:]:
         path = root / Path(*name.split("/"))
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(name.encode("ascii"))
+        path.write_bytes(name.encode("utf-8"))
 
 
 def test_version_folder_uses_major_minor() -> None:
@@ -75,9 +75,10 @@ def test_stage_version_creates_complete_version_folder(tmp_path: Path) -> None:
     sbom = json.loads((target / "sbom.cdx.json").read_text("utf-8"))
     assert inventory["core_version"] == "1.2.3"
     assert sbom["bomFormat"] == "CycloneDX"
-    checksums = (target / "SHA256SUMS.txt").read_text("ascii")
+    checksums = (target / "SHA256SUMS.txt").read_text("utf-8")
     expected = hashlib.sha256(b"exe").hexdigest()
     assert f"{expected}  MediaManager.exe" in checksums
+    assert "安裝必備軟體.bat" in checksums
     for name in DEFAULT_RELEASE_FILES[1:]:
         assert (target / Path(*name.split("/"))).is_file()
 
