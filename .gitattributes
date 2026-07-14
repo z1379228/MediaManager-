@@ -1,2 +1,2 @@
-# Built-in MOD integrity hashes are calculated from Windows release bytes.
-mod/builtin/** text eol=crlf
+# Integrity hashes must be identical on Windows, Linux, and GitHub runners.
+mod/builtin/** text eol=lf
