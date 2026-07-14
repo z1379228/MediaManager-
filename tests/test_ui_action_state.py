@@ -210,9 +210,10 @@ def test_search_panel_blocks_duplicate_async_actions_and_shutdown_cleans_preview
     paths = AppPaths.discover(portable=True, app_root=tmp_path)
     monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
 
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QMessageBox
 
     app = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
     context = Bootstrap(portable=True).initialize()
     panel = create_search_panel(context)
     started = threading.Event()
