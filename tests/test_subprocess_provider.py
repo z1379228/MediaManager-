@@ -233,6 +233,47 @@ def test_rejects_malformed_provider_manifest_identity(tmp_path: Path) -> None:
         SubprocessDownloadProvider(root, application_root=tmp_path)
 
 
+def test_search_capability_is_loaded_from_provider_manifest(tmp_path: Path) -> None:
+    root = make_provider(tmp_path, "")
+    manifest_path = root / "provider.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["search_capability"] = {
+        "provider_id": "test",
+        "sites": ["example"],
+        "content_types": ["all", "video"],
+        "max_page_size": 15,
+        "pagination": "none",
+        "audio_preview": False,
+        "video_preview": True,
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    provider = SubprocessDownloadProvider(root, application_root=tmp_path)
+
+    assert provider.search_capability is not None
+    assert provider.search_capability.sites == ("example",)
+    assert provider.search_capability.max_page_size == 15
+
+
+def test_search_capability_provider_must_match_manifest(tmp_path: Path) -> None:
+    root = make_provider(tmp_path, "")
+    manifest_path = root / "provider.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["search_capability"] = {
+        "provider_id": "other",
+        "sites": ["example"],
+        "content_types": ["all"],
+        "max_page_size": 10,
+        "pagination": "none",
+        "audio_preview": False,
+        "video_preview": False,
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ProviderProtocolError, match="provider mismatch"):
+        SubprocessDownloadProvider(root, application_root=tmp_path)
+
+
 def test_operation_rejects_missing_required_permission(tmp_path: Path) -> None:
     root = make_provider(tmp_path, "")
     manifest_path = root / "provider.json"
@@ -390,6 +431,20 @@ def test_subprocess_search_validates_discovery_results(tmp_path: Path) -> None:
     root = make_provider(tmp_path, source)
     provider = SubprocessDownloadProvider(root, application_root=tmp_path)
     assert provider.search("example", limit=1, content_type="music")[0].video_id == "abc"
+
+
+def test_subprocess_analysis_rejects_invalid_media_formats(tmp_path: Path) -> None:
+    source = (
+        "import json, sys\n"
+        "json.loads(sys.stdin.readline())\n"
+        "value={'formats':[{'format_id':'x'}]}\n"
+        "print(json.dumps({'type':'result','value':value}), flush=True)\n"
+    )
+    root = make_provider(tmp_path, source)
+    provider = SubprocessDownloadProvider(root, application_root=tmp_path)
+
+    with pytest.raises(ProviderProtocolError, match="media formats"):
+        provider.analyze("https://example.com/video")
 
 
 def test_subprocess_playlist_validates_bounded_entries(tmp_path: Path) -> None:

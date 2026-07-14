@@ -20,6 +20,7 @@ _POST_STAGE_SIGNING_FILES = {
     "security/release-manifest.json",
     "security/release-manifest.sig",
 }
+_RELEASE_TRACKS = ("Development", "Stable")
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +30,7 @@ class VersionAudit:
     checked: int
     valid: bool
     errors: tuple[str, ...]
+    track: str = "Legacy"
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +91,9 @@ def audit_version(root: Path) -> VersionAudit:
     folder = root.name
     core_version = ""
     portable_tools: tuple[str, ...] = ()
+    expected_track = (
+        root.parent.name if root.parent.name in _RELEASE_TRACKS else "Legacy"
+    )
 
     info_path = root / "release-info.json"
     try:
@@ -110,6 +115,12 @@ def audit_version(root: Path) -> VersionAudit:
         errors.append("core_version does not match the version folder")
     if info.get("version_folder") != folder:
         errors.append("release-info version_folder does not match the folder")
+    declared_track = info.get("release_track")
+    if expected_track == "Legacy":
+        if declared_track not in {None, "Legacy"}:
+            errors.append("release-info track does not match the version path")
+    elif declared_track != expected_track:
+        errors.append("release-info track does not match the version path")
 
     raw_tools = info.get("portable_tools")
     if (
@@ -201,6 +212,7 @@ def audit_version(root: Path) -> VersionAudit:
         checked=checked,
         valid=not unique_errors,
         errors=unique_errors,
+        track=expected_track,
     )
 
 
@@ -216,17 +228,37 @@ def audit_versions(
             errors=("version root is missing or unsafe",),
             versions=(),
         )
-    version_roots: list[Path] = []
+    grouped_roots: dict[str, list[Path]] = {
+        "Legacy": [],
+        "Development": [],
+        "Stable": [],
+    }
     for path in root.iterdir():
         if path.is_dir() and not path.is_symlink() and _FOLDER_PATTERN.fullmatch(path.name):
-            version_roots.append(path)
+            grouped_roots["Legacy"].append(path)
+        elif path.is_dir() and not path.is_symlink() and path.name in _RELEASE_TRACKS:
+            for candidate in path.iterdir():
+                if (
+                    candidate.is_dir()
+                    and not candidate.is_symlink()
+                    and _FOLDER_PATTERN.fullmatch(candidate.name)
+                ):
+                    grouped_roots[path.name].append(candidate)
+                else:
+                    errors.append(
+                        f"unexpected {path.name} version entry: {candidate.name}"
+                    )
         else:
             errors.append(f"unexpected version root entry: {path.name}")
-    version_roots.sort(key=lambda path: tuple(int(part) for part in path.name.split(".")))
+    version_roots: list[Path] = []
+    for track in ("Legacy", "Stable", "Development"):
+        values = grouped_roots[track]
+        values.sort(
+            key=lambda path: tuple(int(part) for part in path.name.split("."))
+        )
+        version_roots.extend(values if full_history else values[-2:])
     if not version_roots:
         errors.append("no version folders found")
-    elif not full_history:
-        version_roots = version_roots[-2:]
     versions = tuple(audit_version(path) for path in version_roots)
     unique_errors = tuple(dict.fromkeys(errors))
     return VersionAuditReport(
@@ -260,7 +292,9 @@ def main() -> int:
         for version in report.versions:
             state = "PASS" if version.valid else "FAIL"
             print(
-                f"{state} {version.folder} core={version.core_version or '-'} "
+                f"{state} "
+                f"{version.folder if version.track == 'Legacy' else version.track + '/' + version.folder} "
+                f"core={version.core_version or '-'} "
                 f"checksums={version.checked}"
             )
             for error in version.errors:

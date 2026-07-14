@@ -116,9 +116,11 @@ def test_core_panels_expose_accessible_controls_at_minimum_width(
         assert download.urls.accessibleName() == "下載網址清單"
         assert download.format_preset.accessibleName() == "下載格式"
         assert download.table.accessibleName() == "下載工作佇列"
-        assert search.query.accessibleName() == "YouTube 搜尋文字"
+        assert search.query.accessibleName() == "跨 MOD 搜尋文字"
+        assert search.search_source.accessibleName() == "搜尋來源"
+        assert search.next_page_button.accessibleName() == "搜尋下一頁"
         assert search.limit.accessibleName() == "搜尋結果數量"
-        assert search.table.accessibleName() == "YouTube 搜尋結果"
+        assert search.table.accessibleName() == "跨 MOD 搜尋結果"
         assert (
             download.scroll_area.horizontalScrollBarPolicy()
             == Qt.ScrollBarPolicy.ScrollBarAlwaysOff

@@ -221,15 +221,19 @@ def test_search_panel_blocks_duplicate_async_actions_and_shutdown_cleans_preview
     release = threading.Event()
     calls = 0
 
-    def search(_query, *, limit, content_type):
+    def search(_query, *, provider_ids, limit, content_type, cursor):
         nonlocal calls
         calls += 1
+        assert provider_ids is None
+        assert cursor == ""
         assert content_type == "music"
         started.set()
         release.wait(2)
-        return ()
+        from core.discovery.adapters import FederatedSearchResult
 
-    monkeypatch.setattr(context.discovery, "search", search)
+        return FederatedSearchResult((), (), ())
+
+    monkeypatch.setattr(context.discovery, "federated_search", search)
     provider = Mock()
     preview_path = tmp_path / "preview.mp3"
     try:

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "provider_id": "youtube",
+  "last_live_check": "2026-07-15",
+  "features": [
+    {
+      "feature_id": "public-video-analysis",
+      "support_status": "verified-public-analysis"
+    },
+    {
+      "feature_id": "bounded-format-summary",
+      "support_status": "offline-contract"
+    },
+    {
+      "feature_id": "playlist-selection",
+      "support_status": "offline-contract"
+    },
+    {
+      "feature_id": "segment-download",
+      "support_status": "offline-contract"
+    },
+    {
+      "feature_id": "subtitles",
+      "support_status": "offline-contract"
+    },
+    {
+      "feature_id": "audio-preview",
+      "support_status": "verified-local-ffmpeg"
+    }
+  ],
+  "boundaries": [
+    "No cookie import or automated sign-in",
+    "No region, payment, DRM or membership bypass",
+    "No advertisement bypass or private-content extraction",
+    "Unavailable and restricted content returns a precise failure"
+  ]
+}

@@ -4,19 +4,42 @@ import pytest
 
 from tools import build_version
 from tools.build_version import (
+    configured_project_version,
     portable_release_tools,
+    validate_build_version,
     version_build_paths,
     wheel_build_command,
 )
+from core.version import CORE_VERSION
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_build_version_sources_match_and_override_is_rejected() -> None:
+    assert configured_project_version(ROOT) == CORE_VERSION
+    validate_build_version(ROOT, CORE_VERSION)
+    with pytest.raises(ValueError, match="override is not allowed"):
+        validate_build_version(ROOT, "5.0.1")
 
 
 def test_version_build_paths_are_isolated_under_work(tmp_path: Path) -> None:
     paths = version_build_paths(tmp_path, "1.2.3")
-    assert paths.work == tmp_path / ".work" / "1.2"
+    assert paths.work == tmp_path / ".work" / "Development" / "1.2"
     assert paths.temp == paths.work / "temp"
     assert paths.pyinstaller_work == paths.work / "pyinstaller"
     assert paths.executable_output == paths.work / "exe"
     assert paths.wheel_output == paths.work / "wheel"
+
+
+def test_stable_build_path_requires_explicit_confirmation(tmp_path: Path) -> None:
+    with pytest.raises(PermissionError, match="explicit user confirmation"):
+        build_version.build_version(
+            tmp_path,
+            CORE_VERSION,
+            portable_runtime=False,
+            channel="stable",
+        )
 
 
 def test_portable_release_tools_fail_fast_when_cache_is_missing(

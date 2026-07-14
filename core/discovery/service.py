@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
@@ -30,7 +31,18 @@ class SearchProvider(Protocol):
         content_type: str = "all",
     ) -> tuple[DiscoveryItemV1, ...]: ...
 
+    def search_page(self, query: SearchQueryV2) -> SearchPageV2: ...
+
     def close(self) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class SearchSourceStatus:
+    provider_id: str
+    display_name: str
+    enabled: bool
+    health: str
+    message: str = ""
 
 
 class SimilarProvider(Protocol):
@@ -149,6 +161,7 @@ class DiscoveryService:
         self._registry = DownloadProviderRegistry(state_path)
         self._providers: dict[str, SearchProvider] = {}
         self._search_adapters = SearchAdapterRegistry()
+        self._search_failures: dict[str, str] = {}
         self._history_providers: dict[str, HistoryProvider] = {}
         self._recovery_providers: dict[str, RecoveryProvider] = {}
         self._similar_providers: dict[str, SimilarProvider] = {}
@@ -158,17 +171,36 @@ class DiscoveryService:
     def register(self, provider: SearchProvider, *, enabled: bool = False) -> None:
         self._registry.register(provider, enabled=enabled)  # type: ignore[arg-type]
         self._providers[provider.provider_id] = provider
-        capability = SearchCapabilityV2(
-            provider.provider_id,
-            ("youtube",),
-            ("all", "music", "video"),
-            50,
-            "none",
-            True,
-            True,
+        declared = getattr(provider, "search_capability", None)
+        capability = (
+            declared
+            if isinstance(declared, SearchCapabilityV2)
+            else SearchCapabilityV2(
+                provider.provider_id,
+                ("youtube",),
+                ("all", "music", "video"),
+                50,
+                "none",
+                True,
+                True,
+            )
         )
+        if capability.provider_id != provider.provider_id:
+            raise ValueError("search capability provider mismatch")
 
         def adapter(query: SearchQueryV2) -> SearchPageV2:
+            search_page = (
+                getattr(provider, "search_page", None)
+                if callable(getattr(type(provider), "search_page", None))
+                else None
+            )
+            if callable(search_page):
+                page = search_page(query)
+                if not isinstance(page, SearchPageV2):
+                    raise ValueError("search MOD returned an invalid page")
+                return page
+            if query.cursor:
+                raise ValueError("search MOD does not implement pagination")
             items = provider.search(
                 query.query,
                 limit=query.page_size,
@@ -181,6 +213,28 @@ class DiscoveryService:
     def search_capabilities(self) -> tuple[SearchCapabilityV2, ...]:
         return self._search_adapters.capabilities()
 
+    def search_source_statuses(self) -> tuple[SearchSourceStatus, ...]:
+        search_ids = {
+            capability.provider_id for capability in self.search_capabilities()
+        }
+        return tuple(
+            SearchSourceStatus(
+                status.provider_id,
+                status.display_name,
+                status.enabled,
+                (
+                    "disabled"
+                    if not status.enabled
+                    else "error"
+                    if status.provider_id in self._search_failures
+                    else "ready"
+                ),
+                self._search_failures.get(status.provider_id, ""),
+            )
+            for status in self._registry.statuses()
+            if status.provider_id in search_ids
+        )
+
     def federated_search(
         self,
         query: str,
@@ -188,17 +242,29 @@ class DiscoveryService:
         provider_ids: tuple[str, ...] | None = None,
         limit: int = 50,
         content_type: str = "all",
+        cursor: str = "",
     ) -> FederatedSearchResult:
         selected = provider_ids or tuple(
             capability.provider_id
             for capability in self.search_capabilities()
             if self._registry.is_enabled(capability.provider_id)
         )
-        return self._search_adapters.search(
-            SearchQueryV2(query, content_type, limit),
+        if cursor and len(selected) != 1:
+            raise ValueError("pagination requires one selected search MOD")
+        result = self._search_adapters.search(
+            SearchQueryV2(query, content_type, limit, cursor),
             provider_ids=selected,
             limit=limit,
         )
+        failures = {
+            failure.provider_id: failure.message for failure in result.failures
+        }
+        for provider_id in selected:
+            if provider_id in failures:
+                self._search_failures[provider_id] = failures[provider_id]
+            else:
+                self._search_failures.pop(provider_id, None)
+        return result
 
     def register_video_preview(
         self, provider: VideoPreviewProvider, *, enabled: bool = False
@@ -323,7 +389,7 @@ class DiscoveryService:
             except (OSError, RuntimeError, ValueError):
                 pass
         plan = provider.similar_plan(original, preferences)
-        bounded_limit = max(1, min(int(limit), 20))
+        bounded_limit = max(1, min(int(limit), 50))
         unique: dict[str, DiscoveryItemV1] = {}
         for query in plan.queries:
             for item in self.search(query, limit=bounded_limit):
@@ -352,7 +418,7 @@ class DiscoveryService:
             except (OSError, RuntimeError, ValueError):
                 pass
         plan = provider.similar_plan(original, preferences)
-        bounded_limit = max(1, min(int(limit), 20))
+        bounded_limit = max(1, min(int(limit), 50))
         unique: dict[str, DiscoveryItemV1] = {}
         for query in plan.queries:
             for item in self.search(query, limit=bounded_limit):
@@ -383,7 +449,7 @@ class DiscoveryService:
         provider = self._recovery_providers.get(provider_id)
         if provider is None:
             raise RuntimeError("recovery MOD is unavailable")
-        bounded_limit = max(1, min(int(limit), 20))
+        bounded_limit = max(1, min(int(limit), 50))
         plan = provider.recovery_plan(original)
         for query in (plan.primary_query, *plan.fallback_queries):
             results = self.search(query, limit=bounded_limit)

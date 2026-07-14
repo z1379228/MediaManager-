@@ -53,10 +53,12 @@ def test_stage_version_creates_complete_version_folder(tmp_path: Path) -> None:
             "FFMPEG-README.txt": ffmpeg_readme,
         },
     )
-    assert target == tmp_path / "Version" / "1.2"
+    assert target == tmp_path / "Version" / "Development" / "1.2"
     assert (target / "MediaManager.exe").read_bytes() == b"exe"
     info = json.loads((target / "release-info.json").read_text("utf-8"))
     assert info["core_version"] == "1.2.3"
+    assert info["build_channel"] == "development"
+    assert info["release_track"] == "Development"
     assert info["version_folder"] == "1.2"
     assert info["portable_tools"] == [
         "DENO-LICENSE.md",
@@ -67,6 +69,12 @@ def test_stage_version_creates_complete_version_folder(tmp_path: Path) -> None:
         "ffprobe.exe",
     ]
     assert (target / "tools" / "deno.exe").read_bytes() == b"deno"
+    inventory = json.loads(
+        (target / "dependency-inventory.json").read_text("utf-8")
+    )
+    sbom = json.loads((target / "sbom.cdx.json").read_text("utf-8"))
+    assert inventory["core_version"] == "1.2.3"
+    assert sbom["bomFormat"] == "CycloneDX"
     checksums = (target / "SHA256SUMS.txt").read_text("ascii")
     expected = hashlib.sha256(b"exe").hexdigest()
     assert f"{expected}  MediaManager.exe" in checksums
@@ -145,7 +153,9 @@ def test_stage_version_recovers_committed_target_with_stale_backup(
     with pytest.raises(PermissionError, match="locked executable"):
         stage_version(tmp_path, version="1.2.3")
     assert (target / "MediaManager.exe").read_bytes() == b"new"
-    assert (tmp_path / "Version" / ".1.2.backup").is_dir()
+    assert (
+        tmp_path / "Version" / "Development" / ".1.2.backup"
+    ).is_dir()
 
     monkeypatch.setattr(stage_module.shutil, "rmtree", real_rmtree)
     (tmp_path / "dist" / "MediaManager.exe").write_bytes(b"newer")
@@ -153,4 +163,22 @@ def test_stage_version_recovers_committed_target_with_stale_backup(
 
     assert recovered == target
     assert (target / "MediaManager.exe").read_bytes() == b"newer"
-    assert not (tmp_path / "Version" / ".1.2.backup").exists()
+    assert not (
+        tmp_path / "Version" / "Development" / ".1.2.backup"
+    ).exists()
+
+
+def test_stage_version_refuses_stable_without_explicit_confirmation(
+    tmp_path: Path,
+) -> None:
+    _prepare_source(tmp_path)
+    with pytest.raises(PermissionError, match="explicit user confirmation"):
+        stage_version(tmp_path, version="1.2.3", channel="stable")
+
+    target = stage_version(
+        tmp_path,
+        version="1.2.3",
+        channel="stable",
+        confirm_stable=True,
+    )
+    assert target == tmp_path / "Version" / "Stable" / "1.2"

@@ -2,7 +2,22 @@
 
 from __future__ import annotations
 
-CORE_VERSION = "4.0.0"
+CORE_VERSION = "6.0.0"
+BUILD_CHANNEL = "development"
+DEVELOPMENT_GENERATION = "6.0"
+SUPPORTED_BUILD_CHANNELS = frozenset({"development", "stable"})
+
+
+def display_version() -> str:
+    if BUILD_CHANNEL == "development":
+        return f"開發版 {DEVELOPMENT_GENERATION}"
+    return f"正式版 {CORE_VERSION.rsplit('.', 1)[0]}"
+
+
+def release_track(channel: str = BUILD_CHANNEL) -> str:
+    if channel not in SUPPORTED_BUILD_CHANNELS:
+        raise ValueError("release channel must be development or stable")
+    return "Development" if channel == "development" else "Stable"
 
 
 def release_version(value: str) -> tuple[int, int, int]:

@@ -16,12 +16,15 @@ SearchCallable = Callable[[SearchQueryV2], SearchPageV2]
 class SearchAdapterFailure:
     provider_id: str
     message: str
+    category: str = "error"
 
 
 @dataclass(frozen=True, slots=True)
 class FederatedSearchResult:
     items: tuple[DiscoveryItemV1, ...]
     failures: tuple[SearchAdapterFailure, ...]
+    sources: tuple[str, ...]
+    next_cursors: tuple[tuple[str, str], ...] = ()
 
 
 def canonical_result_key(item: DiscoveryItemV1) -> str:
@@ -66,6 +69,8 @@ class SearchAdapterRegistry:
         selected = tuple(provider_ids) if provider_ids is not None else tuple(self._entries)
         bounded_limit = max(1, min(int(limit), 50))
         unique: dict[str, DiscoveryItemV1] = {}
+        sources: dict[str, str] = {}
+        next_cursors: list[tuple[str, str]] = []
         failures: list[SearchAdapterFailure] = []
         for provider_id in selected[:16]:
             entry = self._entries.get(provider_id)
@@ -80,16 +85,37 @@ class SearchAdapterRegistry:
                 page = adapter(normalized)
                 if page.provider_id != provider_id:
                     raise ValueError("search page provider mismatch")
+                if page.next_cursor:
+                    next_cursors.append((provider_id, page.next_cursor))
                 for item in page.items:
-                    unique.setdefault(canonical_result_key(item), item)
+                    key = canonical_result_key(item)
+                    if key not in unique:
+                        unique[key] = item
+                        sources[key] = provider_id
                     if len(unique) >= bounded_limit:
                         break
             except Exception as error:
+                category = (
+                    "timeout"
+                    if isinstance(error, TimeoutError)
+                    else "invalid-response"
+                    if isinstance(error, (TypeError, ValueError))
+                    else "unavailable"
+                    if isinstance(error, (ConnectionError, OSError))
+                    else "error"
+                )
                 failures.append(
                     SearchAdapterFailure(
-                        provider_id, str(error)[:300] or type(error).__name__
+                        provider_id,
+                        str(error)[:300] or type(error).__name__,
+                        category,
                     )
                 )
             if len(unique) >= bounded_limit:
                 break
-        return FederatedSearchResult(tuple(unique.values()), tuple(failures))
+        return FederatedSearchResult(
+            tuple(unique.values()),
+            tuple(failures),
+            tuple(sources[key] for key in unique),
+            tuple(next_cursors),
+        )

@@ -2,6 +2,8 @@
 
 SOURCE_RELEASE_FILES = (
     "MediaManager.exe",
+    "LICENSE",
+    "requirements-lock.txt",
     "assets/app-icon.ico",
     "trusted_ui/assets/app-icon.png",
     "mod/builtin/automation/feature.json",
@@ -19,6 +21,7 @@ SOURCE_RELEASE_FILES = (
     "mod/builtin/generic-ytdlp/site-matrix.json",
     "mod/builtin/youtube/provider.py",
     "mod/builtin/youtube/provider.json",
+    "mod/builtin/youtube/site-matrix.json",
     "mod/builtin/youtube-search/provider.py",
     "mod/builtin/youtube-search/provider.json",
     "mod/builtin/youtube-player/provider.py",
@@ -33,6 +36,11 @@ SOURCE_RELEASE_FILES = (
     "mod/builtin/youtube-auto-split/provider.json",
 )
 
+GENERATED_RELEASE_FILES = (
+    "dependency-inventory.json",
+    "sbom.cdx.json",
+)
+
 PORTABLE_RUNTIME_FILES = (
     "tools/deno.exe",
     "tools/DENO-LICENSE.md",
@@ -42,4 +50,6 @@ PORTABLE_RUNTIME_FILES = (
     "tools/FFMPEG-README.txt",
 )
 
-DEFAULT_RELEASE_FILES = SOURCE_RELEASE_FILES + PORTABLE_RUNTIME_FILES
+DEFAULT_RELEASE_FILES = (
+    SOURCE_RELEASE_FILES + PORTABLE_RUNTIME_FILES + GENERATED_RELEASE_FILES
+)

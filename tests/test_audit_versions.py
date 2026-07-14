@@ -45,6 +45,28 @@ def _write_release(root: Path, version: str) -> Path:
     return release
 
 
+def _write_tracked_release(root: Path, version: str, track: str) -> Path:
+    release = _write_release(root / track, version)
+    info_path = release / "release-info.json"
+    info = json.loads(info_path.read_text(encoding="utf-8"))
+    info["release_track"] = track
+    info_path.write_text(json.dumps(info), encoding="utf-8")
+    files = sorted(
+        path
+        for path in release.rglob("*")
+        if path.is_file() and path.name != "SHA256SUMS.txt"
+    )
+    (release / "SHA256SUMS.txt").write_text(
+        "".join(
+            f"{hashlib.sha256(path.read_bytes()).hexdigest()}  "
+            f"{path.relative_to(release).as_posix()}\n"
+            for path in files
+        ),
+        encoding="ascii",
+    )
+    return release
+
+
 def test_audit_versions_accepts_complete_version_history(tmp_path: Path) -> None:
     version_root = tmp_path / "Version"
     _write_release(version_root, "1.0.0")
@@ -72,6 +94,24 @@ def test_daily_audit_keeps_only_current_and_previous(tmp_path: Path) -> None:
         "1.1",
         "2.0",
     )
+
+
+def test_audit_supports_independent_development_and_stable_tracks(
+    tmp_path: Path,
+) -> None:
+    version_root = tmp_path / "Version"
+    _write_tracked_release(version_root, "5.0.0", "Development")
+    _write_tracked_release(version_root, "6.0.0", "Development")
+    _write_tracked_release(version_root, "1.0.0", "Stable")
+
+    report = audit_versions(version_root)
+
+    assert report.valid
+    assert [(item.track, item.folder) for item in report.versions] == [
+        ("Stable", "1.0"),
+        ("Development", "5.0"),
+        ("Development", "6.0"),
+    ]
 
 
 def test_audit_version_detects_tampering_and_unlisted_files(tmp_path: Path) -> None:

@@ -32,6 +32,48 @@ def test_descriptor_accepts_bounded_static_blocks() -> None:
     assert tuple(block.type for block in page.blocks) == ("heading", "text")
 
 
+def test_localized_descriptor_supports_only_four_languages_and_falls_back() -> None:
+    localized = {
+        "schema_version": 2,
+        "page_id": "example.page",
+        "default_locale": "en",
+        "translations": {
+            "en": {
+                "title": "Example",
+                "blocks": [{"type": "text", "text": "English"}],
+            },
+            "zh-TW": {
+                "title": "範例",
+                "blocks": [{"type": "text", "text": "繁體中文"}],
+            },
+        },
+    }
+
+    translated = PluginPage.from_dict(localized, locale="zh-TW")
+    fallback = PluginPage.from_dict(localized, locale="ja")
+
+    assert translated.title == "範例" and translated.locale == "zh-TW"
+    assert fallback.title == "Example" and fallback.locale == "en"
+    assert translated.available_locales == ("en", "zh-TW")
+
+
+def test_localized_descriptor_rejects_unplanned_language() -> None:
+    localized = {
+        "schema_version": 2,
+        "page_id": "example.page",
+        "default_locale": "fr",
+        "translations": {
+            "fr": {
+                "title": "Exemple",
+                "blocks": [{"type": "text", "text": "Texte"}],
+            }
+        },
+    }
+
+    with pytest.raises(PluginUIError, match="languages"):
+        PluginPage.from_dict(localized)
+
+
 @pytest.mark.parametrize("change", [
     {"blocks": [{"type": "html", "text": "<b>x</b>"}]},
     {"blocks": [{"type": "text", "text": "x" * 2001}]},

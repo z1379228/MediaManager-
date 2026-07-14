@@ -82,6 +82,9 @@ def test_video_preset_and_subtitles_map_to_bounded_ytdlp_options(
     assert options["writesubtitles"] is True
     assert options["writeautomaticsub"] is True
     assert options["subtitleslangs"] == ["zh-TW", "en"]
+    assert options["continuedl"] is True
+    assert options["nopart"] is False
+    assert options["overwrites"] is False
 
 
 def test_mp3_preset_uses_audio_postprocessor(tmp_path: Path, monkeypatch) -> None:
@@ -105,3 +108,34 @@ def test_provider_rejects_unbounded_subtitle_languages(tmp_path: Path) -> None:
         load_provider().download(
             request(tmp_path, subtitle_languages=["bad language"])
         )
+
+
+def test_analysis_format_summaries_are_bounded_and_sorted() -> None:
+    provider = load_provider()
+    summaries = provider.format_summaries(
+        {
+            "formats": [
+                {
+                    "format_id": "audio",
+                    "ext": "m4a",
+                    "acodec": "aac",
+                    "vcodec": "none",
+                    "filesize": 100,
+                },
+                {
+                    "format_id": "720p",
+                    "ext": "mp4",
+                    "width": 1280,
+                    "height": 720,
+                    "fps": 30,
+                    "acodec": "aac",
+                    "vcodec": "h264",
+                    "filesize_approx": 1000,
+                },
+            ]
+        }
+    )
+
+    assert [item["format_id"] for item in summaries] == ["720p", "audio"]
+    assert summaries[0]["estimated_bytes"] == 1000
+    assert summaries[1]["height"] is None

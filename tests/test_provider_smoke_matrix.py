@@ -28,6 +28,7 @@ def test_smoke_matrix_records_pass_and_failure_without_network(tmp_path) -> None
     assert report["status"] == "FAIL"
     assert [row["status"] for row in report["cases"]] == ["PASS", "FAIL"]
     assert json.loads(target.read_text(encoding="utf-8"))["schema_version"] == 1
+    assert report["mode"] == "live-public-content"
     assert not target.with_suffix(".json.tmp").exists()
 
 

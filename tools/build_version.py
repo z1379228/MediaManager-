@@ -7,10 +7,11 @@ import os
 import shutil
 import subprocess
 import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from core.version import CORE_VERSION
+from core.version import BUILD_CHANNEL, CORE_VERSION, release_track
 from tools.portable_runtime import cached_ffmpeg_paths, cached_runtime_path
 from tools.stage_version import stage_version, version_folder_name
 
@@ -24,8 +25,15 @@ class VersionBuildPaths:
     wheel_output: Path
 
 
-def version_build_paths(root: Path, version: str) -> VersionBuildPaths:
-    work = root.resolve() / ".work" / version_folder_name(version)
+def version_build_paths(
+    root: Path, version: str, *, channel: str = BUILD_CHANNEL
+) -> VersionBuildPaths:
+    work = (
+        root.resolve()
+        / ".work"
+        / release_track(channel)
+        / version_folder_name(version)
+    )
     return VersionBuildPaths(
         work=work,
         temp=work / "temp",
@@ -33,6 +41,27 @@ def version_build_paths(root: Path, version: str) -> VersionBuildPaths:
         executable_output=work / "exe",
         wheel_output=work / "wheel",
     )
+
+
+def configured_project_version(root: Path) -> str:
+    document = tomllib.loads((root.resolve() / "pyproject.toml").read_text(encoding="utf-8"))
+    project = document.get("project")
+    version = project.get("version") if isinstance(project, dict) else None
+    if not isinstance(version, str) or not version:
+        raise ValueError("pyproject project.version is missing")
+    return version
+
+
+def validate_build_version(root: Path, version: str) -> None:
+    project_version = configured_project_version(root)
+    if project_version != CORE_VERSION:
+        raise ValueError(
+            "version mismatch: core/version.py and pyproject.toml must match"
+        )
+    if version != CORE_VERSION:
+        raise ValueError(
+            "build version override is not allowed; update the canonical version sources"
+        )
 
 
 def portable_release_tools(root: Path, *, enabled: bool) -> dict[str, Path]:
@@ -80,9 +109,16 @@ def build_version(
     *,
     keep_work: bool = False,
     portable_runtime: bool = True,
+    channel: str = BUILD_CHANNEL,
+    confirm_stable: bool = False,
 ) -> Path:
     root = root.resolve()
-    paths = version_build_paths(root, version)
+    if channel == "stable" and not confirm_stable:
+        raise PermissionError(
+            "stable packaging requires explicit user confirmation"
+        )
+    validate_build_version(root, version)
+    paths = version_build_paths(root, version, channel=channel)
     portable_tools = portable_release_tools(root, enabled=portable_runtime)
     paths.temp.mkdir(parents=True, exist_ok=True)
     build_environment = os.environ.copy()
@@ -127,6 +163,8 @@ def build_version(
         executable=executable,
         wheel=wheel,
         portable_tools=portable_tools,
+        channel=channel,
+        confirm_stable=confirm_stable,
     )
     if not keep_work:
         shutil.rmtree(paths.work)
@@ -144,6 +182,10 @@ def main() -> int:
     parser.add_argument("--version", default=CORE_VERSION)
     parser.add_argument("--keep-work", action="store_true")
     parser.add_argument(
+        "--channel", choices=("development", "stable"), default=BUILD_CHANNEL
+    )
+    parser.add_argument("--confirm-stable", action="store_true")
+    parser.add_argument(
         "--without-portable-runtime",
         action="store_true",
         help="build without pinned Deno and FFmpeg runtimes",
@@ -155,6 +197,8 @@ def main() -> int:
             args.version,
             keep_work=args.keep_work,
             portable_runtime=not args.without_portable_runtime,
+            channel=args.channel,
+            confirm_stable=args.confirm_stable,
         )
     )
     return 0

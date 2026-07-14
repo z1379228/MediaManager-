@@ -7,9 +7,11 @@ import base64
 import hashlib
 import json
 import re
+import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
 from typing import Mapping
+from collections.abc import Callable
 
 from core.downloads.builtin_integrity import BUILTIN_PROVIDER_HASHES
 from core.security.integrity_verifier import IntegrityVerifier
@@ -24,6 +26,29 @@ class PreflightResult:
     ready: bool
     checked: int
     errors: tuple[str, ...]
+
+
+def authenticode_status(path: Path) -> str:
+    command = [
+        "powershell.exe",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "& { param([string]$p) "
+        "(Get-AuthenticodeSignature -LiteralPath $p).Status.ToString() }",
+        str(path),
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        return f"Unavailable: {error}"
+    return result.stdout.strip() or result.stderr.strip() or "Unknown"
 
 
 def _valid_identity(key_id: str, public_key: str) -> bool:
@@ -42,6 +67,8 @@ def check_release(
     public_key: str = RELEASE_PUBLIC_KEY,
     files: tuple[str, ...] = DEFAULT_RELEASE_FILES,
     builtin_hashes: Mapping[str, Mapping[str, str]] = BUILTIN_PROVIDER_HASHES,
+    require_authenticode: bool = True,
+    authenticode_checker: Callable[[Path], str] = authenticode_status,
 ) -> PreflightResult:
     root = root.resolve()
     errors: list[str] = []
@@ -93,6 +120,12 @@ def check_release(
                 required = set(files)
                 if declared != required:
                     errors.append("signed release file list does not match required files")
+
+    executable = root / "MediaManager.exe"
+    if require_authenticode and identity_valid and executable.is_file():
+        status = authenticode_checker(executable)
+        if status != "Valid":
+            errors.append(f"Authenticode signature is not valid: {status}")
 
     return PreflightResult(not errors, checked, tuple(dict.fromkeys(errors)))
 

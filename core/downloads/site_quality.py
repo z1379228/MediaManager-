@@ -19,6 +19,16 @@ _BILIBILI_FEATURES = frozenset(
         "danmaku-xml-ass-mkv",
     }
 )
+_YOUTUBE_FEATURES = frozenset(
+    {
+        "public-video-analysis",
+        "bounded-format-summary",
+        "playlist-selection",
+        "segment-download",
+        "subtitles",
+        "audio-preview",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +57,7 @@ def audit_builtin_site_quality(root: Path) -> SiteQualityReport:
     builtin = root.resolve() / "mod" / "builtin"
     try:
         generic = _load(builtin / "generic-ytdlp" / "site-matrix.json")
+        youtube = _load(builtin / "youtube" / "site-matrix.json")
         bilibili = _load(builtin / "bilibili" / "site-matrix.json")
     except (OSError, ValueError, TypeError) as error:
         return SiteQualityReport(False, 0, 0, (str(error),))
@@ -79,19 +90,45 @@ def audit_builtin_site_quality(root: Path) -> SiteQualityReport:
                 hosts.add(host)
         checked_sites += 1
 
-    features = bilibili.get("features")
-    feature_ids = {
-        feature.get("feature_id")
-        for feature in features
-        if isinstance(feature, dict)
-    } if isinstance(features, list) else set()
-    checked_features = len(feature_ids)
-    missing = _BILIBILI_FEATURES - feature_ids
-    if missing:
-        errors.append(f"Bilibili feature declarations missing: {sorted(missing)}")
-    boundaries = bilibili.get("boundaries")
-    boundary_text = " ".join(boundaries).casefold() if isinstance(boundaries, list) and all(isinstance(item, str) for item in boundaries) else ""
-    for required in ("cookie", "region", "drm", "payment"):
-        if required not in boundary_text:
-            errors.append(f"Bilibili policy boundary missing: {required}")
+    for label, matrix, required_features, required_boundaries in (
+        (
+            "YouTube",
+            youtube,
+            _YOUTUBE_FEATURES,
+            ("cookie", "region", "drm", "payment", "advertisement", "private"),
+        ),
+        (
+            "Bilibili",
+            bilibili,
+            _BILIBILI_FEATURES,
+            ("cookie", "region", "drm", "payment"),
+        ),
+    ):
+        features = matrix.get("features")
+        feature_ids = (
+            {
+                feature.get("feature_id")
+                for feature in features
+                if isinstance(feature, dict)
+                and feature.get("support_status") in _SUPPORT_STATES
+            }
+            if isinstance(features, list)
+            else set()
+        )
+        checked_features += len(feature_ids)
+        missing = required_features - feature_ids
+        if missing:
+            errors.append(
+                f"{label} feature declarations missing: {sorted(missing)}"
+            )
+        boundaries = matrix.get("boundaries")
+        boundary_text = (
+            " ".join(boundaries).casefold()
+            if isinstance(boundaries, list)
+            and all(isinstance(item, str) for item in boundaries)
+            else ""
+        )
+        for required in required_boundaries:
+            if required not in boundary_text:
+                errors.append(f"{label} policy boundary missing: {required}")
     return SiteQualityReport(not errors, checked_sites, checked_features, tuple(errors))

@@ -92,14 +92,28 @@ def result_category(
     return "music" if any(signal in signals for signal in _MUSIC_SIGNALS) else "video"
 
 
-def search(request: dict[str, Any]) -> list[dict[str, Any]]:
+def search_offset(request: dict[str, Any]) -> int:
+    value = request.get("cursor", "")
+    if value == "":
+        return 0
+    if not isinstance(value, str) or not value.isascii() or not value.isdigit():
+        raise ValueError("search cursor is invalid")
+    offset = int(value)
+    if offset < 0 or offset > 199:
+        raise ValueError("search cursor is outside the bounded result window")
+    return offset
+
+
+def search(request: dict[str, Any]) -> dict[str, Any]:
     from yt_dlp import YoutubeDL
 
     query = " ".join(str(request.get("query", "")).split())
     limit = int(request.get("limit", 12))
     if not 1 <= len(query) <= 200:
         raise ValueError("search query length is invalid")
-    limit = max(1, min(int(limit), 20))
+    limit = max(1, min(int(limit), 50))
+    offset = search_offset(request)
+    fetch_limit = min(offset + limit + 1, 200)
     content_type = search_scope(request)
     provider_query = scoped_query(query, content_type)
     options = {
@@ -109,7 +123,7 @@ def search(request: dict[str, Any]) -> list[dict[str, Any]]:
         "logger": StderrLogger(),
         "skip_download": True,
         "extract_flat": True,
-        "playlistend": limit,
+        "playlistend": fetch_limit,
         "socket_timeout": 20,
         "retries": 2,
         "extractor_retries": 2,
@@ -118,11 +132,13 @@ def search(request: dict[str, Any]) -> list[dict[str, Any]]:
     emit({"type": "progress", "title": "Searching"})
     with YoutubeDL(options) as ydl:
         info = ydl.extract_info(
-            f"ytsearch{limit}:{provider_query}",
+            f"ytsearch{fetch_limit}:{provider_query}",
             download=False,
         )
     results: list[dict[str, Any]] = []
-    for entry in (info or {}).get("entries") or []:
+    entries = ((info or {}).get("entries") or [])[offset : offset + limit + 1]
+    has_more = len(entries) > limit and offset + limit < 200
+    for entry in entries[:limit]:
         if not isinstance(entry, dict) or not entry.get("id"):
             continue
         video_id = str(entry["id"])
@@ -147,7 +163,10 @@ def search(request: dict[str, Any]) -> list[dict[str, Any]]:
                 "thumbnail_url": thumbnail_url,
             }
         )
-    return results
+    return {
+        "items": results,
+        "next_cursor": str(offset + limit) if has_more else "",
+    }
 
 
 def main() -> int:

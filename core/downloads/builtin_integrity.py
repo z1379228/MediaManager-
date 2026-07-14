@@ -15,12 +15,12 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
     },
     "bilibili": {
         "danmaku_ass.py": "32001974635228b6c5912aeaf7383db59fbed6b5086fb8e7d6ba4e6febdfd4c1",
-        "provider.py": "0941042f3ab91f5c8e4cafae54d2e55f23436ea2850a35907d2d04cd93cbeb00",
+        "provider.py": "21f6492d4c8c9daed58ead1ab574168cc0682792325159da454c243c6606cc06",
         "provider.json": "ebf0c166ce2e43479ab1f8f824b192ac9d36c40d519213b2cf336a1102a0800b",
         "site-matrix.json": "33ab50668b166ed788ffcd0bc20ca7a4b2838d968bbb9bc42fe5eda10209dcb5",
     },
     "generic-ytdlp": {
-        "provider.py": "a56056e58215e027ed1d5743be8cb09976a420f678bb7938d6d81b35c68641e1",
+        "provider.py": "b7a87e87a88cd2fd35122d9f3a71381c9b77a1f1260cf62e6caaf6d0ef8b735b",
         "provider.json": "23078fd4c45fd250306917973e5f20ba7c15ee423274e7342efae15afc304179",
         "site-matrix.json": "323947cfa84d5b5b21321dc804e73755abadeb3da9f22ffd120416615e954ce5",
     },
@@ -33,11 +33,11 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "provider.json": "db66f1895a2c8643e868c042151ba7d74e0a94a6f3cc73589a6f21f6db97cb24",
     },
     "youtube-similar": {
-        "provider.py": "c04870ef9f648106642d85c5f0480ed8ee71f0dee0c21f1123489adc18a9d848",
+        "provider.py": "f1c01bc181b81fe2accacdd461a8e9ab604f1c16914be00bbcb747f333932fc4",
         "provider.json": "3c0d3b5d558562f16700d3508099489ba4249bb183612e56e94003e309ffbd45",
     },
     "youtube-recovery": {
-        "provider.py": "db1b9626f7340570506583d1cd7d34e5e5c979fd3ded8f19007c8cd902a88c19",
+        "provider.py": "a1e36b8eb22830214c848aab9663d85fe2f82d87ce3a048c1a79debaa56e57bd",
         "provider.json": "3a516b1f9fef365c8ecdb32489bbc5bf6e365b47dcf22f13c3b2eaa7c633825a",
     },
     "youtube-history": {
@@ -45,12 +45,13 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "provider.json": "245272699a641df727f3d67b09b42d2d2bad0d0f5ea00a4086700300bfe1800a",
     },
     "youtube-search": {
-        "provider.py": "84a9b7250a015ecf89732ee7da933bd5f9f9230760245128cb282a3a1d319841",
-        "provider.json": "7ba28372e1e5e7206dd0f314ffa1c9886acebdb223101027e7fabe6b504df2c2",
+        "provider.py": "fbb4c9271212ea4e95d2d81c4cfd0958632ee284c9c945b6c797236d9bdb344e",
+        "provider.json": "8632f8e20a3f411a604c551603d49465ae7f9a0680d467786dedf3f2b4d0295b",
     },
     "youtube": {
-        "provider.py": "58fb86c09fbcaafb01f569669d055b6fbbdf8f609d030ec839c2a771fb8af1ce",
+        "provider.py": "cf5756e5204d85f329adab2ebb8ffeca72b111b7bb299982ec79c810e626ccd7",
         "provider.json": "9fb2572b52b757aaa7e3f06e1a81f84c5f2dedfa834d7646f9406125914f1ca2",
+        "site-matrix.json": "4654a003d2d835585c3a5ca8871e132830b335a4faf1a914cbb6df63e248d1fa",
     }
 }
 

@@ -6,6 +6,11 @@ import threading
 from pathlib import Path
 
 from contracts.media_options_v1 import FORMAT_PRESETS_V1
+from contracts.media_analysis_v1 import (
+    MediaAnalysisContractError,
+    parse_media_formats,
+    parse_media_languages,
+)
 from contracts.playlist_v1 import PlaylistEntryV1
 from contracts.discovery_v1 import DiscoveryItemV1
 from core.downloads.archive import DuplicateDownloadError
@@ -23,6 +28,14 @@ from core.downloads.models import (
 from core.downloads.playlist_batch import build_playlist_requests
 from core.downloads.playlist_transfer import import_playlist_entries
 from core.downloads.preflight import preflight_download_batch
+from core.downloads.preparation import (
+    available_preset_ids,
+    build_batch_preview,
+    estimate_preset_bytes,
+    format_detail_lines,
+    human_bytes,
+    suggest_output_filename,
+)
 from core.downloads.split_batch import build_split_requests
 from core.settings import SettingsService, normalized_download_workers
 from trusted_ui.batch_import_dialog import show_batch_import_dialog
@@ -191,6 +204,10 @@ def create_download_panel(context: object, parent: object = None) -> object:
             self.confirmed_split_plan = None
             self.analyzed_url = ""
             self.analyzed_info: dict[str, object] = {}
+            self.analyzed_formats = ()
+            self.analyzed_audio_languages = ()
+            self.analyzed_subtitle_languages = ()
+            self.filename_manually_edited = False
             self.render_signature: tuple[object, ...] | None = None
             self.rendered_task_ids: tuple[str, ...] = ()
             shell = QVBoxLayout(self)
@@ -429,8 +446,31 @@ def create_download_panel(context: object, parent: object = None) -> object:
             self.format_preset.currentIndexChanged.connect(
                 self.update_danmaku_options
             )
+            self.format_preset.currentIndexChanged.connect(
+                self.update_download_preparation
+            )
             media_options.addStretch()
             input_layout.addLayout(media_options)
+
+            naming_options = QHBoxLayout()
+            naming_label = QLabel("輸出檔名")
+            naming_label.setObjectName("fieldLabel")
+            naming_options.addWidget(naming_label)
+            self.output_filename = QLineEdit()
+            self.output_filename.setAccessibleName("輸出檔名預覽")
+            self.output_filename.setMaxLength(180)
+            self.output_filename.setPlaceholderText(
+                "讀取單一網址資訊後自動產生；可自行修改"
+            )
+            self.output_filename.textEdited.connect(
+                lambda: setattr(self, "filename_manually_edited", True)
+            )
+            naming_options.addWidget(self.output_filename, 1)
+            self.preparation_preview = QLabel("尚未取得實際格式與容量資訊")
+            self.preparation_preview.setObjectName("preview")
+            self.preparation_preview.setWordWrap(True)
+            naming_options.addWidget(self.preparation_preview, 1)
+            input_layout.addLayout(naming_options)
             page.addWidget(input_card)
 
             stats = QHBoxLayout()
@@ -710,7 +750,69 @@ def create_download_panel(context: object, parent: object = None) -> object:
             self.danmaku_xml.setVisible(is_bilibili_batch)
             if not is_bilibili_batch:
                 self.danmaku_xml.setChecked(False)
+            single_item = len(urls) <= 1
+            self.output_filename.setEnabled(single_item)
+            self.output_filename.setToolTip(
+                "" if single_item else "批量下載會為每個項目各自產生檔名"
+            )
             self.update_danmaku_options()
+
+        def update_download_preparation(self) -> None:
+            if not self.analyzed_info:
+                self.preparation_preview.setText("尚未取得實際格式與容量資訊")
+                return
+            preset_id = str(self.format_preset.currentData())
+            if not self.filename_manually_edited:
+                self.output_filename.setText(
+                    suggest_output_filename(
+                        str(self.analyzed_info.get("title") or "media"),
+                        str(self.analyzed_info.get("id") or ""),
+                        preset_id,
+                    )
+                )
+            estimated = estimate_preset_bytes(self.analyzed_formats, preset_id)
+            known_sizes = sum(
+                item.estimated_bytes is not None for item in self.analyzed_formats
+            )
+            audio_label = ", ".join(self.analyzed_audio_languages) or "未標示"
+            subtitle_label = ", ".join(self.analyzed_subtitle_languages) or "無"
+            self.preparation_preview.setText(
+                f"實際格式 {len(self.analyzed_formats)} 種 · "
+                f"含容量資訊 {known_sizes} 種 · 音軌 {audio_label} · "
+                f"字幕 {subtitle_label} · 此預設估計 {human_bytes(estimated)}"
+            )
+            self.preparation_preview.setToolTip(
+                "\n".join(format_detail_lines(self.analyzed_formats))
+                or "來源未提供格式細節"
+            )
+
+        def update_available_presets(self) -> None:
+            current = str(self.format_preset.currentData() or "best")
+            allowed = set(available_preset_ids(self.analyzed_formats))
+            self.format_preset.blockSignals(True)
+            self.format_preset.clear()
+            for preset in FORMAT_PRESETS_V1:
+                if preset.preset_id in allowed:
+                    self.format_preset.addItem(preset.label, preset.preset_id)
+            index = self.format_preset.findData(current)
+            self.format_preset.setCurrentIndex(max(0, index))
+            self.format_preset.blockSignals(False)
+            self.update_danmaku_options()
+
+        def update_available_subtitles(self) -> None:
+            current = str(self.subtitle_mode.currentData() or "none")
+            self.subtitle_mode.blockSignals(True)
+            self.subtitle_mode.clear()
+            self.subtitle_mode.addItem("不下載字幕", "none")
+            if self.analyzed_subtitle_languages:
+                self.subtitle_mode.addItem("指定語言", "selected")
+                self.subtitle_mode.addItem("全部可用字幕", "all")
+            index = self.subtitle_mode.findData(current)
+            self.subtitle_mode.setCurrentIndex(max(0, index))
+            self.subtitle_mode.blockSignals(False)
+            self.subtitle_languages.setVisible(
+                self.subtitle_mode.currentData() == "selected"
+            )
 
         def update_danmaku_options(self) -> None:
             xml_active = (
@@ -757,6 +859,14 @@ def create_download_panel(context: object, parent: object = None) -> object:
                 return
             self.analyzed_url = urls[0]
             self.analyzed_info = {}
+            self.analyzed_formats = ()
+            self.analyzed_audio_languages = ()
+            self.analyzed_subtitle_languages = ()
+            self.filename_manually_edited = False
+            self.output_filename.clear()
+            self.update_available_presets()
+            self.update_available_subtitles()
+            self.update_download_preparation()
             self.confirmed_split_plan = None
             self.prepare_split.setVisible(False)
             self.read_info.setEnabled(False)
@@ -780,6 +890,19 @@ def create_download_panel(context: object, parent: object = None) -> object:
                 return
             data = info if isinstance(info, dict) else {}
             self.analyzed_info = data
+            try:
+                self.analyzed_formats = parse_media_formats(data.get("formats", []))
+                self.analyzed_audio_languages = parse_media_languages(
+                    data.get("audio_languages", [])
+                )
+                self.analyzed_subtitle_languages = parse_media_languages(
+                    data.get("subtitle_languages", [])
+                )
+            except MediaAnalysisContractError as format_error:
+                self.analyzed_formats = ()
+                self.analyzed_audio_languages = ()
+                self.analyzed_subtitle_languages = ()
+                self.preparation_preview.setText(f"格式資訊無效：{format_error}")
             duration = data.get("duration")
             duration_text = (
                 f"{int(duration) // 60}:{int(duration) % 60:02d}"
@@ -804,6 +927,10 @@ def create_download_panel(context: object, parent: object = None) -> object:
             )
             self.prepare_split.setVisible(split_available)
             self.prepare_split.setEnabled(split_available)
+            self.filename_manually_edited = False
+            self.update_available_presets()
+            self.update_available_subtitles()
+            self.update_download_preparation()
 
         def prepare_playlist(self) -> None:
             if not self.any_download_provider_enabled():
@@ -880,6 +1007,8 @@ def create_download_panel(context: object, parent: object = None) -> object:
                     timed_comment_mode=timed_comment_mode,
                     container_preset=container_preset,
                 )
+                if not self.confirm_requests(tuple(requests)):
+                    return
                 context.download_queue.add_batch(list(requests))
             except DuplicateDownloadError:
                 QMessageBox.information(
@@ -1165,6 +1294,8 @@ def create_download_panel(context: object, parent: object = None) -> object:
                     timed_comment_mode=timed_comment_mode,
                     container_preset=container_preset,
                 )
+                if not self.confirm_requests(tuple(requests)):
+                    return
                 context.download_queue.add_batch(list(requests))
             except DuplicateDownloadError:
                 QMessageBox.information(
@@ -1216,6 +1347,11 @@ def create_download_panel(context: object, parent: object = None) -> object:
                             source_title=str(info.get("title") or ""),
                             source_artist=str(info.get("uploader") or ""),
                             source_category="video" if info else "",
+                            output_filename=(
+                                self.output_filename.text().strip()
+                                if len(urls) == 1
+                                else ""
+                            ),
                             format_preset=str(self.format_preset.currentData()),
                             subtitle_mode=subtitle_mode,
                             subtitle_languages=subtitle_languages,
@@ -1223,7 +1359,18 @@ def create_download_panel(context: object, parent: object = None) -> object:
                             container_preset=container_preset,
                         )
                     )
-                preflight_download_batch(requests)
+                estimated = (
+                    estimate_preset_bytes(
+                        self.analyzed_formats,
+                        str(self.format_preset.currentData()),
+                    )
+                    if len(urls) == 1 and urls[0] == self.analyzed_url
+                    else None
+                )
+                if not self.confirm_requests(
+                    tuple(requests), estimated_bytes=estimated
+                ):
+                    return
                 context.download_queue.add_batch(requests)
             except DuplicateDownloadError:
                 QMessageBox.information(
@@ -1237,6 +1384,37 @@ def create_download_panel(context: object, parent: object = None) -> object:
                 return
             self.urls.clear()
             self.refresh()
+
+        def confirm_requests(
+            self,
+            requests: tuple[DownloadRequest, ...],
+            *,
+            estimated_bytes: int | None = None,
+        ) -> bool:
+            context.download_providers.validate_batch(requests)
+            preflight = preflight_download_batch(
+                requests, estimated_bytes=estimated_bytes
+            )
+            confirmation = build_batch_preview(
+                requests, preflight, estimated_bytes=estimated_bytes
+            )
+            filename_line = (
+                f"\n檔名：{confirmation.filename}"
+                if confirmation.filename
+                else "\n檔名：各項目依標題自動產生"
+            )
+            answer = QMessageBox.question(
+                self,
+                "確認下載工作",
+                f"項目：{confirmation.item_count}\n"
+                f"格式：{self.format_preset.currentText()}\n"
+                f"估計容量：{human_bytes(confirmation.estimated_bytes)}\n"
+                f"磁碟可用：{human_bytes(confirmation.free_bytes)}\n"
+                f"輸出：{confirmation.output_directory}{filename_line}",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            return answer == QMessageBox.StandardButton.Yes
 
         def refresh(self) -> None:
             selected_task_id = self.selected_task_id()

@@ -1,5 +1,9 @@
 # Historical release audit — 2026-07-14
 
+> Historical snapshot only. Statements about the repository having no commits
+> describe the checkout at audit time and are not the current Git state. Current
+> release ordering is maintained in `roadmap-4.0-to-5.0.md`.
+
 ## Scope and result
 
 The retained `Version/1.0` through `Version/1.8` folders were checked for

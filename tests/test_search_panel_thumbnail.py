@@ -4,6 +4,11 @@ from dataclasses import dataclass
 
 import pytest
 
+from contracts.discovery_v1 import DiscoveryItemV1
+from core.discovery.adapters import (
+    FederatedSearchResult,
+    SearchAdapterFailure,
+)
 from trusted_ui.search_panel import create_search_panel
 
 
@@ -56,6 +61,41 @@ def test_stale_thumbnail_callback_cannot_repaint_current_results(
     panel.show_thumbnail(3, 0, result, pixmap)
     assert cell.text() == ""
     assert not cell.icon().isNull()
+
+    panel.shutdown()
+    panel.close()
+    panel.deleteLater()
+    app.processEvents()
+
+
+def test_federated_results_show_source_and_partial_failure(monkeypatch) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    panel = create_search_panel(_Context(_Discovery()))
+    item = DiscoveryItemV1(
+        "video-1",
+        "https://example.test/watch?v=video-1",
+        "Example",
+        "Artist",
+        120,
+        "zh-TW",
+        "music",
+        "",
+    )
+    result = FederatedSearchResult(
+        (item,),
+        (SearchAdapterFailure("offline-search", "temporary outage"),),
+        ("youtube-search",),
+    )
+
+    panel.show_results(result, "")
+
+    assert panel.table.item(0, 5).text() == "youtube-search"
+    assert "1 個來源失敗" in panel.status.text()
+    assert "offline-search: temporary outage" in panel.status.toolTip()
 
     panel.shutdown()
     panel.close()
