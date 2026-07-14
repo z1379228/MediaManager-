@@ -13,6 +13,7 @@ from core.downloads.builtin import (
 )
 from core.dependency_health import find_executable, find_javascript_runtime
 from core.discovery.service import DiscoveryService
+from core.downloads.capabilities import builtin_download_capability
 from core.downloads.builtin_integrity import BUILTIN_PROVIDER_HASHES
 from core.downloads.provider_registry import DownloadProviderRegistry
 from core.downloads.queue import DownloadQueue
@@ -165,6 +166,9 @@ class Bootstrap:
                 preview_root=paths.temp / "youtube-auto-split",
             )
             download_providers.register(youtube, enabled=True)
+            download_providers.register_capability(
+                builtin_download_capability("youtube")
+            )
             generic_ytdlp = SubprocessDownloadProvider(
                 builtin_root / "generic-ytdlp",
                 application_root=paths.application,
@@ -173,6 +177,9 @@ class Bootstrap:
                 expected_hashes=BUILTIN_PROVIDER_HASHES["generic-ytdlp"],
             )
             download_providers.register(generic_ytdlp, enabled=False)
+            download_providers.register_capability(
+                builtin_download_capability("generic-ytdlp")
+            )
             bilibili = SubprocessDownloadProvider(
                 builtin_root / "bilibili",
                 application_root=paths.application,
@@ -181,6 +188,9 @@ class Bootstrap:
                 expected_hashes=BUILTIN_PROVIDER_HASHES["bilibili"],
             )
             download_providers.register(bilibili, enabled=False)
+            download_providers.register_capability(
+                builtin_download_capability("bilibili")
+            )
             youtube_search = SubprocessDownloadProvider(
                 builtin_root / "youtube-search",
                 application_root=paths.application,

@@ -11,6 +11,8 @@ from typing import Any
 
 from contracts.playlist_v1 import PlaylistEntryV1
 from contracts.download_provider import DownloadProvider
+from contracts.download_capability_v2 import DownloadCapabilityV2
+from core.downloads.negotiation import negotiate_download
 from core.downloads.models import DownloadRequest
 
 
@@ -28,6 +30,7 @@ class ProviderStatus:
 class DownloadProviderRegistry:
     def __init__(self, state_path: Path | None = None) -> None:
         self._providers: dict[str, DownloadProvider] = {}
+        self._capabilities: dict[str, DownloadCapabilityV2] = {}
         self._enabled: set[str] = set()
         self._lock = RLock()
         self._state_path = state_path
@@ -47,6 +50,19 @@ class DownloadProviderRegistry:
                 ProviderStatus(key, provider.display_name, key in self._enabled)
                 for key, provider in sorted(self._providers.items())
             )
+
+    def register_capability(self, capability: DownloadCapabilityV2) -> None:
+        with self._lock:
+            if capability.provider_id not in self._providers:
+                raise KeyError(capability.provider_id)
+            if capability.provider_id in self._capabilities:
+                raise ValueError("download capability is already registered")
+            self._capabilities[capability.provider_id] = capability
+
+    def capability_for(self, url: str) -> DownloadCapabilityV2 | None:
+        provider_id = self.matching_provider_id(url)
+        with self._lock:
+            return self._capabilities.get(provider_id) if provider_id else None
 
     def set_enabled(self, provider_id: str, enabled: bool) -> None:
         with self._lock:
@@ -97,7 +113,12 @@ class DownloadProviderRegistry:
         progress: Callable[[dict[str, Any]], None],
         cancel_event: Event,
     ) -> str:
-        return self.provider_for(request.url).download(request, progress, cancel_event)
+        provider = self.provider_for(request.url)
+        with self._lock:
+            capability = self._capabilities.get(provider.provider_id)
+        if capability is not None:
+            negotiate_download(request, capability)
+        return provider.download(request, progress, cancel_event)
 
     def _load_state(self) -> dict[str, bool]:
         if self._state_path is None or not self._state_path.is_file():

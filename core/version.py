@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-CORE_VERSION = "3.5.0"
+CORE_VERSION = "4.0.0"
 
 
 def release_version(value: str) -> tuple[int, int, int]:
