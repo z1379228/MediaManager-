@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Mapping
 
 from core.security.release_layout import SOURCE_RELEASE_FILES
-from core.version import CORE_VERSION, release_version
+from core.version import BUILD_CHANNEL, CORE_VERSION, release_track, release_version
+from tools.release_inventory import build_cyclonedx_sbom, build_inventory
 
 
 _REPLACE_ATTEMPTS = 5
@@ -73,9 +74,17 @@ def stage_version(
     executable: Path | None = None,
     wheel: Path | None = None,
     portable_tools: Mapping[str, Path] | None = None,
+    channel: str = BUILD_CHANNEL,
+    confirm_stable: bool = False,
 ) -> Path:
     source_root = source_root.resolve()
     output_root = (output_root or source_root / "Version").resolve()
+    track = release_track(channel)
+    if channel == "stable" and not confirm_stable:
+        raise PermissionError(
+            "stable packaging requires explicit user confirmation"
+        )
+    output_root = (output_root / track).resolve()
     folder = version_folder_name(version)
     target = output_root / folder
     staging = output_root / f".{folder}.staging"
@@ -123,11 +132,27 @@ def stage_version(
         info = {
             "schema_version": 1,
             "core_version": version,
+            "build_channel": channel,
+            "release_track": track,
             "version_folder": folder,
             "portable_tools": staged_tools,
         }
         (staging / "release-info.json").write_text(
             json.dumps(info, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        inventory = build_inventory(core_version=version)
+        (staging / "dependency-inventory.json").write_text(
+            json.dumps(inventory, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        (staging / "sbom.cdx.json").write_text(
+            json.dumps(
+                build_cyclonedx_sbom(inventory),
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
             encoding="utf-8",
         )
         checksum_files = sorted(
@@ -165,6 +190,10 @@ def main() -> int:
     parser.add_argument("--version", default=CORE_VERSION)
     parser.add_argument("--executable", type=Path)
     parser.add_argument("--wheel", type=Path)
+    parser.add_argument(
+        "--channel", choices=("development", "stable"), default=BUILD_CHANNEL
+    )
+    parser.add_argument("--confirm-stable", action="store_true")
     args = parser.parse_args()
     target = stage_version(
         args.source_root,
@@ -172,6 +201,8 @@ def main() -> int:
         version=args.version,
         executable=args.executable,
         wheel=args.wheel,
+        channel=args.channel,
+        confirm_stable=args.confirm_stable,
     )
     print(target)
     return 0

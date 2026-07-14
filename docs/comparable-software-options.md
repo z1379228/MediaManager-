@@ -32,6 +32,46 @@ The product remains free, local-first and ad-free. Online conversion chains,
 advertising redirects, forced browser notifications and bundled offers are not
 acceptable reference patterns.
 
+## Additional transfer-manager review (2026-07-15)
+
+The reference set now also includes MegaDownloader, the current MEGA Desktop
+App (formerly MEGAsync), iTubeGo, BitComet, uTorrent / µTorrent, qBittorrent, Vuze,
+Deluge and Gopeed. They are workflow references only; they are not bundled,
+called, endorsed or treated as proof that MediaManager supports the same
+protocols.
+
+The useful, non-duplicated directions are:
+
+1. **MEGA stays an independent candidate MOD.** Public MEGA links require
+   client-side key handling and are not ordinary media-page extraction. The
+   first catalog entry only validates modern official `mega.nz` public-share
+   URLs and opens them in the system browser. A future downloader must use the
+   official MEGA SDK or MEGAcmd, disclose the dependency, avoid account/session
+   import, and respect transfer quotas and access controls.
+2. **Multi-file selection and priority are reusable queue concepts.**
+   BitComet, µTorrent and qBittorrent show clear per-file selection, priority,
+   bandwidth and scheduling controls. MediaManager should expose those only
+   when a provider returns a multi-file package; they do not justify adding a
+   torrent engine to the core.
+3. **P2P is a separate transport boundary.** qBittorrent, Vuze and Deluge are
+   BitTorrent clients, not website downloaders. Any future `p2p-transfer` MOD
+   must be disabled by default, make upload/seeding visible, exclude built-in
+   torrent search, and require explicit bandwidth, storage and legal-use
+   confirmation.
+4. **Gopeed validates the existing modular direction.** Its HTTP API and
+   extension model support keeping protocol engines outside a clean UI. A
+   future local adapter may hand tasks to a user-installed Gopeed instance, but
+   remote control, open ports and API tokens must never be enabled by default.
+5. **iTubeGo mostly overlaps current work.** Batch/playlist selection,
+   subtitles, format presets, thumbnails and search already have MediaManager
+   owners. No duplicate browser, search engine or paid-conversion surface is
+   added.
+
+MegaDownloader is retained only as a historical MEGA-link workflow reference;
+because there is no current official MEGA distribution or supported integration
+contract for it, MediaManager must not depend on it or direct users to an
+unverified installer.
+
 ## Reference groups
 
 Desktop applications are the primary product and workflow references:
@@ -41,6 +81,15 @@ Desktop applications are the primary product and workflow references:
 - MediaHuman YouTube Downloader
 - JDownloader
 - Stacher
+- MegaDownloader (historical workflow reference only)
+- MEGA Desktop App / MEGAsync
+- iTubeGo
+- BitComet
+- uTorrent / µTorrent
+- qBittorrent
+- Vuze
+- Deluge
+- Gopeed
 
 Web converters are secondary references for short interaction flows only:
 
@@ -79,30 +128,28 @@ An existing MediaManager design becomes a revision candidate when a comparable
 desktop workflow provides materially clearer identification or fewer steps
 without weakening isolation, resource bounds or user confirmation.
 
-## Add as near-term options
+## Implemented or already scheduled
 
 1. Download archive and duplicate detection.
-   yt-dlp already treats successful IDs as a durable archive. MediaManager should
-   expose this as a small independent MOD and keep queue history separate.
+   Implemented with queue history kept separate.
 2. Explainable recovery candidates.
-   Show title/artist match reasons and never replace a missing item silently.
+   Implemented; title/artist match reasons remain visible and replacement is explicit.
 3. Format and naming presets.
-   Small named presets are easier to maintain than exposing every yt-dlp option.
+   Implemented as bounded named presets; richer preflight detail remains in 4.2.
 4. Completion and failure notifications.
-   Keep notifications local and user-controlled.
+   Implemented as local, user-controlled notifications.
 5. Bounded search thumbnails and selected-item audio preview.
-   Load small artwork only for visible results and create preview audio only
-   after an explicit action.
+   Implemented with bounded thumbnails and explicit preview actions.
 
-## Add later
+## Existing optional MODs and 4.x work
 
-1. Playlist or channel schedules with per-source presets.
-2. Metadata/tag correction and smart local playlists.
-3. Import/export of playlists and archive IDs.
-4. A disabled-by-default local speech-to-text MOD with TXT/SRT/VTT export.
-5. A bounded media-convert MOD using named FFmpeg presets and stream-copy first.
-6. Optional metadata correction after download, including artist/title tags and
-   chapter-aware audio naming, without making network enrichment automatic.
+1. Automation, smart playlists, playlist/archive import/export, local
+   speech-to-text, and bounded media conversion already exist as optional MODs.
+2. Per-source scheduling, richer post-download metadata correction, and the 4.x
+   search/download preflight work stay on the authoritative 4.0-to-5.0 roadmap.
+3. Newly scanned gallery, transcript-search, cross-site mirror, and optional
+   direct-transfer ideas are deferred until after 5.0 stable and do not expand
+   the current release scope.
 
 ## Do not prioritize
 
@@ -139,6 +186,16 @@ Sources:
 - https://www.shutterencoder.com/
 - https://www.shutterencoder.com/documentation/
 - https://github.com/NickvisionApps/Parabolic/releases
+- https://mega.io/desktop
+- https://github.com/meganz/sdk
+- https://github.com/meganz/MEGAcmd
+- https://itubego.com/youtube-downloader/
+- https://www.bitcomet.com/en/features
+- https://www.utorrent.com/
+- https://www.qbittorrent.org/
+- https://www.vuze.com/
+- https://deluge-torrent.org/
+- https://gopeed.com/docs
 
 ## Implemented download archive
 

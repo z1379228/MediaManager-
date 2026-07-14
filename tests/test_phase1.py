@@ -56,6 +56,18 @@ class PhaseOneTests(unittest.TestCase):
         self.assertEqual(result["access_token"], "[REDACTED]")
         self.assertNotIn("bearer-secret", result["nested"][0])
 
+    def test_redacts_url_secrets_mega_keys_and_windows_user(self) -> None:
+        value = (
+            "https://example.test/video?token=secret&x=1 "
+            "https://mega.nz/file/abcdef#abcdefghijklmnop "
+            r"C:\Users\Alice\Downloads\result.mp4"
+        )
+        result = redact(value)
+        self.assertNotIn("secret", result)
+        self.assertNotIn("abcdefghijklmnop", result)
+        self.assertNotIn("Alice", result)
+        self.assertIn("C:\\Users\\[USER]", result)
+
     def test_integrity_verification(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

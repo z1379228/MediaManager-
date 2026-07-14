@@ -80,6 +80,37 @@ def test_registry_enforces_registered_download_capability(tmp_path) -> None:
         )
 
 
+def test_playlist_and_batch_limits_are_enforced_before_queueing(tmp_path) -> None:
+    registry = DownloadProviderRegistry()
+    youtube = provider()
+    youtube.playlist.return_value = ()
+    registry.register(youtube, enabled=True)
+    capability = DownloadCapabilityV2(
+        "youtube",
+        ("youtube",),
+        ("best",),
+        ("none",),
+        ("none",),
+        True,
+        False,
+        True,
+        2,
+    )
+    registry.register_capability(capability)
+
+    registry.playlist("https://youtube.com/playlist?list=x", limit=500)
+    youtube.playlist.assert_called_once_with(
+        "https://youtube.com/playlist?list=x", limit=2
+    )
+
+    requests = tuple(
+        DownloadRequest(f"https://youtube.com/watch?v={index}", tmp_path)
+        for index in range(3)
+    )
+    with pytest.raises(DownloadCapabilityError, match="exceeds youtube limit"):
+        registry.validate_batch(requests)
+
+
 def test_close_disables_and_closes_every_provider() -> None:
     registry = DownloadProviderRegistry()
     youtube = provider()

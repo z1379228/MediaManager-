@@ -5,6 +5,7 @@ from unittest.mock import Mock
 import pytest
 
 from contracts.discovery_v1 import DiscoveryContractError, DiscoveryItemV1
+from contracts.search_v2 import SearchCapabilityV2
 from contracts.split_plan_v1 import SplitPlanV1
 from core.discovery.service import DiscoveryService
 
@@ -67,6 +68,61 @@ def test_discovery_service_routes_only_when_enabled(tmp_path) -> None:
     )
     with pytest.raises(ValueError, match="content type"):
         service.search("example", content_type="unknown")
+    service.close()
+
+
+def test_discovery_service_uses_provider_declared_search_capability(tmp_path) -> None:
+    provider = Mock()
+    provider.provider_id = "catalog-search"
+    provider.display_name = "Catalog Search"
+    provider.search_capability = SearchCapabilityV2(
+        "catalog-search",
+        ("catalog",),
+        ("all",),
+        7,
+        "none",
+        False,
+        False,
+    )
+    provider.search.return_value = ()
+    service = DiscoveryService(tmp_path / "discovery-state.json")
+
+    service.register(provider, enabled=True)
+
+    assert service.search_capabilities() == (provider.search_capability,)
+    result = service.federated_search("example", limit=20)
+    assert result.items == ()
+    provider.search.assert_called_once_with(
+        "example", limit=7, content_type="all"
+    )
+    service.close()
+
+
+def test_search_source_health_tracks_failure_and_recovery(tmp_path) -> None:
+    provider = Mock()
+    provider.provider_id = "catalog-search"
+    provider.display_name = "Catalog Search"
+    provider.search_capability = SearchCapabilityV2(
+        "catalog-search", ("catalog",), ("all",), 7, "none", False, False
+    )
+    provider.search.side_effect = RuntimeError("offline")
+    service = DiscoveryService(tmp_path / "discovery-state.json")
+    service.register(provider, enabled=True)
+
+    failed = service.federated_search("example")
+
+    assert failed.failures[0].message == "offline"
+    status = service.search_source_statuses()[0]
+    assert status.health == "error"
+    assert status.message == "offline"
+
+    provider.search.side_effect = None
+    provider.search.return_value = ()
+    service.federated_search("example")
+    assert service.search_source_statuses()[0].health == "ready"
+
+    service.set_enabled("catalog-search", False)
+    assert service.search_source_statuses()[0].health == "disabled"
     service.close()
 
 

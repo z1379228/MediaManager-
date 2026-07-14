@@ -140,7 +140,7 @@ def rank(
 ) -> list[dict[str, Any]]:
     """Return a bounded, explainable list instead of only one random item."""
 
-    if not isinstance(limit, int) or not 1 <= limit <= 20:
+    if not isinstance(limit, int) or not 1 <= limit <= 50:
         raise ValueError("similar result limit invalid")
     unique: dict[str, dict[str, Any]] = {}
     for candidate in candidates[:120]:

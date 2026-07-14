@@ -129,6 +129,7 @@ def run_matrix(
         results.append(row)
     report: dict[str, object] = {
         "schema_version": 1,
+        "mode": "live-public-content",
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "status": (
             "PASS" if all(row["status"] == "PASS" for row in results) else "FAIL"

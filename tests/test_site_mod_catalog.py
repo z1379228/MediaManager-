@@ -8,6 +8,7 @@ from trusted_ui.site_mod_catalog import (
     FACEBOOK_HOME,
     INSTAGRAM_EXPORT_HELP,
     INSTAGRAM_HOME,
+    MEGA_HOME,
     OFFICIAL_BRIDGES,
     SITE_MOD_CANDIDATES,
     THREADS_EXPORT_HELP,
@@ -15,6 +16,7 @@ from trusted_ui.site_mod_catalog import (
     validated_ani_gamer_url,
     validated_facebook_url,
     validated_instagram_url,
+    validated_mega_url,
     validated_threads_url,
 )
 
@@ -25,6 +27,7 @@ def test_site_mod_catalog_registers_requested_candidates() -> None:
         "facebook",
         "instagram",
         "threads",
+        "mega",
     )
     assert all(
         "不擷取" in item.safety_boundary
@@ -39,6 +42,7 @@ def test_site_mod_catalog_registers_requested_candidates() -> None:
         "facebook",
         "instagram",
         "threads",
+        "mega",
     )
 
 
@@ -217,6 +221,49 @@ def test_threads_official_url_rejects_nonpost_or_tracking_pages(
     assert validated_threads_url(value) is None
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    (
+        ("", MEGA_HOME),
+        ("https://mega.io/", MEGA_HOME),
+        ("https://mega.nz/", MEGA_HOME),
+        (
+            "https://www.mega.nz/file/AbCdEf12#abcdefghijklmnopQRSTUVWX",
+            "https://mega.nz/file/AbCdEf12#abcdefghijklmnopQRSTUVWX",
+        ),
+        (
+            "https://mega.nz/folder/ZyXwVu98#1234567890abcdefghijklmnop",
+            "https://mega.nz/folder/ZyXwVu98#1234567890abcdefghijklmnop",
+        ),
+    ),
+)
+def test_mega_official_url_accepts_home_or_bounded_public_share(
+    value: str,
+    expected: str,
+) -> None:
+    assert validated_mega_url(value) == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "http://mega.nz/file/AbCdEf12#abcdefghijklmnop",
+        "https://mega.nz.evil.example/file/AbCdEf12#abcdefghijklmnop",
+        "https://user:secret@mega.nz/file/AbCdEf12#abcdefghijklmnop",
+        "https://mega.nz:443/file/AbCdEf12#abcdefghijklmnop",
+        "https://mega.nz/file/AbCdEf12?download=1#abcdefghijklmnop",
+        "https://mega.nz/file/AbCdEf12",
+        "https://mega.nz/file/a#abcdefghijklmnop",
+        "https://mega.nz/file/AbCdEf12#short",
+        "https://mega.nz/folder/AbCdEf12#abcdefghijklmnop/folder/nested",
+        "https://mega.io/file/AbCdEf12#abcdefghijklmnop",
+        "https://mega.nz/#!legacy!link",
+    ),
+)
+def test_mega_official_url_rejects_unsafe_or_unsupported_forms(value: str) -> None:
+    assert validated_mega_url(value) is None
+
+
 def test_site_mod_catalog_panel_marks_candidates_as_not_installed(
     monkeypatch,
 ) -> None:
@@ -249,11 +296,12 @@ def test_site_mod_catalog_panel_marks_candidates_as_not_installed(
         for label in panel.findChildren(QLabel)
         if label.objectName() == "dependencySummary"
     ]
-    assert table.rowCount() == 4
-    assert summaries == ["已登記 4 個候選網站 MOD"]
-    assert {table.item(row, 1).text() for row in range(4)} == {
+    assert table.rowCount() == 5
+    assert summaries == ["已登記 5 個候選網站 MOD"]
+    assert {table.item(row, 1).text() for row in range(5)} == {
         "官方播放限定",
         "官方工具限定",
+        "官方 SDK 評估",
     }
     official_site = panel.findChild(QComboBox, "officialSiteBridgeSelect")
     official_url = panel.findChild(QLineEdit, "officialSiteBridgeUrl")
@@ -304,6 +352,15 @@ def test_site_mod_catalog_panel_marks_candidates_as_not_installed(
         "https://www.threads.com/@openai/post/Cexample789/",
         THREADS_EXPORT_HELP,
     ]
+    official_site.setCurrentIndex(official_site.findData("mega"))
+    assert open_help.isHidden()
+    official_url.setText(
+        "https://www.mega.nz/file/AbCdEf12#abcdefghijklmnopQRSTUVWX"
+    )
+    open_official.click()
+    assert opened[-1] == (
+        "https://mega.nz/file/AbCdEf12#abcdefghijklmnopQRSTUVWX"
+    )
     panel.close()
     panel.deleteLater()
     app.processEvents()

@@ -230,6 +230,9 @@ def test_bilibili_download_keeps_danmaku_as_xml_sidecar(
     assert captured[0]["subtitleslangs"] == ["danmaku"]
     assert captured[0]["subtitlesformat"] == "best"
     assert "embedsubtitles" not in captured[0]
+    assert captured[0]["continuedl"] is True
+    assert captured[0]["nopart"] is False
+    assert captured[0]["overwrites"] is False
 
 
 def test_bilibili_download_converts_danmaku_to_ass_and_retains_xml(

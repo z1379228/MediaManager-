@@ -46,6 +46,76 @@ def runtime_options(request: dict[str, Any]) -> dict[str, Any]:
     return {"js_runtimes": {raw["name"]: {"path": str(path)}}}
 
 
+def format_summaries(info: dict[str, Any]) -> list[dict[str, Any]]:
+    values: dict[str, dict[str, Any]] = {}
+    raw_formats = info.get("formats")
+    for raw in raw_formats[:500] if isinstance(raw_formats, list) else []:
+        if not isinstance(raw, dict):
+            continue
+        format_id = str(raw.get("format_id") or "")[:100]
+        if not format_id or format_id in values:
+            continue
+
+        def bounded_number(name: str, maximum: float) -> float | None:
+            value = raw.get(name)
+            return (
+                float(value)
+                if isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and 0 < value <= maximum
+                else None
+            )
+
+        size = bounded_number("filesize", 16 * 1024**4) or bounded_number(
+            "filesize_approx", 16 * 1024**4
+        )
+        values[format_id] = {
+            "format_id": format_id,
+            "extension": str(raw.get("ext") or "unknown")[:16],
+            "width": (
+                int(width) if (width := bounded_number("width", 16384)) else None
+            ),
+            "height": (
+                int(height) if (height := bounded_number("height", 8640)) else None
+            ),
+            "fps": bounded_number("fps", 1000),
+            "video_codec": str(raw.get("vcodec") or "none")[:80],
+            "audio_codec": str(raw.get("acodec") or "none")[:80],
+            "estimated_bytes": int(size) if size else None,
+        }
+    return sorted(
+        values.values(),
+        key=lambda item: (int(item["height"] or 0), int(item["estimated_bytes"] or 0)),
+        reverse=True,
+    )[:40]
+
+
+def media_languages(info: dict[str, Any]) -> tuple[list[str], list[str]]:
+    subtitles: set[str] = set()
+    for field in ("subtitles", "automatic_captions"):
+        tracks = info.get(field)
+        if isinstance(tracks, dict):
+            subtitles.update(
+                str(language)[:32]
+                for language, values in tracks.items()
+                if language
+                and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,31}", str(language))
+                and isinstance(values, list)
+                and values
+            )
+    audio = {
+        str(item.get("language"))[:32]
+        for item in (info.get("formats") or [])[:500]
+        if isinstance(item, dict)
+        and item.get("language")
+        and re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9-]{0,31}", str(item.get("language"))
+        )
+        and str(item.get("acodec") or "none").casefold() != "none"
+    }
+    return sorted(audio)[:32], sorted(subtitles)[:32]
+
+
 def analyze(request: dict[str, Any]) -> dict[str, Any]:
     from yt_dlp import YoutubeDL
 
@@ -71,6 +141,7 @@ def analyze(request: dict[str, Any]) -> dict[str, Any]:
                 "title": str(chapter.get("title") or "")[:200],
             }
         )
+    audio_languages, subtitle_languages = media_languages(info)
     return {
         "id": info.get("id", ""),
         "title": info.get("title", ""),
@@ -79,6 +150,9 @@ def analyze(request: dict[str, Any]) -> dict[str, Any]:
         "webpage_url": info.get("webpage_url", request["url"]),
         "chapters": chapters,
         "description": str(info.get("description") or "")[:20_000],
+        "formats": format_summaries(info),
+        "audio_languages": audio_languages,
+        "subtitle_languages": subtitle_languages,
     }
 
 
@@ -245,6 +319,9 @@ def download(request: dict[str, Any]) -> str:
         "retries": 3,
         "fragment_retries": 3,
         "extractor_retries": 3,
+        "continuedl": True,
+        "nopart": False,
+        "overwrites": False,
     }
     options.update(runtime_options(request))
     if request.get("ffmpeg_location"):

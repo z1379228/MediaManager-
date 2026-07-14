@@ -3,5 +3,14 @@
   "display_name": "YouTube Search",
   "entry_point": "provider.py",
   "url_hosts": ["youtube.com", "www.youtube.com", "youtu.be"],
-  "permissions": ["network.youtube", "process.javascript"]
+  "permissions": ["network.youtube", "process.javascript"],
+  "search_capability": {
+    "provider_id": "youtube-search",
+    "sites": ["youtube"],
+    "content_types": ["all", "music", "video"],
+    "max_page_size": 50,
+    "pagination": "offset",
+    "audio_preview": true,
+    "video_preview": false
+  }
 }

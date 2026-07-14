@@ -34,3 +34,7 @@ Trust Store 仍在正式安裝時驗證。
 
 目前公開契約為 API `1.0`、runtime protocol `1.0`。UI 僅接受簽署的宣告式
 `ui.json`；不可注入 HTML、Qt 物件、任意腳本或廣告。
+
+需要開發網站搜尋或下載適配器時，先依
+[`adapter-sdk.md`](adapter-sdk.md) 建立 Search／Download v2 離線範例與相容
+報告，再封裝進正式簽署 MOD；Adapter SDK 驗證成功不等於已受信任或可啟用。

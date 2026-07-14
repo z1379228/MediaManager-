@@ -21,8 +21,15 @@ from core.downloads.models import DownloadRequest
 from core.downloads.windows_job import ProviderJob
 from contracts.discovery_v1 import DiscoveryItemV1
 from contracts.history_v1 import HistoryEventV1, HistoryPreferencesV1
+from contracts.media_analysis_v1 import parse_media_formats, parse_media_languages
 from contracts.playlist_v1 import MAX_PLAYLIST_ENTRIES_V1, PlaylistEntryV1
 from contracts.recovery_v1 import RecoveryCandidateV1, RecoveryPlanV1
+from contracts.search_v2 import (
+    SearchCapabilityV2,
+    SearchContractV2Error,
+    SearchPageV2,
+    SearchQueryV2,
+)
 from contracts.similar_v1 import SimilarPlanV1, SimilarSelectionV1
 from contracts.split_plan_v1 import SplitPlanV1
 from core.downloads.errors import (
@@ -77,6 +84,7 @@ class SubprocessDownloadProvider:
             self.entry_point,
             self.hosts,
             self.permissions,
+            self.search_capability,
         ) = self._load_manifest()
         self.js_runtime: tuple[str, str] | None = None
         if js_runtime is not None:
@@ -95,7 +103,14 @@ class SubprocessDownloadProvider:
 
     def _load_manifest(
         self,
-    ) -> tuple[str, str, Path, frozenset[str], tuple[str, ...]]:
+    ) -> tuple[
+        str,
+        str,
+        Path,
+        frozenset[str],
+        tuple[str, ...],
+        SearchCapabilityV2 | None,
+    ]:
         try:
             raw = json.loads(
                 (self.root / "provider.json").read_text(encoding="utf-8-sig")
@@ -111,7 +126,11 @@ class SubprocessDownloadProvider:
             "url_hosts",
             "permissions",
         }
-        if not isinstance(raw, dict) or set(raw) != required:
+        if (
+            not isinstance(raw, dict)
+            or not required <= set(raw)
+            or set(raw) - required - {"search_capability"}
+        ):
             raise ProviderProtocolError("provider manifest fields invalid")
         provider_id = raw["provider_id"]
         display_name = raw["display_name"]
@@ -200,12 +219,25 @@ class SubprocessDownloadProvider:
             raise ProviderProtocolError(
                 "provider permissions are invalid or not allowed"
             )
+        search_capability = None
+        if "search_capability" in raw:
+            try:
+                search_capability = SearchCapabilityV2.from_dict(
+                    raw["search_capability"]
+                )
+            except SearchContractV2Error as error:
+                raise ProviderProtocolError(
+                    f"search capability is invalid: {error}"
+                ) from error
+            if search_capability.provider_id != provider_id:
+                raise ProviderProtocolError("search capability provider mismatch")
         return (
             provider_id,
             display_name,
             entry,
             frozenset(host.casefold() for host in hosts),
             tuple(permissions),
+            search_capability,
         )
 
     def _verify_expected_files(self) -> None:
@@ -268,6 +300,14 @@ class SubprocessDownloadProvider:
         )
         if not isinstance(result, dict):
             raise ProviderProtocolError("provider analyze result is invalid")
+        try:
+            parse_media_formats(result.get("formats", []))
+            parse_media_languages(result.get("audio_languages", []))
+            parse_media_languages(result.get("subtitle_languages", []))
+        except ValueError as error:
+            raise ProviderProtocolError(
+                f"provider media formats are invalid: {error}"
+            ) from error
         return result
 
     def playlist(
@@ -298,28 +338,60 @@ class SubprocessDownloadProvider:
         limit: int = 12,
         content_type: str = "all",
     ) -> tuple[DiscoveryItemV1, ...]:
+        capability = self.search_capability or SearchCapabilityV2(
+            self.provider_id,
+            ("youtube",),
+            ("all", "music", "video"),
+            20,
+            "none",
+            False,
+            False,
+        )
+        normalized = SearchQueryV2(query, content_type, limit).normalized(capability)
+        return self.search_page(normalized).items
+
+    def search_page(self, query: SearchQueryV2) -> SearchPageV2:
         self._require_permissions("network.youtube")
-        normalized = " ".join(query.split())
-        if not 1 <= len(normalized) <= 200:
-            raise ValueError("search query length is invalid")
-        if content_type not in {"all", "music", "video"}:
-            raise ValueError("search content type is invalid")
-        bounded_limit = max(1, min(int(limit), 20))
+        capability = self.search_capability or SearchCapabilityV2(
+            self.provider_id,
+            ("youtube",),
+            ("all", "music", "video"),
+            20,
+            "none",
+            False,
+            False,
+        )
+        normalized = query.normalized(capability)
         result = self._execute(
             {
                 "operation": "search",
-                "query": normalized,
-                "limit": bounded_limit,
-                "content_type": content_type,
+                "query": normalized.query,
+                "limit": normalized.page_size,
+                "content_type": normalized.content_type,
+                "cursor": normalized.cursor,
             },
             None,
             threading.Event(),
             timeout=self.analyze_timeout,
             idle_timeout=self.analyze_timeout,
         )
-        if not isinstance(result, list) or len(result) > bounded_limit:
+        if isinstance(result, list) and capability.pagination == "none":
+            result = {"items": result, "next_cursor": ""}
+        if not isinstance(result, dict) or set(result) != {"items", "next_cursor"}:
+            raise ProviderProtocolError("provider search page is invalid")
+        items = result["items"]
+        if not isinstance(items, list) or len(items) > normalized.page_size:
             raise ProviderProtocolError("provider search result is invalid")
-        return tuple(DiscoveryItemV1.from_dict(item) for item in result)
+        try:
+            return SearchPageV2(
+                self.provider_id,
+                tuple(DiscoveryItemV1.from_dict(item) for item in items),
+                result["next_cursor"],
+            )
+        except (TypeError, ValueError) as error:
+            raise ProviderProtocolError(
+                f"provider search page is invalid: {error}"
+            ) from error
 
     def similar_plan(
         self,
@@ -373,7 +445,7 @@ class SubprocessDownloadProvider:
         *,
         limit: int = 12,
     ) -> tuple[SimilarSelectionV1, ...]:
-        bounded_limit = max(1, min(int(limit), 20))
+        bounded_limit = max(1, min(int(limit), 50))
         result = self._execute(
             {
                 "operation": "similar_rank",
@@ -653,7 +725,7 @@ class SubprocessDownloadProvider:
             {
                 "operation": "recovery_rank",
                 "item": asdict(original),
-                "candidates": [asdict(item) for item in candidates],
+                "candidates": [asdict(item) for item in candidates[:50]],
             },
             None,
             threading.Event(),

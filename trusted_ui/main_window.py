@@ -10,7 +10,7 @@ from core.downloads.notifications import (
     completion_message,
 )
 from core.settings import SettingsService
-from core.version import CORE_VERSION
+from core.version import display_version
 from trusted_ui.app_icon import app_icon_path
 from trusted_ui.background import (
     clear_background_copy,
@@ -92,7 +92,7 @@ def run_main_window(context: object) -> int:
     class Window(QMainWindow):
         def __init__(self) -> None:
             super().__init__()
-            self.setWindowTitle(f"MediaManager {CORE_VERSION}")
+            self.setWindowTitle(f"MediaManager {display_version()}")
             self.setAccessibleName("MediaManager 主視窗")
             self.resize(1180, 780)
             self.setMinimumSize(940, 620)
@@ -331,7 +331,7 @@ def run_main_window(context: object) -> int:
             hint.setObjectName("muted")
             footer_layout.addWidget(hint)
             footer_layout.addStretch()
-            version = QLabel(f"核心 {CORE_VERSION}")
+            version = QLabel(f"核心 {display_version()}")
             version.setObjectName("muted")
             footer_layout.addWidget(version)
             page.addWidget(footer)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -11,7 +11,10 @@ from typing import Any
 
 from contracts.playlist_v1 import PlaylistEntryV1
 from contracts.download_provider import DownloadProvider
-from contracts.download_capability_v2 import DownloadCapabilityV2
+from contracts.download_capability_v2 import (
+    DownloadCapabilityError,
+    DownloadCapabilityV2,
+)
 from core.downloads.negotiation import negotiate_download
 from core.downloads.models import DownloadRequest
 
@@ -64,6 +67,12 @@ class DownloadProviderRegistry:
         with self._lock:
             return self._capabilities.get(provider_id) if provider_id else None
 
+    def capability_for_provider(
+        self, provider_id: str
+    ) -> DownloadCapabilityV2 | None:
+        with self._lock:
+            return self._capabilities.get(provider_id)
+
     def set_enabled(self, provider_id: str, enabled: bool) -> None:
         with self._lock:
             if provider_id not in self._providers:
@@ -105,7 +114,38 @@ class DownloadProviderRegistry:
     def playlist(
         self, url: str, *, limit: int = 500
     ) -> tuple[PlaylistEntryV1, ...]:
-        return self.provider_for(url).playlist(url, limit=limit)
+        provider = self.provider_for(url)
+        with self._lock:
+            capability = self._capabilities.get(provider.provider_id)
+        if capability is not None and not capability.supports_playlist:
+            raise ValueError("download MOD does not support playlists")
+        bounded_limit = (
+            min(limit, capability.max_batch_size) if capability is not None else limit
+        )
+        return provider.playlist(url, limit=bounded_limit)
+
+    def validate_batch(self, requests: Iterable[DownloadRequest]) -> None:
+        values = tuple(requests)
+        if not values:
+            raise ValueError("download batch is empty")
+        counts: dict[str, int] = {}
+        capabilities: dict[str, DownloadCapabilityV2 | None] = {}
+        for request in values:
+            provider = self.provider_for(request.url)
+            provider_id = provider.provider_id
+            counts[provider_id] = counts.get(provider_id, 0) + 1
+            if provider_id not in capabilities:
+                capabilities[provider_id] = self.capability_for_provider(provider_id)
+            capability = capabilities[provider_id]
+            if capability is not None:
+                negotiate_download(request, capability)
+        for provider_id, count in counts.items():
+            capability = capabilities[provider_id]
+            if capability is not None and count > capability.max_batch_size:
+                raise DownloadCapabilityError(
+                    f"download batch exceeds {provider_id} limit "
+                    f"({count}/{capability.max_batch_size})"
+                )
 
     def download(
         self,

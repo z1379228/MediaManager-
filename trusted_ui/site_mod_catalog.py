@@ -15,6 +15,7 @@ INSTAGRAM_HOME = "https://www.instagram.com/"
 INSTAGRAM_EXPORT_HELP = (
     "https://www.facebook.com/help/instagram/181231772500920"
 )
+MEGA_HOME = "https://mega.io/"
 THREADS_HOME = "https://www.threads.com/"
 THREADS_EXPORT_HELP = (
     "https://www.facebook.com/help/instagram/259803026523198"
@@ -188,6 +189,35 @@ def validated_threads_url(value: str) -> str | None:
     return f"https://www.threads.com/@{post.group(1)}/post/{post.group(2)}/"
 
 
+def validated_mega_url(value: str) -> str | None:
+    """Accept the official homepage or a bounded modern public-share URL."""
+
+    raw = value.strip() or MEGA_HOME
+    try:
+        parsed = urlsplit(raw)
+        port = parsed.port
+    except ValueError:
+        return None
+    host = (parsed.hostname or "").casefold()
+    if (
+        parsed.scheme.casefold() != "https"
+        or host not in {"mega.io", "www.mega.io", "mega.nz", "www.mega.nz"}
+        or parsed.username is not None
+        or parsed.password is not None
+        or port is not None
+        or parsed.query
+    ):
+        return None
+    if parsed.path in {"", "/"} and not parsed.fragment:
+        return MEGA_HOME
+    if host not in {"mega.nz", "www.mega.nz"}:
+        return None
+    share = re.fullmatch(r"/(file|folder)/([A-Za-z0-9_-]{6,64})/?", parsed.path)
+    if share is None or not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", parsed.fragment):
+        return None
+    return f"https://mega.nz/{share.group(1)}/{share.group(2)}#{parsed.fragment}"
+
+
 @dataclass(frozen=True, slots=True)
 class SiteModCandidate:
     provider_id: str
@@ -234,6 +264,12 @@ OFFICIAL_BRIDGES = (
         validated_threads_url,
         THREADS_EXPORT_HELP,
     ),
+    OfficialBridgeSpec(
+        "mega",
+        "MEGA",
+        "貼上 mega.nz 官方公開檔案或資料夾分享連結（留空開首頁）",
+        validated_mega_url,
+    ),
 )
 
 
@@ -265,6 +301,13 @@ SITE_MOD_CANDIDATES = (
         "官方工具限定",
         "驗證官方貼文頁並提供官方 Threads 資料匯出說明",
         "沒有專用擷取器；不自動收集貼文、不匯入登入資料或處理私人內容",
+    ),
+    SiteModCandidate(
+        "mega",
+        "MEGA",
+        "官方 SDK 評估",
+        "驗證官方公開分享連結；規劃以 MEGA SDK 或 MEGAcmd 建立獨立下載 MOD",
+        "不接收帳密或工作階段、不繞過傳輸配額或權限；驗證完成前不宣稱下載支援",
     ),
 )
 

@@ -211,11 +211,11 @@ def test_discovery_service_returns_bounded_similar_result_list(
         original,
         (first, second),
         prefs,
-        limit=20,
+        limit=50,
     )
     search.search.assert_called_once_with(
         "Artist music",
-        limit=20,
+        limit=50,
         content_type="all",
     )
     service.close()

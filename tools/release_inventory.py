@@ -10,7 +10,7 @@ from pathlib import Path
 from core.version import CORE_VERSION
 
 
-def build_inventory() -> dict[str, object]:
+def build_inventory(*, core_version: str = CORE_VERSION) -> dict[str, object]:
     components = []
     for name in ("cryptography", "PySide6", "yt-dlp", "yt-dlp-ejs"):
         try:
@@ -30,8 +30,39 @@ def build_inventory() -> dict[str, object]:
         )
     return {
         "schema": "mediamanager-release-inventory-v1",
-        "core_version": CORE_VERSION,
+        "core_version": core_version,
         "components": components,
+    }
+
+
+def build_cyclonedx_sbom(inventory: dict[str, object]) -> dict[str, object]:
+    components = inventory.get("components")
+    values = components if isinstance(components, list) else []
+    return {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.6",
+        "serialNumber": "urn:uuid:00000000-0000-4000-8000-000000000000",
+        "version": 1,
+        "metadata": {
+            "component": {
+                "type": "application",
+                "name": "MediaManager",
+                "version": inventory.get("core_version", "unknown"),
+            }
+        },
+        "components": [
+            {
+                "type": "library",
+                "name": item.get("name", "unknown"),
+                "version": item.get("version", "unknown"),
+                "licenses": [{"expression": item.get("license", "UNKNOWN")}],
+                "properties": [
+                    {"name": "mediamanager:status", "value": item.get("status", "unknown")}
+                ],
+            }
+            for item in values
+            if isinstance(item, dict)
+        ],
     }
 
 

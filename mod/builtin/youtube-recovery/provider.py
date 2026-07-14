@@ -49,7 +49,7 @@ def rank(
     original_title = tokens(original.get("title"))
     original_artist = tokens(original.get("artist"))
     ranked: list[dict[str, Any]] = []
-    for candidate in candidates[:20]:
+    for candidate in candidates[:50]:
         if candidate.get("video_id") == original.get("video_id"):
             continue
         score = 0

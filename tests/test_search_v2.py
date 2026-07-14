@@ -71,5 +71,41 @@ def test_federated_search_deduplicates_and_isolates_failure() -> None:
     result = registry.search(SearchQueryV2("music"))
 
     assert [item.video_id for item in result.items] == ["same", "unique"]
+    assert result.sources == ("one", "one")
     assert result.failures[0].provider_id == "broken"
     assert result.failures[0].message == "offline"
+    assert result.failures[0].category == "error"
+
+
+def test_federated_search_classifies_timeout_and_invalid_response() -> None:
+    registry = SearchAdapterRegistry()
+    registry.register(
+        _capability("timeout"),
+        lambda query: (_ for _ in ()).throw(TimeoutError("slow")),
+    )
+    registry.register(
+        _capability("invalid"),
+        lambda query: (_ for _ in ()).throw(ValueError("bad page")),
+    )
+
+    result = registry.search(SearchQueryV2("music"))
+
+    assert [item.category for item in result.failures] == [
+        "timeout",
+        "invalid-response",
+    ]
+
+
+def test_federated_search_preserves_provider_next_cursor() -> None:
+    registry = SearchAdapterRegistry()
+    capability = SearchCapabilityV2(
+        "paged", ("example",), ("all",), 20, "cursor", False, False
+    )
+    registry.register(
+        capability,
+        lambda query: SearchPageV2("paged", (_item("one"),), "next-token"),
+    )
+
+    result = registry.search(SearchQueryV2("music"), provider_ids=("paged",))
+
+    assert result.next_cursors == (("paged", "next-token"),)

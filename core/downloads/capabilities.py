@@ -7,7 +7,10 @@ from contracts.media_options_v1 import FORMAT_PRESET_IDS_V1, SUBTITLE_MODES_V1
 def builtin_download_capability(provider_id: str) -> DownloadCapabilityV2:
     sites = {
         "youtube": ("youtube",),
-        "generic-ytdlp": ("generic", "facebook", "instagram", "threads"),
+        # Keep this provider generic until individual sites have their own
+        # verified capability declarations.  The provider URL allowlist does
+        # not currently accept Facebook, Instagram, or Threads.
+        "generic-ytdlp": ("generic",),
         "bilibili": ("bilibili",),
     }
     if provider_id not in sites:

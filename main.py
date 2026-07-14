@@ -7,13 +7,15 @@ import sys
 from pathlib import Path
 
 from core.bootstrap.bootstrap import Bootstrap
-from core.version import CORE_VERSION
+from core.version import display_version
 from trusted_ui.main_window import run_main_window
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="MediaManager")
-    parser.add_argument("--version", action="version", version=f"MediaManager {CORE_VERSION}")
+    parser.add_argument(
+        "--version", action="version", version=f"MediaManager {display_version()}"
+    )
     parser.add_argument("--portable", action="store_true", help="store runtime data beside the application")
     parser.add_argument("--headless", action="store_true", help="do not start the graphical security UI")
     parser.add_argument("--verify-only", action="store_true", help="verify core integrity and exit")

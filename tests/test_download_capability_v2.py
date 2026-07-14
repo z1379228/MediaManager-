@@ -8,6 +8,7 @@ from contracts.download_capability_v2 import (
 )
 from contracts.provider_failure_v1 import ProviderFailureCode, ProviderFailureV1
 from core.downloads.models import DownloadRequest
+from core.downloads.capabilities import builtin_download_capability
 from core.downloads.negotiation import negotiate_download, retry_decision
 
 
@@ -57,3 +58,10 @@ def test_direct_download_capability_construction_is_validated() -> None:
         DownloadCapabilityV2(
             "youtube", (), ("best",), ("none",), ("none",), True, True, True, 1
         )
+
+
+def test_generic_provider_does_not_claim_unverified_social_sites() -> None:
+    capability = builtin_download_capability("generic-ytdlp")
+
+    assert capability.sites == ("generic",)
+    assert not {"facebook", "instagram", "threads"}.intersection(capability.sites)

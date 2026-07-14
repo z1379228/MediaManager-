@@ -42,3 +42,15 @@ def test_search_scope_validates_request_and_classifies_results() -> None:
     assert result_category({"title": "Official Audio"}, "all", "歌手") == "music"
     assert result_category({"title": "軟體教學"}, "all", "Python") == "video"
     assert result_category({"title": "任意內容"}, "music", "關鍵字") == "music"
+
+
+def test_search_offset_is_bounded_and_page_aligned() -> None:
+    namespace = provider_namespace()
+    search_offset = namespace["search_offset"]
+
+    assert search_offset({}) == 0
+    assert search_offset({"cursor": "20"}) == 20
+    with pytest.raises(ValueError, match="cursor"):
+        search_offset({"cursor": "200"})
+    with pytest.raises(ValueError, match="cursor"):
+        search_offset({"cursor": "../../outside"})

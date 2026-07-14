@@ -11,7 +11,7 @@ def test_repository_site_quality_matrix_passes_offline() -> None:
     report = audit_builtin_site_quality(ROOT)
     assert report.valid, report.errors
     assert report.checked_sites == 6
-    assert report.checked_features >= 5
+    assert report.checked_features >= 11
 
 
 def test_site_quality_rejects_missing_bilibili_policy(tmp_path: Path) -> None:
@@ -19,6 +19,10 @@ def test_site_quality_rejects_missing_bilibili_policy(tmp_path: Path) -> None:
     generic = tmp_path / "mod" / "builtin" / "generic-ytdlp"
     generic.mkdir(parents=True)
     (generic / "site-matrix.json").write_bytes(generic_source.read_bytes())
+    youtube_source = ROOT / "mod" / "builtin" / "youtube" / "site-matrix.json"
+    youtube = tmp_path / "mod" / "builtin" / "youtube"
+    youtube.mkdir(parents=True)
+    (youtube / "site-matrix.json").write_bytes(youtube_source.read_bytes())
     bilibili = tmp_path / "mod" / "builtin" / "bilibili"
     bilibili.mkdir(parents=True)
     (bilibili / "site-matrix.json").write_text(
