@@ -1,0 +1,75 @@
+from contracts.discovery_v1 import DiscoveryItemV1
+import pytest
+
+from contracts.search_v2 import (
+    SearchCapabilityV2,
+    SearchContractV2Error,
+    SearchPageV2,
+    SearchQueryV2,
+)
+from core.discovery.adapters import SearchAdapterRegistry
+
+
+def _item(video_id: str, *, url: str | None = None) -> DiscoveryItemV1:
+    return DiscoveryItemV1(
+        video_id,
+        url or f"https://example.test/watch?v={video_id}",
+        f"Track {video_id}",
+        "Artist",
+        120,
+        "zh-TW",
+        "music",
+        "",
+    )
+
+
+def _capability(provider_id: str) -> SearchCapabilityV2:
+    return SearchCapabilityV2.from_dict(
+        {
+            "provider_id": provider_id,
+            "sites": ["youtube"],
+            "content_types": ["all", "music"],
+            "max_page_size": 20,
+            "pagination": "none",
+            "audio_preview": True,
+            "video_preview": False,
+        }
+    )
+
+
+def test_search_query_is_normalized_and_bounded() -> None:
+    query = SearchQueryV2("  synth   wave  ", "music", 200)
+    assert query.normalized(_capability("one")) == SearchQueryV2(
+        "synth wave", "music", 20, ""
+    )
+
+
+def test_direct_contract_construction_cannot_bypass_validation() -> None:
+    with pytest.raises(SearchContractV2Error):
+        SearchCapabilityV2("bad", (), ("all",), 20, "none", True, False)
+    with pytest.raises(SearchContractV2Error, match="page size"):
+        SearchQueryV2("music", page_size=True).normalized(_capability("one"))
+    with pytest.raises(SearchContractV2Error):
+        SearchPageV2("one", ("not-an-item",))  # type: ignore[arg-type]
+
+
+def test_federated_search_deduplicates_and_isolates_failure() -> None:
+    registry = SearchAdapterRegistry()
+    registry.register(
+        _capability("one"),
+        lambda query: SearchPageV2("one", (_item("same"), _item("unique"))),
+    )
+    registry.register(
+        _capability("two"),
+        lambda query: SearchPageV2("two", (_item("same"),)),
+    )
+    registry.register(
+        _capability("broken"),
+        lambda query: (_ for _ in ()).throw(RuntimeError("offline")),
+    )
+
+    result = registry.search(SearchQueryV2("music"))
+
+    assert [item.video_id for item in result.items] == ["same", "unique"]
+    assert result.failures[0].provider_id == "broken"
+    assert result.failures[0].message == "offline"

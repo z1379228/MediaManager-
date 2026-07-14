@@ -5,6 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from contracts.download_capability_v2 import DownloadCapabilityError, DownloadCapabilityV2
 from core.downloads.models import DownloadRequest
 from core.downloads.provider_registry import DownloadProviderRegistry, ProviderUnavailableError
 
@@ -51,6 +52,32 @@ def test_registry_rejects_duplicate_and_unknown_provider() -> None:
         registry.register(provider())
     with pytest.raises(KeyError):
         registry.set_enabled("missing", True)
+
+
+def test_registry_enforces_registered_download_capability(tmp_path) -> None:
+    registry = DownloadProviderRegistry()
+    registry.register(provider(), enabled=True)
+    capability = DownloadCapabilityV2(
+        "youtube",
+        ("youtube",),
+        ("audio-mp3",),
+        ("none",),
+        ("none",),
+        True,
+        False,
+        True,
+        20,
+    )
+    registry.register_capability(capability)
+    assert registry.capability_for("https://youtube.com/watch?v=x") == capability
+    with pytest.raises(ValueError, match="already registered"):
+        registry.register_capability(capability)
+    with pytest.raises(DownloadCapabilityError, match="format"):
+        registry.download(
+            DownloadRequest("https://youtube.com/watch?v=x", tmp_path),
+            Mock(),
+            Event(),
+        )
 
 
 def test_close_disables_and_closes_every_provider() -> None:

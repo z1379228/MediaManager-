@@ -10,6 +10,8 @@ from contracts.history_v1 import HistoryEventV1, HistoryPreferencesV1
 from contracts.recovery_v1 import RecoveryCandidateV1, RecoveryPlanV1
 from contracts.similar_v1 import SimilarPlanV1, SimilarSelectionV1
 from contracts.split_plan_v1 import SplitPlanV1
+from contracts.search_v2 import SearchCapabilityV2, SearchPageV2, SearchQueryV2
+from core.discovery.adapters import FederatedSearchResult, SearchAdapterRegistry
 from core.downloads.provider_registry import (
     DownloadProviderRegistry,
     ProviderStatus,
@@ -146,6 +148,7 @@ class DiscoveryService:
     def __init__(self, state_path: Path) -> None:
         self._registry = DownloadProviderRegistry(state_path)
         self._providers: dict[str, SearchProvider] = {}
+        self._search_adapters = SearchAdapterRegistry()
         self._history_providers: dict[str, HistoryProvider] = {}
         self._recovery_providers: dict[str, RecoveryProvider] = {}
         self._similar_providers: dict[str, SimilarProvider] = {}
@@ -155,6 +158,47 @@ class DiscoveryService:
     def register(self, provider: SearchProvider, *, enabled: bool = False) -> None:
         self._registry.register(provider, enabled=enabled)  # type: ignore[arg-type]
         self._providers[provider.provider_id] = provider
+        capability = SearchCapabilityV2(
+            provider.provider_id,
+            ("youtube",),
+            ("all", "music", "video"),
+            50,
+            "none",
+            True,
+            True,
+        )
+
+        def adapter(query: SearchQueryV2) -> SearchPageV2:
+            items = provider.search(
+                query.query,
+                limit=query.page_size,
+                content_type=query.content_type,
+            )
+            return SearchPageV2(provider.provider_id, items)
+
+        self._search_adapters.register(capability, adapter)
+
+    def search_capabilities(self) -> tuple[SearchCapabilityV2, ...]:
+        return self._search_adapters.capabilities()
+
+    def federated_search(
+        self,
+        query: str,
+        *,
+        provider_ids: tuple[str, ...] | None = None,
+        limit: int = 50,
+        content_type: str = "all",
+    ) -> FederatedSearchResult:
+        selected = provider_ids or tuple(
+            capability.provider_id
+            for capability in self.search_capabilities()
+            if self._registry.is_enabled(capability.provider_id)
+        )
+        return self._search_adapters.search(
+            SearchQueryV2(query, content_type, limit),
+            provider_ids=selected,
+            limit=limit,
+        )
 
     def register_video_preview(
         self, provider: VideoPreviewProvider, *, enabled: bool = False
