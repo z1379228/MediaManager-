@@ -6,7 +6,7 @@
 ## 已通過
 
 - Ruff 通過。
-- Pytest 完整回歸通過：547 passed、2 skipped。
+- Pytest 完整回歸通過：549 passed、2 skipped。
 - 9.0 copied-folder 的 `--version`、Portable verify、headless 與 GUI smoke 通過。
 - 升級與回退相關測試通過。
 - 9.0 版本資料夾 44 項 SHA-256 稽核通過。
