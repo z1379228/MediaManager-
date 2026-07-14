@@ -35,6 +35,26 @@ def test_preflight_blocks_unconfigured_release_identity(tmp_path) -> None:
     )
 
 
+def test_preflight_reports_authenticode_even_when_release_identity_is_invalid(
+    tmp_path,
+) -> None:
+    (tmp_path / "MediaManager.exe").write_bytes(b"release")
+    result = check_release(
+        tmp_path,
+        key_id="",
+        public_key="",
+        files=("MediaManager.exe",),
+        builtin_hashes={},
+        authenticode_checker=lambda _path: "NotSigned",
+    )
+
+    assert not result.ready
+    assert result.errors == (
+        "compiled release key id or Ed25519 public key is invalid",
+        "Authenticode signature is not valid: NotSigned",
+    )
+
+
 def test_preflight_blocks_missing_required_file(tmp_path) -> None:
     private_key = Ed25519PrivateKey.generate()
     result = check_release(

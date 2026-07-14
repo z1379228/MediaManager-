@@ -25,6 +25,24 @@ class AdapterCompatibilityReport:
         return asdict(self)
 
 
+@dataclass(frozen=True, slots=True)
+class AdapterCatalogReport:
+    valid: bool
+    checked: int
+    compatible: int
+    reports: tuple[AdapterCompatibilityReport, ...] = ()
+    errors: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "valid": self.valid,
+            "checked": self.checked,
+            "compatible": self.compatible,
+            "reports": [report.to_dict() for report in self.reports],
+            "errors": list(self.errors),
+        }
+
+
 def validate_adapter_project(
     root: Path, *, core_version: str = CORE_VERSION
 ) -> AdapterCompatibilityReport:
@@ -53,7 +71,11 @@ def validate_adapter_project(
         <= current
         <= release_version(manifest.maximum_core_version)
     )
-    errors = () if compatible else (f"core {core_version} is outside compatibility range",)
+    errors = (
+        ()
+        if compatible
+        else (f"core {core_version} is outside compatibility range",)
+    )
     warnings = (
         "offline validation does not install, trust, sign, or execute the adapter",
     )
@@ -69,6 +91,61 @@ def validate_adapter_project(
     )
 
 
+def validate_adapter_catalog(
+    root: Path,
+    *,
+    core_version: str = CORE_VERSION,
+    max_projects: int = 100,
+) -> AdapterCatalogReport:
+    """Validate a bounded directory of adapter projects without executing them."""
+
+    root = root.resolve()
+    bounded_max = max(1, min(int(max_projects), 100))
+    try:
+        if root.is_symlink() or not root.is_dir():
+            raise OSError("adapter catalog is unavailable or unsafe")
+        projects = tuple(
+            sorted(
+                (
+                    entry
+                    for entry in root.iterdir()
+                    if entry.is_dir() or entry.is_symlink()
+                ),
+                key=lambda entry: entry.name.casefold(),
+            )
+        )
+    except OSError as error:
+        return AdapterCatalogReport(False, 0, 0, errors=(str(error),))
+    if len(projects) > bounded_max:
+        return AdapterCatalogReport(
+            False,
+            0,
+            0,
+            errors=(f"adapter catalog exceeds {bounded_max} projects",),
+        )
+    reports = tuple(
+        validate_adapter_project(project, core_version=core_version)
+        for project in projects
+    )
+    catalog_errors: list[str] = []
+    adapter_ids = [report.adapter_id for report in reports if report.adapter_id]
+    duplicates = sorted(
+        adapter_id
+        for adapter_id in set(adapter_ids)
+        if adapter_ids.count(adapter_id) > 1
+    )
+    if duplicates:
+        catalog_errors.append(
+            "duplicate adapter ids: " + ", ".join(duplicates)
+        )
+    compatible = sum(report.valid for report in reports)
+    return AdapterCatalogReport(
+        compatible == len(reports) and not catalog_errors,
+        len(reports),
+        compatible,
+        reports,
+        tuple(catalog_errors),
+    )
 def create_adapter_template(root: Path, adapter_id: str, adapter_type: str) -> Path:
     if root.exists():
         raise FileExistsError(f"adapter target already exists: {root}")
@@ -104,7 +181,7 @@ def create_adapter_template(root: Path, adapter_id: str, adapter_type: str) -> P
         "adapter_type": adapter_type,
         "entry_point": "adapter.py",
         "minimum_core_version": "4.2.0",
-        "maximum_core_version": "6.0.0",
+        "maximum_core_version": CORE_VERSION,
         "permissions": ["network.public"],
         "external_tools": [],
         "dependencies": [],

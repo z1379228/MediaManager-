@@ -1,6 +1,6 @@
 # MediaManager 4.0～5.0 權威版本配置
 
-本文件是 4.0 之後唯一的版本排序與取捨依據。`release-*.md` 記錄已完成結果，
+本文件是 4.0 之後的歷史版本排序與取捨依據。`release-4.0-5.0.md` 記錄已完成結果，
 `roadmap-5.0.md` 只保留 5.0 放行門檻；舊版提案不再反向改寫目前進度。
 
 ## 版本原則
@@ -23,13 +23,13 @@
 
 | 版本 | 狀態 | 核心範圍 | 完成門檻 |
 | --- | --- | --- | --- |
-| 4.0.0 | 現行基線 | 搜尋／下載能力 v2 schema、聯合搜尋後端、部分能力協商、重試決策元件與資源上限 | 以 `release-4.0.md` 為準，不把未接入 UI／佇列的元件算成完成 |
+| 4.0.0 | 現行基線 | 搜尋／下載能力 v2 schema、聯合搜尋後端、部分能力協商、重試決策元件與資源上限 | 以 `release-4.0-5.0.md` 為準，不把未接入 UI／佇列的元件算成完成 |
 | 4.0.x | 維護中 | CI、自動合併、雜湊與行尾一致性、UI／測試穩定、4.0 staged 附件重建與文件校正 | 不改合約語意；Ruff、完整 Pytest、必要 CI 與 release preflight 綠燈 |
-| 4.1.0 | 已完成 | 來源選擇與健康狀態、跨 MOD 結果頁、本機別名／拼字容錯、排序原因 | 不增加背景搜尋；失敗來源可見且不拖垮其他來源；詳見 `release-4.1.md` |
-| 4.2.0 | 已完成 | 實際格式與容量摘要、多檔選擇／優先級、命名預覽、個別失敗重跑 | 提交前可確認；重啟可復原；不覆蓋既有檔案；詳見 `release-4.2.md` |
-| 4.3.0 | 已完成 | Search/Download Adapter SDK、範例、合約測試器、相容報告、依賴宣告 | 第三方 MOD 可離線驗證；逾時或崩潰不凍結核心 UI；詳見 `release-4.3.md` |
-| 4.4.0 | 已完成 | 強化 YouTube、Bilibili 回歸矩陣；MEGA 僅走官方 SDK／MEGAcmd 候選路徑 | 每個網站獨立 MOD；未經實測不得宣稱完整支援；詳見 `release-4.4.md` |
-| 4.5.0 | 工程完成／發布阻擋 | 遷移、效能、診斷去識別、鎖定依賴、授權清冊、SBOM、簽署與 copied-folder smoke | copied-folder 通過；缺 production Ed25519／Authenticode，僅可作為 SAFE_MODE Preview；詳見 `release-4.5.md` |
+| 4.1.0 | 已完成 | 來源選擇與健康狀態、跨 MOD 結果頁、本機別名／拼字容錯、排序原因 | 不增加背景搜尋；失敗來源可見且不拖垮其他來源；詳見 `release-4.0-5.0.md` |
+| 4.2.0 | 已完成 | 實際格式與容量摘要、多檔選擇／優先級、命名預覽、個別失敗重跑 | 提交前可確認；重啟可復原；不覆蓋既有檔案；詳見 `release-4.0-5.0.md` |
+| 4.3.0 | 已完成 | Search/Download Adapter SDK、範例、合約測試器、相容報告、依賴宣告 | 第三方 MOD 可離線驗證；逾時或崩潰不凍結核心 UI；詳見 `release-4.0-5.0.md` |
+| 4.4.0 | 已完成 | 強化 YouTube、Bilibili 回歸矩陣；MEGA 僅走官方 SDK／MEGAcmd 候選路徑 | 每個網站獨立 MOD；未經實測不得宣稱完整支援；詳見 `release-4.0-5.0.md` |
+| 4.5.0 | 工程完成／發布阻擋 | 遷移、效能、診斷去識別、鎖定依賴、授權清冊、SBOM、簽署與 copied-folder smoke | copied-folder 通過；缺 production Ed25519／Authenticode，僅可作為 SAFE_MODE Preview；詳見 `release-4.0-5.0.md` |
 | 5.0.0 | Preview 工程版 | 搜尋、MOD 適配與下載流程形成穩定可擴充產品面 | 工程門檻完成後可建置 Preview；production stable 仍須通過 `roadmap-5.0.md` 的正式雙簽章放行門檻 |
 
 ## 優化優先順序

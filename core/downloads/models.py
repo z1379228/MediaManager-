@@ -105,6 +105,8 @@ class DownloadTask:
     eta: str = ""
     output_path: str = ""
     error: str = ""
+    automatic_retries: int = 0
+    next_retry_seconds: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
     cancel_event: Event = field(default_factory=Event, repr=False)
     pause_requested: Event = field(default_factory=Event, repr=False)

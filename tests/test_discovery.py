@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import pytest
 
 from contracts.discovery_v1 import DiscoveryContractError, DiscoveryItemV1
-from contracts.search_v2 import SearchCapabilityV2
+from contracts.search_v2 import SearchCapabilityV2, SearchPageV2
 from contracts.split_plan_v1 import SplitPlanV1
 from core.discovery.service import DiscoveryService
 
@@ -115,14 +115,83 @@ def test_search_source_health_tracks_failure_and_recovery(tmp_path) -> None:
     status = service.search_source_statuses()[0]
     assert status.health == "error"
     assert status.message == "offline"
+    assert status.consecutive_failures == 1
+    assert status.successful_searches == 0
 
     provider.search.side_effect = None
     provider.search.return_value = ()
     service.federated_search("example")
-    assert service.search_source_statuses()[0].health == "ready"
+    status = service.search_source_statuses()[0]
+    assert status.health == "ready"
+    assert status.consecutive_failures == 0
+    assert status.successful_searches == 1
 
     service.set_enabled("catalog-search", False)
     assert service.search_source_statuses()[0].health == "disabled"
+    service.close()
+
+
+def test_discovery_service_binds_opaque_cursor_to_search(tmp_path) -> None:
+    class PagedProvider:
+        provider_id = "catalog-search"
+        display_name = "Catalog Search"
+        search_capability = SearchCapabilityV2(
+            "catalog-search", ("catalog",), ("all", "music"), 7, "cursor", False, False
+        )
+
+        def __init__(self) -> None:
+            self.received: list[str] = []
+
+        def search_page(self, query):
+            self.received.append(query.cursor)
+            if query.cursor:
+                return SearchPageV2(
+                    self.provider_id,
+                    (DiscoveryItemV1.from_dict(item(video_id="page-two")),),
+                )
+            return SearchPageV2(
+                self.provider_id,
+                (DiscoveryItemV1.from_dict(item(video_id="page-one")),),
+                "provider-secret-cursor",
+            )
+
+        def close(self) -> None:
+            pass
+
+    provider = PagedProvider()
+    service = DiscoveryService(tmp_path / "discovery-state.json")
+    service.register(provider, enabled=True)
+
+    first = service.federated_search(
+        "  synth   wave ", provider_ids=(provider.provider_id,), content_type="music"
+    )
+    token = first.next_cursors[0][1]
+
+    assert token.startswith("sc1.")
+    assert "provider-secret-cursor" not in token
+    second = service.federated_search(
+        "synth wave",
+        provider_ids=(provider.provider_id,),
+        content_type="music",
+        cursor=token,
+    )
+    assert second.items[0].video_id == "page-two"
+    assert provider.received == ["", "provider-secret-cursor"]
+
+    with pytest.raises(ValueError, match="does not match"):
+        service.federated_search(
+            "different query",
+            provider_ids=(provider.provider_id,),
+            content_type="music",
+            cursor=token,
+        )
+    with pytest.raises(ValueError, match="invalid"):
+        service.federated_search(
+            "synth wave",
+            provider_ids=(provider.provider_id,),
+            content_type="music",
+            cursor=token[:-1] + ("A" if token[-1] != "A" else "B"),
+        )
     service.close()
 
 

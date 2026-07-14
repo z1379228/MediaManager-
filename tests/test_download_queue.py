@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from contracts.provider_failure_v1 import ProviderFailureCode, ProviderFailureV1
+from core.downloads.errors import ProviderFailure
 from core.downloads.models import DownloadRequest, DownloadState
 from core.downloads.queue import DownloadQueue
 
@@ -85,6 +87,29 @@ class FailingOnceBackend:
         if self.calls == 1:
             raise RuntimeError("temporary failure")
         return str(request.output_dir / "retry.mp4")
+
+
+class RetryableProviderBackend:
+    def __init__(self, *, failures: int, retryable: bool = True):
+        self.calls = 0
+        self.failures = failures
+        self.retryable = retryable
+
+    def download(self, request, progress, cancel_event):
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise ProviderFailure(
+                ProviderFailureV1(
+                    ProviderFailureCode.TEMPORARY
+                    if self.retryable
+                    else ProviderFailureCode.CONTENT_REMOVED,
+                    "temporary network failure"
+                    if self.retryable
+                    else "content removed",
+                    self.retryable,
+                )
+            )
+        return str(request.output_dir / "automatic-retry.mp4")
 
 
 class FailThenBlockBackend:
@@ -232,6 +257,52 @@ def test_failed_task_can_be_retried(tmp_path: Path) -> None:
     assert downloads.retry(task_id)
     wait_for(lambda: downloads.snapshots()[0].state is DownloadState.COMPLETED)
     assert backend.calls == 2
+    downloads.shutdown()
+
+
+def test_retryable_provider_failure_is_retried_with_persisted_bound(
+    tmp_path: Path,
+) -> None:
+    backend = RetryableProviderBackend(failures=2)
+    state = tmp_path / "queue.json"
+    downloads = DownloadQueue(
+        backend,
+        workers=1,
+        state_path=state,
+        retry_wait=lambda _delay, _event: False,
+    )
+    downloads.add(DownloadRequest("https://youtu.be/x", tmp_path))
+
+    downloads.start()
+    wait_for(
+        lambda: downloads.snapshots()[0].state is DownloadState.COMPLETED
+    )
+    task = downloads.snapshots()[0]
+
+    assert backend.calls == 3
+    assert task.automatic_retries == 2
+    assert task.next_retry_seconds == 0
+    restored = DownloadQueue(RecordingBackend(), state_path=state).snapshots()[0]
+    assert restored.automatic_retries == 2
+    downloads.shutdown()
+
+
+def test_permanent_provider_failure_is_not_automatically_retried(
+    tmp_path: Path,
+) -> None:
+    backend = RetryableProviderBackend(failures=3, retryable=False)
+    downloads = DownloadQueue(
+        backend,
+        workers=1,
+        retry_wait=lambda _delay, _event: False,
+    )
+    downloads.add(DownloadRequest("https://youtu.be/x", tmp_path))
+
+    downloads.start()
+    wait_for(lambda: downloads.snapshots()[0].state is DownloadState.FAILED)
+
+    assert backend.calls == 1
+    assert downloads.snapshots()[0].automatic_retries == 0
     downloads.shutdown()
 
 

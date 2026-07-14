@@ -15,8 +15,9 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from core.downloads.archive import DownloadArchive, DuplicateDownloadError
-from core.downloads.errors import DownloadCancelled
+from core.downloads.errors import DownloadCancelled, ProviderFailure
 from core.downloads.models import DownloadRequest, DownloadState, DownloadTask
+from core.downloads.negotiation import retry_decision
 
 
 _MAX_QUEUE_TASKS = 10_000
@@ -41,6 +42,7 @@ class DownloadQueue:
         workers: int = 2,
         state_path: Path | None = None,
         archive_path: Path | None = None,
+        retry_wait: Callable[[float, threading.Event], bool] | None = None,
     ) -> None:
         self.backend = backend
         self.worker_count = max(1, min(workers, 4))
@@ -55,6 +57,9 @@ class DownloadQueue:
         self._listeners: list[Callable[[DownloadTask], None]] = []
         self._threads: list[threading.Thread] = []
         self._stopping = threading.Event()
+        self._retry_wait = retry_wait or (
+            lambda delay, event: event.wait(delay)
+        )
         self._restore()
 
     def start(self) -> None:
@@ -202,6 +207,8 @@ class DownloadQueue:
             task.eta = ""
             task.output_path = ""
             task.error = ""
+            task.automatic_retries = 0
+            task.next_retry_seconds = 0
             task.cancel_event = threading.Event()
             task.pause_requested = threading.Event()
             try:
@@ -213,6 +220,8 @@ class DownloadQueue:
                 task.eta = previous.eta
                 task.output_path = previous.output_path
                 task.error = previous.error
+                task.automatic_retries = previous.automatic_retries
+                task.next_retry_seconds = previous.next_retry_seconds
                 task.cancel_event = previous.cancel_event
                 task.pause_requested = previous.pause_requested
                 raise
@@ -365,12 +374,48 @@ class DownloadQueue:
             terminal_state = DownloadState.COMPLETED
             error_text = ""
             try:
-                output_path = self.backend.download(
-                    task.request,
-                    lambda status, current=task: self._progress(current, status),
-                    task.cancel_event,
-                )
-                terminal_state = DownloadState.COMPLETED
+                while True:
+                    try:
+                        output_path = self.backend.download(
+                            task.request,
+                            lambda status, current=task: self._progress(
+                                current, status
+                            ),
+                            task.cancel_event,
+                        )
+                        terminal_state = DownloadState.COMPLETED
+                        break
+                    except ProviderFailure as provider_error:
+                        decision = retry_decision(
+                            provider_error.failure,
+                            attempt=task.automatic_retries + 1,
+                        )
+                        if not decision.retry or task.cancel_event.is_set():
+                            raise
+                        with self._lock:
+                            task.automatic_retries += 1
+                            task.next_retry_seconds = decision.delay_seconds
+                            task.speed = ""
+                            task.eta = ""
+                            task.error = (
+                                f"暫時性錯誤；{decision.delay_seconds} 秒後"
+                                f"自動重試（{task.automatic_retries}/2）"
+                            )
+                            try:
+                                self._persist_locked()
+                            except OSError as persist_error:
+                                raise RuntimeError(
+                                    f"cannot save automatic retry: {persist_error}"
+                                ) from persist_error
+                            retry_snapshot = replace(task)
+                        self._notify(retry_snapshot)
+                        if self._retry_wait(
+                            decision.delay_seconds, task.cancel_event
+                        ):
+                            raise DownloadCancelled("automatic retry cancelled")
+                        with self._lock:
+                            task.next_retry_seconds = 0
+                            task.error = ""
             except DownloadCancelled:
                 terminal_state = (
                     DownloadState.PAUSED
@@ -396,6 +441,7 @@ class DownloadQueue:
                 task.output_path = output_path
                 task.state = terminal_state
                 task.error = error_text
+                task.next_retry_seconds = 0
                 if task.state is DownloadState.QUEUED:
                     task.progress = 0.0
                     task.speed = ""
@@ -491,6 +537,7 @@ class DownloadQueue:
                 self._tasks[task.task_id] = task
                 if task.state is DownloadState.QUEUED:
                     task.progress = 0.0
+                    task.next_retry_seconds = 0
                     self._enqueue(task)
         except (OSError, ValueError, TypeError):
             return
@@ -503,6 +550,18 @@ class DownloadQueue:
         def text_value(key: str, default: str, limit: int) -> str:
             value = item.get(key, default)
             if not isinstance(value, str) or len(value) > limit:
+                raise ValueError(f"queue task {key} is invalid")
+            return value
+
+        def integer_value(
+            key: str, *, minimum: int, maximum: int
+        ) -> int:
+            value = item.get(key, minimum)
+            if (
+                not isinstance(value, int)
+                or isinstance(value, bool)
+                or not minimum <= value <= maximum
+            ):
                 raise ValueError(f"queue task {key} is invalid")
             return value
 
@@ -553,6 +612,12 @@ class DownloadQueue:
             progress=float(progress),
             output_path=text_value("output_path", "", 32_767),
             error=text_value("error", "", 4096),
+            automatic_retries=integer_value(
+                "automatic_retries", minimum=0, maximum=2
+            ),
+            next_retry_seconds=integer_value(
+                "next_retry_seconds", minimum=0, maximum=30
+            ),
         )
 
     def _persist(self) -> None:
@@ -587,6 +652,8 @@ class DownloadQueue:
                 "progress": task.progress,
                 "output_path": task.output_path,
                 "error": task.error,
+                "automatic_retries": task.automatic_retries,
+                "next_retry_seconds": task.next_retry_seconds,
             }
             for task in self._tasks.values()
         ]
