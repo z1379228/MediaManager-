@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 
 import pytest
 
@@ -13,6 +14,16 @@ def test_all_builtin_integrity_digests_are_sha256() -> None:
         for digest in files.values():
             assert len(digest) == 64
             assert all(character in "0123456789abcdef" for character in digest)
+
+
+def test_pinned_builtin_integrity_matches_repository_files() -> None:
+    builtin_root = Path(__file__).resolve().parents[1] / "mod" / "builtin"
+    for provider_id, files in BUILTIN_PROVIDER_HASHES.items():
+        for relative_path, expected in files.items():
+            content = (builtin_root / provider_id / relative_path).read_bytes()
+            assert hashlib.sha256(content).hexdigest() == expected, (
+                f"stale built-in integrity hash: {provider_id}/{relative_path}"
+            )
 
 
 def test_builtin_provider_integrity_detects_tampering(tmp_path, monkeypatch) -> None:

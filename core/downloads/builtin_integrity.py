@@ -41,12 +41,12 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "provider.json": "3a516b1f9fef365c8ecdb32489bbc5bf6e365b47dcf22f13c3b2eaa7c633825a",
     },
     "youtube-history": {
-        "provider.py": "dfcb7d4e6d16f8d5096d4b4f39e62cf56a68c3e75336ce847b3420003f6d7acf",
-        "provider.json": "93930e3e09d7cea4d0124ea98861b4b965dfd5f11609a70a8a5ac957457e4db7",
+        "provider.py": "845a452dd78ec1c73ddc7e4a97ce5c8a21fae2e7465c0be555c2a47131a8b062",
+        "provider.json": "245272699a641df727f3d67b09b42d2d2bad0d0f5ea00a4086700300bfe1800a",
     },
     "youtube-search": {
         "provider.py": "84a9b7250a015ecf89732ee7da933bd5f9f9230760245128cb282a3a1d319841",
-        "provider.json": "8ea32ba1470903359528200a67fe7c5df7fd3e180051465c60073b2f97ab582f",
+        "provider.json": "7ba28372e1e5e7206dd0f314ffa1c9886acebdb223101027e7fabe6b504df2c2",
     },
     "youtube": {
         "provider.py": "58fb86c09fbcaafb01f569669d055b6fbbdf8f609d030ec839c2a771fb8af1ce",
