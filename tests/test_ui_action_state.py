@@ -210,9 +210,11 @@ def test_search_panel_blocks_duplicate_async_actions_and_shutdown_cleans_preview
     paths = AppPaths.discover(portable=True, app_root=tmp_path)
     monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
 
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QMessageBox
 
     app = QApplication.instance() or QApplication([])
+    information = Mock(return_value=QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(QMessageBox, "information", information)
     context = Bootstrap(portable=True).initialize()
     panel = create_search_panel(context)
     started = threading.Event()
@@ -244,6 +246,7 @@ def test_search_panel_blocks_duplicate_async_actions_and_shutdown_cleans_preview
         panel.shutdown()
 
         assert calls == 1
+        information.assert_not_called()
         provider.cleanup_audio_preview.assert_called_once_with(preview_path)
     finally:
         release.set()
