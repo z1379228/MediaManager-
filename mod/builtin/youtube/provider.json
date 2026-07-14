@@ -1,0 +1,7 @@
+{
+  "provider_id": "youtube",
+  "display_name": "YouTube",
+  "entry_point": "provider.py",
+  "url_hosts": ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"],
+  "permissions": ["network.youtube", "storage.downloads.write", "storage.temp.write", "process.ffmpeg", "process.javascript"]
+}

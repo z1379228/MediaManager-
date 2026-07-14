@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "presets": {
+    "remux-copy": {
+      "strategy": "串流複製封裝（不重新編碼）",
+      "extensions": [".mkv", ".mp4", ".mov", ".webm", ".m4a"],
+      "estimate_ratio": 1.02,
+      "args": ["-map", "0", "-c", "copy"]
+    },
+    "split-copy": {
+      "strategy": "依時間切割並優先串流複製",
+      "extensions": [".mkv", ".mp4", ".mov", ".webm", ".m4a", ".mp3", ".flac"],
+      "estimate_ratio": 0.5,
+      "args": ["-map", "0", "-c", "copy"]
+    },
+    "join-copy": {
+      "strategy": "相同格式串流串接",
+      "extensions": [".mkv", ".mp4", ".mov", ".webm", ".m4a", ".mp3", ".flac"],
+      "estimate_ratio": 1.01,
+      "args": ["-c", "copy"]
+    },
+    "video-h264": {
+      "strategy": "H.264/AAC 相容轉檔",
+      "extensions": [".mp4", ".mkv"],
+      "estimate_ratio": 0.65,
+      "args": ["-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "medium", "-crf", "23", "-c:a", "aac", "-b:a", "192k"],
+      "gpu_args": ["-map", "0:v:0", "-map", "0:a?", "-c:v", "h264_nvenc", "-cq", "23", "-c:a", "aac", "-b:a", "192k"]
+    },
+    "compress-h265": {
+      "strategy": "H.265 壓縮（CPU）",
+      "extensions": [".mp4", ".mkv"],
+      "estimate_ratio": 0.45,
+      "args": ["-map", "0:v:0", "-map", "0:a?", "-c:v", "libx265", "-preset", "medium", "-crf", "28", "-c:a", "aac", "-b:a", "160k"]
+    },
+    "audio-mp3": {
+      "strategy": "MP3 192 kbps",
+      "extensions": [".mp3"],
+      "estimate_ratio": 0.15,
+      "args": ["-vn", "-c:a", "libmp3lame", "-b:a", "192k"]
+    },
+    "audio-flac": {
+      "strategy": "FLAC 無損音訊",
+      "extensions": [".flac"],
+      "estimate_ratio": 0.55,
+      "args": ["-vn", "-c:a", "flac"]
+    },
+    "subtitle-srt": {
+      "strategy": "抽取第一條字幕為 SRT",
+      "extensions": [".srt"],
+      "estimate_ratio": 0.01,
+      "args": ["-map", "0:s:0", "-c:s", "srt"]
+    }
+  }
+}

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mediamanager"
+version = "3.5.0"
+description = "Platform-independent desktop media manager core"
+requires-python = ">=3.14"
+license = "MIT"
+dependencies = [
+  "cryptography>=44",
+  "yt-dlp[default]>=2026.7.4",
+  "yt-dlp-ejs>=0.8.0",
+]
+
+[project.optional-dependencies]
+ui = ["PySide6>=6.8"]
+dev = ["pytest>=8.3"]
+
+[project.scripts]
+mediamanager = "main:main"
+
+[tool.setuptools]
+py-modules = ["main"]
+[tool.setuptools.package-data]
+trusted_ui = ["assets/app-icon.png"]
+[tool.setuptools.packages.find]
+include = ["contracts*", "core*", "plugin_host*", "trusted_ui*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+

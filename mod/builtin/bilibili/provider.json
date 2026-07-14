@@ -1,0 +1,18 @@
+{
+  "provider_id": "bilibili",
+  "display_name": "Bilibili",
+  "entry_point": "provider.py",
+  "url_hosts": [
+    "bilibili.com",
+    "www.bilibili.com",
+    "m.bilibili.com",
+    "space.bilibili.com",
+    "b23.tv"
+  ],
+  "permissions": [
+    "network.bilibili",
+    "storage.downloads.write",
+    "process.ffmpeg",
+    "process.javascript"
+  ]
+}

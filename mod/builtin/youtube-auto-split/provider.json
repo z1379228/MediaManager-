@@ -1,0 +1,7 @@
+{
+  "provider_id": "youtube-auto-split",
+  "display_name": "YouTube Auto Split",
+  "entry_point": "provider.py",
+  "url_hosts": ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"],
+  "permissions": ["process.ffmpeg", "storage.temp.read"]
+}

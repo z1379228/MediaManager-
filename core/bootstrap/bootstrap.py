@@ -1,0 +1,474 @@
+"""Ordered, fail-closed core bootstrap."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from core.bootstrap.lifecycle import Lifecycle
+from core.bootstrap.startup_state import StartupPhase, StartupState
+from core.downloads.builtin import (
+    BuiltinProviderIntegrityError,
+    ensure_builtin_providers,
+)
+from core.dependency_health import find_executable, find_javascript_runtime
+from core.discovery.service import DiscoveryService
+from core.downloads.builtin_integrity import BUILTIN_PROVIDER_HASHES
+from core.downloads.provider_registry import DownloadProviderRegistry
+from core.downloads.queue import DownloadQueue
+from core.downloads.subprocess_provider import (
+    ProviderProtocolError,
+    SubprocessDownloadProvider,
+)
+from core.events.event_bus import EventBus
+from core.features import FeatureModRegistry
+from core.conversion import ConversionService
+from core.transcription import SpeechModelManager, TranscriptionService
+from core.automation import AutomationCandidate, AutomationDuplicate, AutomationRule, AutomationService
+from core.downloads.archive import DuplicateDownloadError
+from core.downloads.models import DownloadRequest
+from core.logging.audit_log import AuditLog
+from core.logging.logger import configure_logging
+from core.library import LibraryService
+from core.plugins.cleanup import PluginCleanupManager
+from core.plugins.installer import PluginInstaller
+from core.plugins.manager import PluginManager
+from core.plugins.maintenance import PluginMaintenanceManager
+from core.plugins.recovery import PluginTransactionRecovery
+from core.plugins.registry import PluginRegistry
+from core.plugins.rollback import PluginRollbackManager
+from core.plugins.supervisor import PluginSupervisor
+from core.plugins.ui_descriptor import PluginUIService
+from core.plugins.updater import PluginUpdater
+from core.security.integrity_verifier import IntegrityVerifier
+from core.security.publisher_manager import PublisherManager
+from core.security.release_key import RELEASE_KEY_ID, RELEASE_PUBLIC_KEY
+from core.security.safe_mode import SafeMode, SecurityMode
+from core.security.trust_store import TrustStore
+from core.settings import Settings, SettingsService, normalized_download_workers
+from core.storage.paths import AppPaths
+from core.updates.offline_bundle import OfflineUpdateInstaller
+
+
+@dataclass(slots=True)
+class AppContext:
+    settings: Settings
+    paths: AppPaths
+    logger: object
+    events: EventBus
+    security: SafeMode
+    trust_store: TrustStore
+    audit: AuditLog
+    lifecycle: Lifecycle
+    download_queue: DownloadQueue
+    download_providers: DownloadProviderRegistry
+    discovery: DiscoveryService
+    plugin_registry: PluginRegistry
+    plugin_installer: PluginInstaller
+    plugin_supervisor: PluginSupervisor
+    plugin_manager: PluginManager
+    plugin_cleanup: PluginCleanupManager
+    plugin_maintenance: PluginMaintenanceManager
+    plugin_recovery: PluginTransactionRecovery
+    plugin_updater: PluginUpdater
+    plugin_rollback: PluginRollbackManager
+    plugin_ui: PluginUIService
+    publisher_manager: PublisherManager
+    offline_updates: OfflineUpdateInstaller
+    library: LibraryService
+    features: FeatureModRegistry
+    conversion: ConversionService | None
+    transcription: TranscriptionService | None
+    automation: AutomationService | None
+
+
+class Bootstrap:
+    def __init__(self, *, portable: bool = False) -> None:
+        self.portable = portable
+        self.state = StartupState()
+
+    @staticmethod
+    def _security_state(paths: AppPaths) -> tuple[SafeMode, TrustStore]:
+        security = SafeMode()
+        trust_store = TrustStore(paths.security / "trust-store.json")
+        try:
+            trust_store.load()
+        except (OSError, ValueError, TypeError) as error:
+            security.block(f"trust store invalid: {error}")
+        manifest = paths.release_security / "release-manifest.json"
+        if manifest.exists():
+            result = IntegrityVerifier(
+                paths.application,
+                public_key=RELEASE_PUBLIC_KEY,
+                key_id=RELEASE_KEY_ID,
+            ).verify(manifest)
+            if not result.valid:
+                security.block("; ".join(result.errors))
+        else:
+            security.enter_safe_mode("development build has no signed release manifest")
+        return security, trust_store
+
+    def verify_only(self) -> SafeMode:
+        """Verify security inputs without starting or mutating runtime services."""
+        paths = AppPaths.discover(portable=self.portable)
+        security, _ = self._security_state(paths)
+        try:
+            ensure_builtin_providers(paths.builtin_mod)
+        except BuiltinProviderIntegrityError as error:
+            security.block(f"built-in download MOD invalid: {error}")
+        return security
+
+    def initialize(self, *, start_background: bool = True) -> AppContext:
+        paths = AppPaths.discover(portable=self.portable)
+        paths.migrate_legacy_user_data()
+        paths.migrate_legacy_mod_state()
+        paths.ensure_runtime_directories()
+        self.state.advance(StartupPhase.PATHS_READY, "runtime paths ready")
+        settings_service = SettingsService(paths.settings / "settings.json")
+        settings = settings_service.load()
+        settings.portable_mode = self.portable
+        settings.download_workers = normalized_download_workers(
+            settings.download_workers
+        )
+        self.state.advance(StartupPhase.SETTINGS_READY, "settings loaded")
+        logger = configure_logging(paths.logs, settings.log_level)
+        audit = AuditLog(paths.logs / "audit.jsonl")
+        self.state.advance(StartupPhase.LOGGING_READY, "secure logging ready")
+        security, trust_store = self._security_state(paths)
+        audit.write("security.bootstrap", mode=security.mode, reason=security.reason)
+
+        lifecycle = Lifecycle()
+        library = LibraryService(
+            paths.data / "library.sqlite3",
+            paths.cache / "artwork",
+        )
+        download_providers = DownloadProviderRegistry(
+            paths.mod / "provider-state.json"
+        )
+        features = FeatureModRegistry(paths.mod / "feature-state.json")
+        conversion: ConversionService | None = None
+        transcription: TranscriptionService | None = None
+        automation: AutomationService | None = None
+        builtin_root = None
+        discovery = DiscoveryService(paths.mod / "discovery-state.json")
+        javascript_runtime = find_javascript_runtime(paths.application)
+        try:
+            builtin_root = ensure_builtin_providers(
+                paths.builtin_mod, paths.cache / "builtin-mod"
+            )
+            youtube = SubprocessDownloadProvider(
+                builtin_root / "youtube",
+                application_root=paths.application,
+                ffmpeg_location=find_executable(paths.application, "ffmpeg"),
+                js_runtime=javascript_runtime,
+                expected_hashes=BUILTIN_PROVIDER_HASHES["youtube"],
+                preview_root=paths.temp / "youtube-auto-split",
+            )
+            download_providers.register(youtube, enabled=True)
+            generic_ytdlp = SubprocessDownloadProvider(
+                builtin_root / "generic-ytdlp",
+                application_root=paths.application,
+                ffmpeg_location=find_executable(paths.application, "ffmpeg"),
+                js_runtime=javascript_runtime,
+                expected_hashes=BUILTIN_PROVIDER_HASHES["generic-ytdlp"],
+            )
+            download_providers.register(generic_ytdlp, enabled=False)
+            bilibili = SubprocessDownloadProvider(
+                builtin_root / "bilibili",
+                application_root=paths.application,
+                ffmpeg_location=find_executable(paths.application, "ffmpeg"),
+                js_runtime=javascript_runtime,
+                expected_hashes=BUILTIN_PROVIDER_HASHES["bilibili"],
+            )
+            download_providers.register(bilibili, enabled=False)
+            youtube_search = SubprocessDownloadProvider(
+                builtin_root / "youtube-search",
+                application_root=paths.application,
+                js_runtime=javascript_runtime,
+                expected_hashes=BUILTIN_PROVIDER_HASHES["youtube-search"],
+            )
+            discovery.register(youtube_search, enabled=True)
+            youtube_player = SubprocessDownloadProvider(
+                builtin_root / "youtube-player",
+                application_root=paths.application,
+                ffmpeg_location=find_executable(paths.application, "ffmpeg"),
+                js_runtime=javascript_runtime,
+                expected_hashes=BUILTIN_PROVIDER_HASHES["youtube-player"],
+                preview_root=paths.temp / "youtube-player",
+            )
+            discovery.register_video_preview(youtube_player, enabled=False)
+            youtube_history = SubprocessDownloadProvider(
+                builtin_root / "youtube-history",
+                application_root=paths.application,
+                expected_hashes=BUILTIN_PROVIDER_HASHES["youtube-history"],
+                history_state_path=paths.data / "youtube-history.json",
+            )
+            discovery.register_history(youtube_history, enabled=True)
+            youtube_recovery = SubprocessDownloadProvider(
+                builtin_root / "youtube-recovery",
+                application_root=paths.application,
+                expected_hashes=BUILTIN_PROVIDER_HASHES["youtube-recovery"],
+            )
+            discovery.register_recovery(youtube_recovery, enabled=True)
+            youtube_similar = SubprocessDownloadProvider(
+                builtin_root / "youtube-similar",
+                application_root=paths.application,
+                expected_hashes=BUILTIN_PROVIDER_HASHES["youtube-similar"],
+            )
+            discovery.register_similar(youtube_similar, enabled=True)
+            youtube_auto_split = SubprocessDownloadProvider(
+                builtin_root / "youtube-auto-split",
+                application_root=paths.application,
+                ffmpeg_location=find_executable(paths.application, "ffmpeg"),
+                expected_hashes=BUILTIN_PROVIDER_HASHES["youtube-auto-split"],
+                analysis_root=paths.temp / "youtube-auto-split",
+            )
+            discovery.register_split(youtube_auto_split, enabled=True)
+            conversion = ConversionService(
+                find_executable(paths.application, "ffmpeg"),
+                builtin_root / "media-convert" / "presets.json",
+                paths.temp / "media-convert",
+            )
+            features.register(conversion, enabled=False)
+            transcription = TranscriptionService(
+                find_executable(paths.application, "whisper-cli"),
+                SpeechModelManager(paths.data / "models" / "speech-to-text"),
+                paths.temp / "speech-to-text",
+            )
+            features.register(transcription, enabled=False)
+        except (BuiltinProviderIntegrityError, ProviderProtocolError) as error:
+            security.block(f"built-in download MOD invalid: {error}")
+            audit.write("downloads.builtin_provider_invalid", error=str(error))
+        download_queue = DownloadQueue(
+            download_providers,
+            workers=settings.download_workers,
+            state_path=paths.data / "download-queue.json",
+            archive_path=paths.data / "download-archive.json",
+        )
+        if start_background:
+            download_queue.start()
+        plugin_registry = PluginRegistry(paths.plugin_registry)
+        plugin_installer = PluginInstaller(paths.mod, plugin_registry, trust_store)
+        plugin_supervisor = PluginSupervisor(paths.mod, plugin_registry)
+        plugin_manager = PluginManager(
+            paths.mod,
+            plugin_registry,
+            plugin_supervisor,
+            trust_store,
+            allow_executable_plugins=False,
+        )
+        if builtin_root is not None:
+            def dispatch_automation(
+                rule: AutomationRule, candidate: AutomationCandidate
+            ) -> str:
+                preset = rule.preset
+                action = str(preset["action"])
+                output_dir = Path(str(preset.get("output_dir", paths.downloads)))
+                if action == "download":
+                    requests: list[DownloadRequest] = []
+                    if bool(preset.get("playlist", False)):
+                        entries = download_providers.playlist(
+                            candidate.source, limit=rule.rate_limit
+                        )
+                        requests.extend(
+                            DownloadRequest(
+                                entry.url,
+                                output_dir,
+                                source_video_id=entry.entry_id,
+                                source_title=entry.title,
+                                source_artist=entry.artist,
+                                source_category="automation-playlist",
+                                format_preset=str(preset.get("format_preset", "best")),
+                            )
+                            for entry in entries[: rule.rate_limit]
+                            if entry.available
+                        )
+                    else:
+                        requests.append(
+                            DownloadRequest(
+                                candidate.source,
+                                output_dir,
+                                source_category="automation",
+                                format_preset=str(preset.get("format_preset", "best")),
+                            )
+                        )
+                    task_ids = []
+                    for request in requests:
+                        try:
+                            task_ids.append(download_queue.add(request))
+                        except DuplicateDownloadError:
+                            continue
+                    if not task_ids:
+                        raise AutomationDuplicate("all discovered downloads are already queued or archived")
+                    return ",".join(task_ids)
+                if action == "media-convert":
+                    if conversion is None or not features.is_enabled("media-convert"):
+                        raise RuntimeError("Media Convert MOD must be enabled")
+                    from core.conversion import ConversionRequest
+
+                    source = Path(candidate.source)
+                    conversion_preset = str(preset.get("conversion_preset", "remux-copy"))
+                    suffixes = {
+                        "audio-mp3": ".mp3",
+                        "audio-flac": ".flac",
+                        "subtitle-srt": ".srt",
+                        "video-h264": ".mp4",
+                        "compress-h265": ".mkv",
+                    }
+                    suffix = suffixes.get(conversion_preset, source.suffix)
+                    target = output_dir / f"{source.stem}.converted{suffix}"
+                    if target.exists():
+                        raise AutomationDuplicate(f"automation output already exists: {target}")
+                    return conversion.submit(
+                        ConversionRequest((source,), target, conversion_preset)
+                    )
+                if action == "speech-to-text":
+                    if transcription is None or not features.is_enabled("speech-to-text"):
+                        raise RuntimeError("Speech to Text MOD must be enabled")
+                    from core.transcription import TranscriptionRequest
+
+                    formats = tuple(str(value) for value in preset.get("formats", ("txt", "srt", "vtt")))
+                    return transcription.submit(
+                        TranscriptionRequest(
+                            Path(candidate.source),
+                            str(preset.get("model_id", "")),
+                            output_dir,
+                            formats,
+                            str(preset.get("language", "auto")),
+                        )
+                    )
+                raise RuntimeError("unsupported automation action")
+
+            automation = AutomationService(
+                paths.data / "automation.sqlite3",
+                dispatch_automation,
+            )
+            features.register(automation, enabled=False)
+        plugin_cleanup = PluginCleanupManager(paths.mod, plugin_registry)
+        plugin_recovery = PluginTransactionRecovery(
+            paths.mod, plugin_registry, plugin_manager
+        )
+        recovery_report = plugin_recovery.recover_all()
+        if recovery_report.recovered:
+            audit.write(
+                "plugins.transactions_recovered",
+                plugin_ids=recovery_report.recovered,
+            )
+        if recovery_report.warnings:
+            audit.write(
+                "plugins.transaction_recovery_warning",
+                warnings=recovery_report.warnings,
+            )
+        if recovery_report.errors:
+            security.block("; ".join(recovery_report.errors))
+            audit.write(
+                "plugins.transaction_recovery_failed",
+                errors=recovery_report.errors,
+            )
+        self.state.advance(
+            StartupPhase.SECURITY_CHECKED, f"security mode: {security.mode}"
+        )
+        publisher_manager = PublisherManager(
+            trust_store, plugin_registry, plugin_manager
+        )
+        version_root = (
+            paths.application.parent
+            if (paths.application / "release-info.json").is_file()
+            else paths.application / "Version"
+        )
+        offline_updates = OfflineUpdateInstaller(
+            version_root,
+            public_key=RELEASE_PUBLIC_KEY,
+            key_id=RELEASE_KEY_ID,
+        )
+        plugin_maintenance = PluginMaintenanceManager(
+            paths.mod, plugin_registry, plugin_manager
+        )
+        plugin_updater = PluginUpdater(
+            paths.mod, plugin_registry, plugin_installer, plugin_manager
+        )
+        plugin_rollback = PluginRollbackManager(
+            paths.mod, plugin_registry, plugin_manager
+        )
+        plugin_ui = PluginUIService(paths.mod, plugin_registry, plugin_manager)
+        lifecycle.on_shutdown(plugin_registry.close)
+        lifecycle.on_shutdown(plugin_supervisor.stop_all)
+        lifecycle.on_shutdown(download_providers.close)
+        lifecycle.on_shutdown(discovery.close)
+        lifecycle.on_shutdown(download_queue.shutdown)
+        lifecycle.on_shutdown(library.close)
+        lifecycle.on_shutdown(features.close)
+        started_plugins: list[str] = []
+        if security.mode is SecurityMode.NORMAL:
+            for record in plugin_registry.list_enabled():
+                result = plugin_manager.set_enabled(
+                    record.plugin_id, True, security.mode
+                )
+                if result.successful:
+                    started_plugins.append(record.plugin_id)
+                else:
+                    audit.write(
+                        "plugin.start_rejected",
+                        plugin_id=record.plugin_id,
+                        errors=result.errors,
+                    )
+        audit.write("plugins.started", plugin_ids=started_plugins)
+        context = AppContext(
+            settings=settings,
+            paths=paths,
+            logger=logger,
+            events=EventBus(),
+            security=security,
+            trust_store=trust_store,
+            audit=audit,
+            lifecycle=lifecycle,
+            download_queue=download_queue,
+            download_providers=download_providers,
+            discovery=discovery,
+            plugin_registry=plugin_registry,
+            plugin_installer=plugin_installer,
+            plugin_supervisor=plugin_supervisor,
+            plugin_manager=plugin_manager,
+            plugin_cleanup=plugin_cleanup,
+            plugin_maintenance=plugin_maintenance,
+            plugin_recovery=plugin_recovery,
+            plugin_updater=plugin_updater,
+            plugin_rollback=plugin_rollback,
+            plugin_ui=plugin_ui,
+            publisher_manager=publisher_manager,
+            offline_updates=offline_updates,
+            library=library,
+            features=features,
+            conversion=conversion,
+            transcription=transcription,
+            automation=automation,
+        )
+        self.state.advance(StartupPhase.READY, "core ready")
+        return context
+
+    def run(self, *, headless: bool = False, verify_only: bool = False) -> int:
+        if verify_only:
+            security = self.verify_only()
+            print(f"MediaManager security mode: {security.mode}")
+            if security.reason:
+                print(security.reason)
+            return 2 if security.mode == "BLOCKED" else 0
+        context = self.initialize()
+        if headless:
+            print(f"MediaManager ready ({context.security.mode})")
+            return 2 if context.security.mode == "BLOCKED" else 0
+        from trusted_ui.security_window import run_security_ui
+
+        return run_security_ui(context)
+
+
+
+
+
+
+
+
+
+
+
+

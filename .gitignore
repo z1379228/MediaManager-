@@ -1,0 +1,32 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Portable-mode runtime data
+/Cache/
+/Data/
+/Downloads/
+/Logs/
+/mod/packages/
+/mod/installed/
+/mod/quarantine/
+/mod/backups/
+/mod/registry.sqlite3*
+/mod/**/~/**
+/Security/
+/Settings/
+/Temp/
+
+# Local development release metadata must not be mistaken for signed output
+/security/release-manifest.json
+/security/release-manifest.sig
+
+# Generated build and version artifacts
+/build*/
+/dist*/
+/Version/
+/mediamanager.egg-info/
+/.work/
+/.tool-cache/
+/UserData/

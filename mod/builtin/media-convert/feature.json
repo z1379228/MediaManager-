@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "provider_id": "media-convert",
+  "display_name": "Media Convert",
+  "kind": "local-feature",
+  "default_enabled": false,
+  "permissions": ["storage.user-selected.read", "storage.user-selected.write", "process.ffmpeg"]
+}

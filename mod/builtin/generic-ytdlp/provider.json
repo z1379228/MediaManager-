@@ -1,0 +1,35 @@
+{
+  "provider_id": "generic-ytdlp",
+  "display_name": "其他網站 Beta",
+  "entry_point": "provider.py",
+  "url_hosts": [
+    "vimeo.com",
+    "www.vimeo.com",
+    "player.vimeo.com",
+    "dailymotion.com",
+    "www.dailymotion.com",
+    "dai.ly",
+    "soundcloud.com",
+    "www.soundcloud.com",
+    "on.soundcloud.com",
+    "tiktok.com",
+    "www.tiktok.com",
+    "m.tiktok.com",
+    "vm.tiktok.com",
+    "twitch.tv",
+    "www.twitch.tv",
+    "m.twitch.tv",
+    "clips.twitch.tv",
+    "x.com",
+    "www.x.com",
+    "twitter.com",
+    "www.twitter.com",
+    "mobile.twitter.com"
+  ],
+  "permissions": [
+    "network.generic",
+    "storage.downloads.write",
+    "process.ffmpeg",
+    "process.javascript"
+  ]
+}

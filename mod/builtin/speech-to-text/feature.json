@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "provider_id": "speech-to-text",
+  "display_name": "Speech to Text",
+  "kind": "local-feature",
+  "default_enabled": false,
+  "permissions": ["storage.user-selected.read", "storage.user-selected.write", "process.whisper-cpp"],
+  "bundled_model": false,
+  "automatic_download": false
+}

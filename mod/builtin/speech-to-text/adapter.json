@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "adapter": "whisper.cpp whisper-cli",
+  "protocol": "whisper-cli-v1",
+  "outputs": ["txt", "srt", "vtt"],
+  "model_install": "local-file-with-explicit-sha256"
+}

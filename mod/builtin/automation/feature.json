@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "provider_id": "automation",
+  "display_name": "Automation",
+  "kind": "local-feature",
+  "default_enabled": false,
+  "rules_default_enabled": false,
+  "capabilities": ["scheduled-url", "watch-folder", "clipboard-url"],
+  "background_requires_explicit_enable": true
+}
