@@ -219,7 +219,11 @@ def create_builtin_mod_panel(context: object, parent: object = None) -> object:
         table.setRowCount(len(rows))
         for index, row in enumerate(rows):
             state_text = (
-                "已啟用" if row.enabled else "已停用" if row.available else "不可用"
+                "已啟用"
+                if row.enabled
+                else "已停用"
+                if row.available
+                else "初始化失敗"
             )
             state = QTableWidgetItem(state_text)
             state.setForeground(
@@ -246,7 +250,10 @@ def create_builtin_mod_panel(context: object, parent: object = None) -> object:
             toggle.setToolTip(
                 "立即啟用或停用此內建 MOD"
                 if row.available
-                else "MOD 未通過載入或完整性檢查"
+                else (
+                    "這個內建 MOD 未完成註冊或完整性驗證。"
+                    "請查看上方安全狀態與環境檢測；若剛補齊依賴，請重新啟動 MediaManager。"
+                )
             )
             toggle.clicked.connect(
                 lambda _checked=False, selected=row.provider_id, enabled=not row.enabled: change_state(

@@ -21,6 +21,9 @@ def create_mod_pages_panel(context: object, parent: object = None) -> object:
     panel = QWidget(parent)
     layout = QVBoxLayout(panel)
     controls = QHBoxLayout()
+    locale_caption = QLabel("MOD 介面語言")
+    locale_caption.setObjectName("modPageLocaleCaption")
+    controls.addWidget(locale_caption)
     locale_selector = QComboBox()
     locale_selector.setObjectName("modPageLocaleSelector")
     locale_selector.setAccessibleName("外部 MOD 介面語言")
@@ -41,6 +44,10 @@ def create_mod_pages_panel(context: object, parent: object = None) -> object:
     refresh.setAccessibleName("重新整理外部 MOD 介面")
     controls.addWidget(refresh)
     layout.addLayout(controls)
+    locale_status = QLabel()
+    locale_status.setObjectName("modPageLocaleStatus")
+    locale_status.setWordWrap(True)
+    layout.addWidget(locale_status)
     selector = QComboBox()
     selector.setObjectName("modPageSelector")
     selector.setAccessibleName("外部 MOD 介面選擇")
@@ -66,6 +73,8 @@ def create_mod_pages_panel(context: object, parent: object = None) -> object:
             detail_text = (
                 "這裡只呈現已安裝、已啟用且驗證通過的外部 MOD ui.json。"
                 "內建 YouTube、Bilibili 與其他功能請到「內建 MOD 狀態」管理。"
+                f"目前已保存 {locale_selector.currentText()} 作為 MOD 介面語言；"
+                "即使尚無外部 MOD，之後安裝的多語言 MOD 仍會套用此設定。"
             )
             security = getattr(context, "security", None)
             if str(getattr(security, "mode", "")) != "NORMAL":
@@ -109,7 +118,11 @@ def create_mod_pages_panel(context: object, parent: object = None) -> object:
         selector.setVisible(bool(pages))
         selector.setCurrentIndex(selected_index if pages else -1)
         selector.blockSignals(False)
-        locale_selector.setEnabled(any(page.available_locales for _, page in pages))
+        locale_selector.setEnabled(True)
+        locale_status.setText(
+            f"目前選用：{locale_selector.currentText()}。"
+            "此設定套用至支援多語言的外部 MOD 介面；主程式尚未完整翻譯的文字不會偽裝成已翻譯。"
+        )
         render(selector.currentIndex())
 
     def apply_locale() -> None:

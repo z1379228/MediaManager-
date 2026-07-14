@@ -8,6 +8,26 @@ from trusted_ui.plugin_rollback import choose_and_rollback_plugin
 from trusted_ui.plugin_updater import choose_and_update_plugin
 
 
+def external_mod_security_notice(mode: object, reason: object = None) -> str:
+    if str(mode) == "NORMAL":
+        return ""
+    detail = str(reason or "開發版尚未完成正式簽章驗證")
+    return (
+        "外部可執行 MOD 目前受安全模式限制，不能啟用；"
+        "內建 MOD 不受此列限制。原因：" + detail
+    )
+
+
+def external_mod_record_status(record: object, mode: object) -> str:
+    if str(getattr(record, "pending_action", "")) == "REMOVE":
+        return "已移除（可還原）"
+    if bool(getattr(record, "enabled", False)):
+        return "已啟用"
+    if str(mode) != "NORMAL":
+        return "安全模式限制（未啟用）"
+    return "已停用（可啟用）"
+
+
 def create_plugin_panel(context: object, parent: object = None) -> object:
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import (
@@ -26,9 +46,18 @@ def create_plugin_panel(context: object, parent: object = None) -> object:
         def __init__(self) -> None:
             super().__init__(parent)
             layout = QVBoxLayout(self)
+            notice_text = external_mod_security_notice(
+                context.security.mode,
+                context.security.reason,
+            )
+            self.security_notice = QLabel(notice_text)
+            self.security_notice.setObjectName("pluginSecurityNotice")
+            self.security_notice.setWordWrap(True)
+            self.security_notice.setVisible(bool(notice_text))
+            layout.addWidget(self.security_notice)
             self.empty = QLabel(
                 "尚未安裝外部 MOD。可使用「安裝 .modpkg」加入已簽章套件；"
-                "在目前 SAFE_MODE 下，外部可執行 MOD 仍不能啟用。"
+                "安裝後會依安全模式與簽章狀態決定是否可啟用。"
             )
             self.empty.setObjectName("sectionSubtitle")
             self.empty.setWordWrap(True)
@@ -71,10 +100,10 @@ def create_plugin_panel(context: object, parent: object = None) -> object:
                 self.table.setItem(row, 0, identifier)
                 self.table.setItem(row, 1, QTableWidgetItem(record.installed_version))
                 self.table.setItem(row, 2, QTableWidgetItem(record.publisher_id))
-                if record.pending_action == "REMOVE":
-                    status = "已移除（可還原）"
-                else:
-                    status = "已啟用" if record.enabled else "已停用"
+                status = external_mod_record_status(
+                    record,
+                    context.security.mode,
+                )
                 self.table.setItem(row, 3, QTableWidgetItem(status))
 
         def selected_id(self) -> str | None:

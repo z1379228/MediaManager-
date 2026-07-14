@@ -147,30 +147,42 @@ def test_service_rejects_page_when_installed_files_fail_verification(tmp_path) -
     registry.close()
 
 
-def test_external_mod_page_uses_dark_accessible_scroll_surface(monkeypatch) -> None:
+def test_external_mod_page_uses_dark_accessible_scroll_surface(
+    tmp_path, monkeypatch
+) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
 
     from PySide6.QtGui import QPalette
-    from PySide6.QtWidgets import QApplication, QComboBox, QScrollArea
+    from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QScrollArea
 
     app = QApplication.instance() or QApplication([])
     apply_application_theme(app)
     context = Mock()
     context.plugin_ui.locale = "zh-TW"
     context.plugin_ui.list_pages.return_value = ()
+    context.settings = Settings(language="zh-TW")
+    context.paths = SimpleNamespace(settings=tmp_path)
     panel = create_mod_pages_panel(context)
     try:
         scroll = panel.findChild(QScrollArea, "modPageScroll")
         selector = panel.findChild(QComboBox, "modPageSelector")
         locale_selector = panel.findChild(QComboBox, "modPageLocaleSelector")
+        locale_status = panel.findChild(QLabel, "modPageLocaleStatus")
         assert scroll is not None
         assert selector is not None
         assert locale_selector is not None
+        assert locale_status is not None
         assert scroll.accessibleName() == "外部 MOD 介面內容"
         assert selector.accessibleName() == "外部 MOD 介面選擇"
         assert locale_selector.accessibleName() == "外部 MOD 介面語言"
-        assert not locale_selector.isEnabled()
+        assert locale_selector.isEnabled()
+        assert "繁體中文" in locale_status.text()
+        locale_selector.setCurrentIndex(locale_selector.findData("en"))
+        app.processEvents()
+        assert context.plugin_ui.locale == "en"
+        assert SettingsService(tmp_path / "settings.json").load().language == "en"
+        assert "English" in locale_status.text()
         assert (
             scroll.viewport().palette().color(QPalette.ColorRole.Base).lightness()
             < 40
