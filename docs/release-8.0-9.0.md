@@ -1,25 +1,40 @@
-# MediaManager 開發版 8.0 至 9.0 更新紀錄
+# MediaManager 開發版更新紀錄 8.0～9.0
 
-本文件以 8.0 MOD 適配工具為基線，集中記錄 9.0 的下載可靠性與正式版候選工作。
+## 8.0
 
-## 8.0 基線
-
-- Adapter SDK 新範本跟隨目前核心版本，並提供最多 100 個專案的批次唯讀報告。
-- 四語宣告式 UI、安全 fallback 與第三方程式碼不執行邊界維持不變。
+- Adapter SDK 加入有界目錄驗證、相容版本檢查、重複 ID 檢查與 JSON 報告。
+- 宣告式外部 MOD UI schema v2 限定 `en`、`ja`、`zh-CN`、`zh-TW` 四種語言。
 
 ## 9.0
 
-- 既有 2／8／30 秒重試決策正式接入下載佇列；目前最多兩次自動重試，使用
-  2 秒及 8 秒，第三次失敗停止，不進入無界 30 秒循環。
-- 只有 provider 明確回報 `retryable=True` 的暫時性或速率限制錯誤會自動重試。
-- 內容移除、登入、地區、DRM、付費、不支援與一般未知錯誤不自動重試。
-- 自動重試次數與下一次等待秒數寫入佇列狀態；重啟後不會無限重置重試上限。
-- 暫停、取消及程式關閉可以中斷重試等待；手動重試會明確建立新的重試週期。
-- UI 透過既有狀態訊息顯示等待秒數與重試進度，不增加常駐背景服務。
+- 下載佇列整合有界自動重試：第一次等待 2 秒、第二次等待 8 秒，最多自動重試
+  2 次，單次等待上限 30 秒。
+- 只重試 provider 明確標示 `retryable=True` 的暫時性失敗；永久失效、需要登入、
+  DRM、磁碟或權限錯誤不會盲目重試。
+- 重試次數與下一次等待時間寫入佇列狀態，舊版 JSON 可安全載入；手動重試會重設
+  計數，暫停、取消與關閉可中斷等待。
+- Search cursor、Adapter catalog 與下載重試共同完成搜尋、MOD 適配及下載可靠性
+  的大版本強化。
+
+## 9.x 特別修正：MOD 顯示、語言與說明
+
+- 修正 MOD 多語言資料層已完成、但 UI 沒有語言選擇器且 bootstrap 忽略設定語言
+  的接線缺口。
+- 外部 MOD 介面可切換英文、日文、簡體中文與繁體中文；選擇會寫回
+  `settings.json`，下次啟動正確還原。
+- 外部 MOD 啟用後切換到介面頁會自動重新載入，另提供手動重新整理；SAFE_MODE
+  阻擋外部可執行 MOD 時顯示明確原因，不再只呈現空白頁。
+- 3 個下載 MOD、6 個探索 MOD、3 個選用功能 MOD 全部納入唯一啟用路由稽核；
+  搜尋頁、下載頁與 MOD 管理器統一透過相同控制器發布跨頁同步事件。
+- Media Convert、Speech to Text、Automation 在 MOD 管理頁與各自分頁補上中文
+  使用順序、入口與 FFmpeg／whisper-cli／模型依賴說明。
+- MOD 接線稽核加入正式版候選必要證據；未通過不得封裝 Stable。
+- Ruff 與 545 項測試通過，另有 2 項 Windows symlink 測試因帳戶權限跳過。
 
 ## 正式版 1.0 候選
 
-9.0 完整驗證後可產生正式版 1.0 候選評估。正式版仍必須同時具備 production
-Ed25519 release manifest、有效 Windows Authenticode、完整回歸、copied-folder
-smoke、升級／回退、SBOM、依賴鎖及公開附件 SHA-256。缺少任一正式身分時，
-只保留候選報告，不建立或上傳未簽署 Stable。
+開發版 9.x 的功能與 MOD 自檢已完成，但 production Ed25519 release identity
+尚未設定，`MediaManager.exe` 的 Authenticode 狀態仍是 `NotSigned`。因此目前只
+能發布開發版與正式版候選資訊，不能建立或上傳 Stable 1.0 二進位檔。
+
+候選細節見 [`release-stable-1.0-candidate.md`](release-stable-1.0-candidate.md)。

@@ -7,6 +7,9 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
 
+SUPPORTED_UI_LANGUAGES = frozenset({"en", "ja", "zh-CN", "zh-TW"})
+
+
 @dataclass(slots=True)
 class Settings:
     theme: str = "system"
@@ -23,6 +26,12 @@ def normalized_download_workers(value: object) -> int:
     if not isinstance(value, int) or isinstance(value, bool):
         return 2
     return max(1, min(value, 4))
+
+
+def normalized_language(value: object) -> str:
+    if isinstance(value, str) and value in SUPPORTED_UI_LANGUAGES:
+        return value
+    return "zh-TW"
 
 
 class SettingsService:

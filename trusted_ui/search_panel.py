@@ -16,6 +16,7 @@ from core.discovery.query_ranking import (
 )
 from core.discovery.suggestions import preference_search_queries
 from trusted_ui.empty_state import create_empty_state
+from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.thumbnail_loader import create_thumbnail_loader
 
 
@@ -170,8 +171,8 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 if not available:
                     action.setToolTip(f"{provider_id} MOD 不可用")
                 action.toggled.connect(
-                    lambda checked, selected=provider_id: context.discovery.set_enabled(
-                        selected, checked
+                    lambda checked, selected=provider_id: set_builtin_mod_enabled(
+                        context, selected, checked
                     )
                 )
                 feature_menu.addAction(action)
@@ -420,7 +421,9 @@ def create_search_panel(context: object, parent: object = None) -> object:
             action = self.feature_actions_by_id.get(provider_id)
             if action is None:
                 return
+            action.blockSignals(True)
             action.setChecked(context.discovery.is_enabled(str(provider_id)))
+            action.blockSignals(False)
             self.refresh_feature_button()
             self.update_action_state()
 

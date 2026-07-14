@@ -21,6 +21,7 @@ class CandidateEvidence:
     copied_folder_smoke: bool
     upgrade: bool
     rollback: bool
+    mod_wiring: bool
     p0_open: int
     p1_open: int
 
@@ -32,6 +33,7 @@ class CandidateEvidence:
             "copied_folder_smoke",
             "upgrade",
             "rollback",
+            "mod_wiring",
             "p0_open",
             "p1_open",
         }
@@ -43,6 +45,7 @@ class CandidateEvidence:
             "copied_folder_smoke",
             "upgrade",
             "rollback",
+            "mod_wiring",
         ):
             if not isinstance(raw[field], bool):
                 raise ValueError("candidate evidence checks must be booleans")
@@ -99,6 +102,7 @@ def assess_candidate(
         "copied_folder_smoke": "copied-folder smoke has not passed",
         "upgrade": "upgrade validation has not passed",
         "rollback": "rollback validation has not passed",
+        "mod_wiring": "MOD visibility and enablement audit has not passed",
     }
     for field, label in labels.items():
         if not getattr(evidence, field):

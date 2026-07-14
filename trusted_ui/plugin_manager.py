@@ -36,6 +36,12 @@ def create_plugin_manager_dialog(context: object, parent: object = None) -> obje
     tabs.addTab(create_mod_pages_panel(context, dialog), "外部 MOD 介面")
     tabs.addTab(create_offline_update_panel(context, dialog), "離線更新")
     page.addWidget(tabs, 1)
+    mod_pages = tabs.widget(4)
+    tabs.currentChanged.connect(
+        lambda index: mod_pages.refresh_pages()
+        if tabs.widget(index) is mod_pages
+        else None
+    )
     if not context.plugin_registry.list_all():
         tabs.setCurrentIndex(1)
     close = QPushButton("關閉")

@@ -6,11 +6,12 @@
 ## 已通過
 
 - Ruff 通過。
-- Pytest 完整回歸通過：538 passed、2 skipped。
+- Pytest 完整回歸通過：545 passed、2 skipped。
 - 9.0 copied-folder 的 `--version`、Portable verify、headless 與 GUI smoke 通過。
 - 升級與回退相關測試通過。
 - 9.0 版本資料夾 43 項 SHA-256 稽核通過。
 - GitHub 目前沒有開放的 P0 或 P1 issue。
+- MOD 可見性、唯一啟用路由、狀態持久化、跨頁同步及選用分頁顯示稽核通過。
 
 ## 目前阻擋
 

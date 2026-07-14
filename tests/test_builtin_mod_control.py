@@ -9,6 +9,7 @@ from core.bootstrap.bootstrap import Bootstrap
 from core.downloads.models import DownloadRequest, DownloadTask
 from core.downloads.provider_registry import DownloadProviderRegistry, ProviderStatus
 from core.events.event_bus import EventBus
+from core.features import FeatureStatus
 from core.storage.paths import AppPaths
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.download_panel import create_download_panel
@@ -69,6 +70,35 @@ def test_discovery_mod_toggle_uses_discovery_registry() -> None:
 
     assert set_builtin_mod_enabled(context, "youtube-player", True) == 0
     discovery.set_enabled.assert_called_once_with("youtube-player", True)
+
+
+def test_feature_mod_toggle_uses_shared_event_and_reports_cancelled_work() -> None:
+    features = Mock()
+    features.statuses.return_value = (
+        FeatureStatus("media-convert", "Media Convert", True),
+    )
+    features.set_enabled.return_value = 2
+    events = EventBus()
+    received = []
+    events.subscribe("builtin_mod.changed", received.append)
+    context = SimpleNamespace(
+        download_providers=Mock(),
+        download_queue=Mock(),
+        discovery=Mock(),
+        features=features,
+        audit=Mock(),
+        events=events,
+    )
+
+    assert set_builtin_mod_enabled(context, "media-convert", False) == 2
+    features.set_enabled.assert_called_once_with("media-convert", False)
+    assert received == [
+        {
+            "provider_id": "media-convert",
+            "enabled": False,
+            "cancelled_tasks": 2,
+        }
+    ]
 
 
 def test_builtin_mod_events_sync_download_and_search_controls(

@@ -31,6 +31,14 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
     subtitle.setObjectName("sectionSubtitle")
     page.addWidget(title)
     page.addWidget(subtitle)
+    guide = QLabel(
+        "使用方式：① 確認環境頁已偵測 FFmpeg；② 選擇一個或多個來源檔；"
+        "③ 選擇轉檔、抽取音訊、字幕或合併／分割預設；④ 指定輸出後開始。"
+        "停用 MOD 會取消尚未完成的工作，但不會刪除已完成檔案。"
+    )
+    guide.setObjectName("modUsageGuide")
+    guide.setWordWrap(True)
+    page.addWidget(guide)
 
     card = QFrame()
     card.setObjectName("card")

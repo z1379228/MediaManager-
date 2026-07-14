@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 import os
+import secrets
+import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,13 +29,22 @@ class VersionBuildPaths:
 
 
 def version_build_paths(
-    root: Path, version: str, *, channel: str = BUILD_CHANNEL
+    root: Path,
+    version: str,
+    *,
+    channel: str = BUILD_CHANNEL,
+    attempt_id: str | None = None,
 ) -> VersionBuildPaths:
+    if attempt_id is not None and not re.fullmatch(r"[a-z0-9-]{1,32}", attempt_id):
+        raise ValueError("build attempt id is invalid")
+    folder = version_folder_name(version)
+    if attempt_id is not None:
+        folder = f"{folder}-attempt-{attempt_id}"
     work = (
         root.resolve()
         / ".work"
         / release_track(channel)
-        / version_folder_name(version)
+        / folder
     )
     return VersionBuildPaths(
         work=work,
@@ -118,7 +130,12 @@ def build_version(
             "stable packaging requires explicit user confirmation"
         )
     validate_build_version(root, version)
-    paths = version_build_paths(root, version, channel=channel)
+    paths = version_build_paths(
+        root,
+        version,
+        channel=channel,
+        attempt_id=secrets.token_hex(4),
+    )
     portable_tools = portable_release_tools(root, enabled=portable_runtime)
     paths.temp.mkdir(parents=True, exist_ok=True)
     build_environment = os.environ.copy()
@@ -149,12 +166,18 @@ def build_version(
     wheel_environment = build_environment.copy()
     wheel_environment["PIP_NO_INDEX"] = "1"
     wheel_environment["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
-    subprocess.run(
-        wheel_build_command(Path(sys.executable), paths.wheel_output),
-        cwd=root,
-        check=True,
-        env=wheel_environment,
-    )
+    wheel_temp = Path(tempfile.mkdtemp(prefix="mediamanager-wheel-"))
+    wheel_environment["TEMP"] = str(wheel_temp)
+    wheel_environment["TMP"] = str(wheel_temp)
+    try:
+        subprocess.run(
+            wheel_build_command(Path(sys.executable), paths.wheel_output),
+            cwd=root,
+            check=True,
+            env=wheel_environment,
+        )
+    finally:
+        shutil.rmtree(wheel_temp, ignore_errors=True)
     executable = paths.executable_output / "MediaManager.exe"
     wheel = paths.wheel_output / f"mediamanager-{version}-py3-none-any.whl"
     target = stage_version(
