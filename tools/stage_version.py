@@ -165,7 +165,7 @@ def stage_version(
             for path in checksum_files
         ]
         (staging / "SHA256SUMS.txt").write_text(
-            "\n".join(lines) + "\n", encoding="ascii"
+            "\n".join(lines) + "\n", encoding="utf-8"
         )
         if target.exists():
             _replace_with_retry(target, backup)

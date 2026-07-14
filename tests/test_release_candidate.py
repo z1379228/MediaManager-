@@ -13,6 +13,7 @@ def evidence(**changes) -> CandidateEvidence:
         "copied_folder_smoke": True,
         "upgrade": True,
         "rollback": True,
+        "mod_wiring": True,
         "p0_open": 0,
         "p1_open": 0,
     }
@@ -48,7 +49,7 @@ def test_candidate_assessment_blocks_quality_signing_and_wrong_channel(
     write_info(tmp_path / "release", channel="preview")
     result = assess_candidate(
         tmp_path / "release",
-        evidence(pytest=False, p1_open=2),
+        evidence(pytest=False, mod_wiring=False, p1_open=2),
         suggested_stable_version="1.0.0",
         audit_checker=lambda _root: SimpleNamespace(valid=False),
         preflight_checker=lambda _root: SimpleNamespace(
@@ -60,6 +61,7 @@ def test_candidate_assessment_blocks_quality_signing_and_wrong_channel(
     assert "candidate must come from a development build" in result.blockers
     assert "Pytest has not passed" in result.blockers
     assert "P1 issues remain open: 2" in result.blockers
+    assert "MOD visibility and enablement audit has not passed" in result.blockers
     assert "不得包裝 Stable" in result.action
 
 

@@ -9,6 +9,7 @@ from core.plugins.recovery import PluginTransactionRecovery
 from core.plugins.rollback import PluginRollbackManager
 from core.plugins.updater import PluginUpdater
 from core.storage.paths import AppPaths
+from core.settings import Settings, SettingsService
 
 
 def test_bootstrap_plugin_service_types_are_wired_by_name(
@@ -38,7 +39,33 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     assert providers["youtube"].enabled
     assert not providers["generic-ytdlp"].enabled
     assert not providers["bilibili"].enabled
+    assert set(providers) == {"youtube", "generic-ytdlp", "bilibili"}
+    assert {status.provider_id for status in context.discovery.statuses()} == {
+        "youtube-search",
+        "youtube-player",
+        "youtube-history",
+        "youtube-recovery",
+        "youtube-similar",
+        "youtube-auto-split",
+    }
+    assert {status.provider_id for status in context.features.statuses()} == {
+        "media-convert",
+        "speech-to-text",
+        "automation",
+    }
     context.lifecycle.shutdown()
+
+
+def test_bootstrap_applies_supported_language_to_mod_ui(tmp_path, monkeypatch) -> None:
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    SettingsService(paths.settings / "settings.json").save(Settings(language="ja"))
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    try:
+        assert context.settings.language == "ja"
+        assert context.plugin_ui.locale == "ja"
+    finally:
+        context.lifecycle.shutdown()
 
 
 def test_clean_bootstrap_starts_no_optional_provider_process(

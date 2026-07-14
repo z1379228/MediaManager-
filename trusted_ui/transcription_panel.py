@@ -34,6 +34,14 @@ def create_transcription_panel(context: object, parent: object = None) -> object
     adapter.setWordWrap(True)
     page.addWidget(title)
     page.addWidget(adapter)
+    guide = QLabel(
+        "使用方式：① 先安裝 whisper.cpp 的 whisper-cli；② 選擇本機 GGML/GGUF 模型，"
+        "輸入模型 ID 與檔案 SHA-256 後匯入；③ 選擇音訊或影片、輸出資料夾、語言"
+        "（auto 代表自動判斷）與 TXT/SRT/VTT；④ 開始轉錄。軟體不會自動下載模型。"
+    )
+    guide.setObjectName("modUsageGuide")
+    guide.setWordWrap(True)
+    page.addWidget(guide)
 
     model_card = QFrame()
     model_card.setObjectName("card")

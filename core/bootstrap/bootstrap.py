@@ -46,7 +46,12 @@ from core.security.publisher_manager import PublisherManager
 from core.security.release_key import RELEASE_KEY_ID, RELEASE_PUBLIC_KEY
 from core.security.safe_mode import SafeMode, SecurityMode
 from core.security.trust_store import TrustStore
-from core.settings import Settings, SettingsService, normalized_download_workers
+from core.settings import (
+    Settings,
+    SettingsService,
+    normalized_download_workers,
+    normalized_language,
+)
 from core.storage.paths import AppPaths
 from core.updates.offline_bundle import OfflineUpdateInstaller
 
@@ -128,6 +133,7 @@ class Bootstrap:
         settings_service = SettingsService(paths.settings / "settings.json")
         settings = settings_service.load()
         settings.portable_mode = self.portable
+        settings.language = normalized_language(settings.language)
         settings.download_workers = normalized_download_workers(
             settings.download_workers
         )
@@ -400,7 +406,12 @@ class Bootstrap:
         plugin_rollback = PluginRollbackManager(
             paths.mod, plugin_registry, plugin_manager
         )
-        plugin_ui = PluginUIService(paths.mod, plugin_registry, plugin_manager)
+        plugin_ui = PluginUIService(
+            paths.mod,
+            plugin_registry,
+            plugin_manager,
+            locale=settings.language,
+        )
         lifecycle.on_shutdown(plugin_registry.close)
         lifecycle.on_shutdown(plugin_supervisor.stop_all)
         lifecycle.on_shutdown(download_providers.close)

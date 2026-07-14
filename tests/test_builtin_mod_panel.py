@@ -6,7 +6,22 @@ import pytest
 
 from core.downloads.provider_registry import ProviderStatus
 from core.features import FeatureStatus
-from trusted_ui.builtin_mod_panel import builtin_mod_rows, create_builtin_mod_panel
+from trusted_ui.builtin_mod_control import (
+    DISCOVERY_MOD_IDS,
+    DOWNLOAD_MOD_IDS,
+    FEATURE_MOD_IDS,
+)
+from trusted_ui.builtin_mod_panel import (
+    BUILTIN_MOD_IDS,
+    builtin_mod_rows,
+    create_builtin_mod_panel,
+)
+
+
+def test_every_visible_builtin_mod_has_exactly_one_enable_route() -> None:
+    groups = (DOWNLOAD_MOD_IDS, DISCOVERY_MOD_IDS, FEATURE_MOD_IDS)
+    assert not any(left & right for index, left in enumerate(groups) for right in groups[index + 1 :])
+    assert BUILTIN_MOD_IDS == frozenset().union(*groups)
 
 
 def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
@@ -136,6 +151,12 @@ def test_plugin_manager_defaults_to_actionable_builtin_mods(
     context = Bootstrap(portable=True).initialize()
     dialog = create_plugin_manager_dialog(context)
     try:
+        rows = builtin_mod_rows(
+            context.download_providers.statuses(),
+            context.discovery.statuses(),
+            context.features.statuses(),
+        )
+        assert {row.provider_id for row in rows} == BUILTIN_MOD_IDS
         tabs = dialog.findChild(QTabWidget, "pluginManagerTabs")
         assert tabs.currentIndex() == 1
         assert tabs.tabText(1) == "內建 MOD 狀態"

@@ -30,6 +30,12 @@ def test_version_build_paths_are_isolated_under_work(tmp_path: Path) -> None:
     assert paths.pyinstaller_work == paths.work / "pyinstaller"
     assert paths.executable_output == paths.work / "exe"
     assert paths.wheel_output == paths.work / "wheel"
+    retry = version_build_paths(tmp_path, "1.2.3", attempt_id="a1b2c3d4")
+    assert retry.work == (
+        tmp_path / ".work" / "Development" / "1.2-attempt-a1b2c3d4"
+    )
+    with pytest.raises(ValueError, match="attempt id"):
+        version_build_paths(tmp_path, "1.2.3", attempt_id="../unsafe")
 
 
 def test_stable_build_path_requires_explicit_confirmation(tmp_path: Path) -> None:

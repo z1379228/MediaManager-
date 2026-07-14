@@ -39,6 +39,7 @@ from core.downloads.preparation import (
 from core.downloads.split_batch import build_split_requests
 from core.settings import SettingsService, normalized_download_workers
 from trusted_ui.batch_import_dialog import show_batch_import_dialog
+from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.empty_state import create_empty_state
 from trusted_ui.playlist_dialog import show_playlist_dialog
 from trusted_ui.recovery_dialog import show_recovery_dialog
@@ -727,14 +728,7 @@ def create_download_panel(context: object, parent: object = None) -> object:
             self.toggle_download_provider("bilibili", enabled)
 
         def toggle_download_provider(self, provider_id: str, enabled: bool) -> None:
-            affected: list[str] = []
-            if not enabled:
-                for task in context.download_queue.snapshots():
-                    if self.provider_id_for_url(task.request.url) == provider_id:
-                        affected.append(task.task_id)
-            context.download_providers.set_enabled(provider_id, enabled)
-            for task_id in affected:
-                context.download_queue.cancel(task_id)
+            set_builtin_mod_enabled(context, provider_id, enabled)
             self.update_provider_badge()
             self.update_site_options()
 

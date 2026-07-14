@@ -127,20 +127,26 @@ class PluginUIService:
         self.plugin_manager = plugin_manager
         self.locale = locale
 
-    def list_pages(self) -> tuple[tuple[str, PluginPage], ...]:
+    def list_pages(
+        self, *, locale: str | None = None
+    ) -> tuple[tuple[str, PluginPage], ...]:
+        effective_locale = self._effective_locale(locale)
         pages: list[tuple[str, PluginPage]] = []
         for record in self.registry.list_enabled():
             if record.pending_action is not PendingAction.NONE:
                 continue
             try:
-                page = self.load_page(record.plugin_id)
+                page = self.load_page(record.plugin_id, locale=effective_locale)
             except PluginUIError:
                 continue
             if page is not None:
                 pages.append((record.plugin_id, page))
         return tuple(pages)
 
-    def load_page(self, plugin_id: str) -> PluginPage | None:
+    def load_page(
+        self, plugin_id: str, *, locale: str | None = None
+    ) -> PluginPage | None:
+        effective_locale = self._effective_locale(locale)
         record = self.registry.get(plugin_id)
         if record is None or not record.enabled or record.pending_action is not PendingAction.NONE:
             return None
@@ -160,5 +166,11 @@ class PluginUIService:
             raise PluginUIError(f"cannot read plugin UI descriptor: {error}") from error
         if not isinstance(raw, dict):
             raise PluginUIError("plugin UI descriptor must be an object")
-        return PluginPage.from_dict(raw, locale=self.locale)
+        return PluginPage.from_dict(raw, locale=effective_locale)
+
+    def _effective_locale(self, locale: str | None) -> str:
+        effective = self.locale if locale is None else locale
+        if effective not in SUPPORTED_UI_LOCALES:
+            raise ValueError("unsupported MOD UI locale")
+        return effective
 

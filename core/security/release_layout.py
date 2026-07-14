@@ -3,6 +3,7 @@
 SOURCE_RELEASE_FILES = (
     "MediaManager.exe",
     "LICENSE",
+    "安裝必備軟體.bat",
     "requirements-lock.txt",
     "assets/app-icon.ico",
     "trusted_ui/assets/app-icon.png",

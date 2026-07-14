@@ -80,6 +80,7 @@ _BUILTIN_MODS = (
         "啟用後顯示 Automation 工作區；規則仍預設關閉",
     ),
 )
+BUILTIN_MOD_IDS = frozenset(item[0] for item in _BUILTIN_MODS)
 
 
 def builtin_mod_rows(
@@ -148,6 +149,16 @@ def create_builtin_mod_panel(context: object, parent: object = None) -> object:
     summary = QLabel()
     summary.setObjectName("dependencySummary")
     page.addWidget(summary)
+
+    feature_guide = QLabel(
+        "選用功能使用說明：啟用 Media Convert 後到主畫面同名分頁轉檔（需要 FFmpeg）；"
+        "啟用 Speech to Text 後到同名分頁匯入本機模型並轉錄（需要 whisper-cli）；"
+        "啟用 Automation 後到 Automation 分頁建立規則。Automation 的轉檔／轉錄動作"
+        "還必須先啟用前兩個 MOD。"
+    )
+    feature_guide.setObjectName("modUsageGuide")
+    feature_guide.setWordWrap(True)
+    page.addWidget(feature_guide)
 
     table = QTableWidget(0, 5)
     table.setObjectName("builtinModTable")

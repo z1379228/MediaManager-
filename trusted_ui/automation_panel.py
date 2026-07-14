@@ -30,6 +30,14 @@ def create_automation_panel(context: object, parent: object = None) -> object:
     subtitle.setWordWrap(True)
     page.addWidget(title)
     page.addWidget(subtitle)
+    guide = QLabel(
+        "使用方式：① 建立排程、監看資料夾或剪貼簿規則；② 選擇下載、Media Convert"
+        " 或 Speech to Text 動作；③ 設定來源、輸出、間隔與執行時段；④ 儲存後啟用規則。"
+        "使用轉檔或語音轉文字動作前，必須先在 MOD 管理器啟用對應 MOD 並完成其依賴設定。"
+    )
+    guide.setObjectName("modUsageGuide")
+    guide.setWordWrap(True)
+    page.addWidget(guide)
 
     card = QFrame()
     card.setObjectName("card")

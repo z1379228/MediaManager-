@@ -16,7 +16,7 @@ from core.security.integrity_verifier import (
     release_signed_payload,
 )
 from core.security.safe_mode import SafeMode, SecurityMode
-from core.settings import Settings, SettingsService
+from core.settings import Settings, SettingsService, normalized_language
 from core.storage.paths import AppPaths
 
 
@@ -49,6 +49,12 @@ class PhaseOneTests(unittest.TestCase):
             service = SettingsService(Path(directory) / "settings.json")
             service.save(Settings(theme="dark"))
             self.assertEqual(service.load().theme, "dark")
+
+    def test_language_is_limited_to_supported_mod_ui_locales(self) -> None:
+        for locale in ("en", "ja", "zh-CN", "zh-TW"):
+            self.assertEqual(normalized_language(locale), locale)
+        self.assertEqual(normalized_language("fr"), "zh-TW")
+        self.assertEqual(normalized_language(None), "zh-TW")
 
     def test_redacts_nested_secrets(self) -> None:
         value = {"access_token": "secret", "nested": ["Authorization: bearer-secret"]}

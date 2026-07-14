@@ -152,7 +152,7 @@ def audit_version(root: Path) -> VersionAudit:
     checksums_path = root / "SHA256SUMS.txt"
     manifest: dict[str, str] = {}
     try:
-        lines = checksums_path.read_text(encoding="ascii").splitlines()
+        lines = checksums_path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError):
         lines = []
         errors.append("SHA256SUMS.txt is missing or invalid")
