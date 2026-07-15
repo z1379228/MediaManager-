@@ -32,12 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
-    if _FROZEN_CLI_OUTPUT_FLAGS.intersection(raw_argv):
-        from plugin_host.stdio import restore_frozen_cli_stdio
-
-        restore_frozen_cli_stdio()
+def _run(raw_argv: list[str]) -> int:
     args = build_parser().parse_args(raw_argv)
     if args.plugin_host:
         if args.provider_host or args.provider_root or not all(
@@ -88,6 +83,23 @@ def main(argv: list[str] | None = None) -> int:
         return run_main_window(context)
     finally:
         context.lifecycle.shutdown()
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    cli_output = bool(_FROZEN_CLI_OUTPUT_FLAGS.intersection(raw_argv))
+    if not cli_output:
+        return _run(raw_argv)
+    from plugin_host.stdio import (
+        close_frozen_cli_stdio,
+        restore_frozen_cli_stdio,
+    )
+
+    restore_frozen_cli_stdio()
+    try:
+        return _run(raw_argv)
+    finally:
+        close_frozen_cli_stdio()
 
 
 if __name__ == "__main__":
