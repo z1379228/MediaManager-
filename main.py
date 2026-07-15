@@ -11,6 +11,9 @@ from core.version import display_version
 from trusted_ui.main_window import run_main_window
 
 
+_FROZEN_CLI_OUTPUT_FLAGS = frozenset({"--version", "--verify-only", "--headless"})
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="MediaManager")
     parser.add_argument(
@@ -30,7 +33,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    if _FROZEN_CLI_OUTPUT_FLAGS.intersection(raw_argv):
+        from plugin_host.stdio import restore_frozen_cli_stdio
+
+        restore_frozen_cli_stdio()
+    args = build_parser().parse_args(raw_argv)
     if args.plugin_host:
         if args.provider_host or args.provider_root or not all(
             (args.plugin_id, args.plugin_root, args.entry_point, args.nonce)

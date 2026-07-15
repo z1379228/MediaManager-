@@ -17,7 +17,7 @@
 ### 9.1 驗證結果
 
 - Ruff 全專案檢查通過。
-- Pytest：627 項通過、2 項因目前 Windows 帳戶無法建立 symlink 而跳過。
+- Pytest：629 項通過、2 項因目前 Windows 帳戶無法建立 symlink 而跳過。
 - `tools.audit_mod_groups`：通過，驗證 2 個網站群組與每組 4 個語言檔。
 - copied-folder smoke：`--version`、`--verify-only`、`--headless`、凍結後 MOD 載入及
   YouTube Music 播放清單網址解析皆通過。

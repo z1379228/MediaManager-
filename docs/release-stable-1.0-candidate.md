@@ -6,7 +6,7 @@
 ## 目前可確認的 Development 基線
 
 - 核心版本為 Development 9.1.0，成品位於 `Version/Development/9.1`，沒有覆寫 9.0。
-- Ruff 全專案檢查通過；Pytest 627 項通過，另有 2 項 Windows symlink 測試因帳戶權限
+- Ruff 全專案檢查通過；Pytest 629 項通過，另有 2 項 Windows symlink 測試因帳戶權限
   跳過。
 - YouTube 與 Bilibili 下載工作區、網址路由及搜尋交接已分離；網站主 MOD 關閉時不顯示
   子 MOD，停用主 MOD 會級聯停用子 MOD。

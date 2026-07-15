@@ -74,3 +74,29 @@ def restore_frozen_host_stdio() -> bool:
     sys.stdout = sys.__stdout__ = stdout
     sys.stderr = sys.__stderr__ = stderr
     return True
+
+
+def restore_frozen_cli_stdio() -> bool:
+    """Restore output pipes for frozen windowed CLI modes.
+
+    PyInstaller's windowed executable may expose ``sys.stdout`` and
+    ``sys.stderr`` as ``None`` even when a caller supplied redirected Windows
+    handles. CLI-only modes do not need stdin, so requiring all three host
+    streams would incorrectly turn ``--version`` and verification commands
+    into a windowed traceback. Missing output handles fall back to the null
+    device so those commands still terminate cleanly when launched without a
+    console.
+    """
+
+    if os.name != "nt" or not getattr(sys, "frozen", False):
+        return True
+    stdout = _windows_stream(-11, "w")
+    stderr = _windows_stream(-12, "w")
+    real_output = stdout is not None and stderr is not None
+    if stdout is None:
+        stdout = open(os.devnull, "w", encoding="utf-8")  # noqa: SIM115
+    if stderr is None:
+        stderr = open(os.devnull, "w", encoding="utf-8")  # noqa: SIM115
+    sys.stdout = sys.__stdout__ = stdout
+    sys.stderr = sys.__stderr__ = stderr
+    return real_output
