@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 from pathlib import Path
@@ -43,6 +44,37 @@ def test_rejects_provider_entry_path_escape(tmp_path: Path) -> None:
     root = make_provider(tmp_path, "", "../outside.py")
     with pytest.raises(ProviderProtocolError, match="unsafe"):
         SubprocessDownloadProvider(root, application_root=tmp_path)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="official Windows MEGAcmd uses batch clients")
+def test_mega_provider_accepts_only_its_official_named_batch_client(
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "mega"
+    batch = tmp_path / "mega-get.bat"
+    batch.write_text("@echo off\n", encoding="utf-8")
+
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=tmp_path,
+        external_tools={"mega-get": str(batch)},
+    )
+
+    assert provider.external_tools == {"mega-get": str(batch.resolve())}
+
+
+@pytest.mark.skipif(os.name != "nt", reason="official Windows MEGAcmd uses batch clients")
+def test_mega_provider_rejects_wrong_batch_client_name(tmp_path: Path) -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "mega"
+    batch = tmp_path / "untrusted.bat"
+    batch.write_text("@echo off\n", encoding="utf-8")
+
+    with pytest.raises(ProviderProtocolError, match="executable is invalid"):
+        SubprocessDownloadProvider(
+            root,
+            application_root=tmp_path,
+            external_tools={"mega-get": str(batch)},
+        )
 
 
 def test_rejects_malformed_provider_output(tmp_path: Path) -> None:

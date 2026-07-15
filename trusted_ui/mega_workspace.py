@@ -9,6 +9,7 @@ from core.dependency_health import find_executable
 from core.downloads.archive import DuplicateDownloadError
 from core.downloads.models import DownloadRequest, DownloadState, DownloadTask
 from core.downloads.preflight import preflight_download_batch
+from core.mod_groups import load_builtin_mod_group
 from core.site_routing import classify_site_url
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.download_panel import download_refresh_interval, safe_task_output_path
@@ -99,13 +100,23 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
 
         def __init__(self) -> None:
             super().__init__(parent)
+            self.workspace_text = dict(
+                load_builtin_mod_group(
+                    "mega",
+                    locale=getattr(
+                        getattr(context, "settings", None),
+                        "language",
+                        "zh-TW",
+                    ),
+                ).workspace
+            )
             self.info_bridge = InfoBridge(self)
             self.info_bridge.finished.connect(self.show_info)
             self.info_generation = 0
             self.info_busy = False
             self.analyzed_url = ""
             self.render_signature: tuple[object, ...] | None = None
-            self.workspace_title = QLabel("MEGA 下載工作區")
+            self.workspace_title = QLabel(self.workspace_text["title"])
             self.workspace_title.setObjectName("sectionTitle")
 
             page = QVBoxLayout(self)
@@ -115,13 +126,11 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             heading = QHBoxLayout()
             titles = QVBoxLayout()
             titles.setSpacing(2)
-            subtitle = QLabel(
-                "公開分享檔案與官方 MEGAcmd 專用；不共用影音格式、字幕或播放清單設定。"
-            )
-            subtitle.setObjectName("sectionSubtitle")
-            subtitle.setWordWrap(True)
+            self.workspace_subtitle = QLabel(self.workspace_text["subtitle"])
+            self.workspace_subtitle.setObjectName("sectionSubtitle")
+            self.workspace_subtitle.setWordWrap(True)
             titles.addWidget(self.workspace_title)
-            titles.addWidget(subtitle)
+            titles.addWidget(self.workspace_subtitle)
             heading.addLayout(titles, 1)
             self.provider_badge = QLabel()
             self.provider_badge.setObjectName("providerBadge")
@@ -135,7 +144,7 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             input_layout.setSpacing(10)
 
             top = QHBoxLayout()
-            self.enabled = QCheckBox("啟用 MEGA 主 MOD")
+            self.enabled = QCheckBox(self.workspace_text["enable"])
             provider_ids = {
                 status.provider_id for status in context.download_providers.statuses()
             }
@@ -161,14 +170,12 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             output_row.addWidget(choose_output)
             input_layout.addLayout(output_row)
 
-            url_label = QLabel("MEGA 公開分享網址（最多 50 個檔案連結）")
-            url_label.setObjectName("fieldLabel")
-            input_layout.addWidget(url_label)
+            self.urls_label = QLabel(self.workspace_text["url_label"])
+            self.urls_label.setObjectName("fieldLabel")
+            input_layout.addWidget(self.urls_label)
             self.urls = QPlainTextEdit()
             self.urls.setAccessibleName("MEGA 公開分享網址")
-            self.urls.setPlaceholderText(
-                "每行一個 https://mega.nz/file/...#... 公開分享網址"
-            )
+            self.urls.setPlaceholderText(self.workspace_text["placeholder"])
             self.urls.setMaximumHeight(100)
             self.urls.textChanged.connect(self.update_site_options)
             input_layout.addWidget(self.urls)
@@ -180,9 +187,7 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             self.share_icon.setFixedSize(104, 62)
             self.share_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
             classification_row.addWidget(self.share_icon)
-            self.preview = QLabel(
-                "輸入公開分享網址後，會分辨檔案或資料夾；實際檔案類型在名稱可得後判定。"
-            )
+            self.preview = QLabel(self.workspace_text["initial_preview"])
             self.preview.setObjectName("preview")
             self.preview.setWordWrap(True)
             classification_row.addWidget(self.preview, 1)
@@ -330,6 +335,27 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             self.update_transfer_controls()
             self.update_site_options()
             self.refresh()
+            self.events = getattr(context, "events", None)
+            if self.events is not None:
+                self.events.subscribe("ui.language.changed", self.apply_language)
+
+        def apply_language(self, payload: object = None) -> None:
+            locale = (
+                payload.get("locale")
+                if isinstance(payload, dict)
+                else getattr(
+                    getattr(context, "settings", None), "language", "zh-TW"
+                )
+            )
+            self.workspace_text = dict(
+                load_builtin_mod_group("mega", locale=locale).workspace
+            )
+            self.workspace_title.setText(self.workspace_text["title"])
+            self.workspace_subtitle.setText(self.workspace_text["subtitle"])
+            self.enabled.setText(self.workspace_text["enable"])
+            self.urls_label.setText(self.workspace_text["url_label"])
+            self.urls.setPlaceholderText(self.workspace_text["placeholder"])
+            self.update_site_options()
 
         def update_dependency_status(self) -> None:
             mega_get = find_executable(context.paths.application, "mega-get")
@@ -426,7 +452,7 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             elif too_many:
                 message = "一次最多加入 50 個 MEGA 檔案連結。"
             elif invalid:
-                message = f"有 {invalid} 個網址不是完整、安全的 MEGA 公開分享。"
+                message = self.workspace_text["wrong_site"]
             elif folders:
                 message = (
                     f"已辨識 {folders} 個公開資料夾、{files} 個公開檔案；"
@@ -716,5 +742,14 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
         def shutdown(self) -> None:
             self.info_generation += 1
             self.timer.stop()
+            if self.events is not None:
+                self.events.unsubscribe(
+                    "ui.language.changed", self.apply_language
+                )
+                self.events = None
+
+        def closeEvent(self, event: object) -> None:
+            self.shutdown()
+            super().closeEvent(event)
 
     return MegaWorkspace()

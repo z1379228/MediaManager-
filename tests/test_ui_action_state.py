@@ -324,15 +324,29 @@ def test_facebook_and_mega_workspaces_enable_and_route_independently(
         assert not hasattr(mega_panel, "subtitle_mode")
         assert not hasattr(mega_panel, "expand_playlist")
 
+        context.events.publish("ui.language.changed", {"locale": "en"})
+        app.processEvents()
+        assert facebook_panel.workspace_title.text() == "Facebook Downloads"
+        assert mega_panel.workspace_title.text() == "MEGA Downloads"
+        assert mega_panel.enabled.text() == "Enable MEGA main MOD"
+        assert mega_panel.urls.placeholderText().startswith("One https://mega.nz/")
+
+        context.events.publish("ui.language.changed", {"locale": "zh-TW"})
+        app.processEvents()
+        assert facebook_panel.workspace_title.text() == "Facebook 下載工作區"
+        assert mega_panel.workspace_title.text() == "MEGA 下載工作區"
+
+        facebook_url = "https://www.facebook.com/reel/123456"
+        facebook_panel.urls.setPlainText(facebook_url)
+        app.processEvents()
+        assert not facebook_panel.add_download.isEnabled()
+
         facebook_panel.enabled.setChecked(True)
         mega_panel.enabled.setChecked(True)
         app.processEvents()
         assert context.download_providers.is_enabled("facebook")
         assert context.download_providers.is_enabled("mega")
 
-        facebook_url = "https://www.facebook.com/reel/123456"
-        facebook_panel.urls.setPlainText(facebook_url)
-        app.processEvents()
         assert facebook_panel.read_info.isEnabled()
         assert facebook_panel.add_download.isEnabled()
         assert context.download_providers.provider_for(facebook_url).provider_id == (

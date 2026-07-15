@@ -112,6 +112,8 @@ class SubprocessDownloadProvider:
         for tool_name, raw_path in raw_tools.items():
             tool_path = Path(raw_path).resolve()
             expected_names = {tool_name.casefold(), f"{tool_name.casefold()}.exe"}
+            if self.provider_id == "mega" and os.name == "nt":
+                expected_names.add(f"{tool_name.casefold()}.bat")
             if (
                 not tool_path.is_file()
                 or tool_path.name.casefold() not in expected_names

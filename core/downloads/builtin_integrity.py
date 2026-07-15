@@ -43,7 +43,7 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "locales/ja.json": "bab55ed5c374427f441ad3a516cdf63989dd7c2be70460785d4181fc033fcf9a",
         "locales/zh-CN.json": "1ce4dc6264663c012f80384ad7698895330f71fb87ee734ebf462bab9acb3a72",
         "locales/zh-TW.json": "1bf1853980b013db3bde67ae4fa6a81e8f69608cc9486874770b220503c75d08",
-        "provider.py": "773a4b26a2152d1f0f1e61d591d98abc46232c18daac2ef908b2c72e90b94386",
+        "provider.py": "0abf6c41c1060fc350673ec4943a6419631615caa05dcf35fc6e944960546dc4",
         "provider.json": "b561dcce2a52090618604eb214046cb7894906c0dd7d308f607178be381ed1f7",
     },
     "mega": {

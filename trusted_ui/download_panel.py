@@ -1075,8 +1075,12 @@ def create_download_panel(
                 and routes[0] is not None
                 and routes[0].resource_kind == "creator"
             )
+            provider_enabled = self.any_download_provider_enabled()
             self.add_download.setEnabled(
-                bool(urls) and not wrong_site and not bilibili_creator
+                provider_enabled
+                and bool(urls)
+                and not wrong_site
+                and not bilibili_creator
             )
             if wrong_site:
                 self.preview.setText(self.workspace_text["wrong_site"])
@@ -1108,7 +1112,6 @@ def create_download_panel(
                 self.url_classification.setText(classification)
 
             single_valid = len(urls) == 1 and not wrong_site
-            provider_enabled = self.any_download_provider_enabled()
             if self.site_family == "youtube":
                 playlist_ready = single_valid and is_youtube_playlist_url(urls[0])
                 info_ready = single_valid and is_youtube_video_url(urls[0])

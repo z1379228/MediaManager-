@@ -20,23 +20,38 @@ _HOSTS = frozenset(
 _MEDIA_SUFFIXES = (".mp4", ".mkv", ".webm", ".m4a", ".mp3")
 
 
-def _browser_impersonation_available() -> bool:
-    return importlib.util.find_spec("curl_cffi") is not None
+def _browser_impersonation_target() -> object | None:
+    """Return the typed yt-dlp target required by its programmatic API."""
+
+    if importlib.util.find_spec("curl_cffi") is None:
+        return None
+    try:
+        from yt_dlp.networking.impersonate import ImpersonateTarget
+    except ImportError:
+        return None
+    return ImpersonateTarget.from_str("chrome")
 
 
 def _apply_public_page_options(options: dict[str, Any]) -> None:
     # Facebook can serve a parseable public page only to a browser-like TLS
     # client. This does not load cookies or bypass login/visibility controls.
-    if _browser_impersonation_available():
-        options["impersonate"] = "chrome"
+    target = _browser_impersonation_target()
+    if target is not None:
+        options["impersonate"] = target
 
 
-def _raise_public_parse_error(error: Exception) -> None:
+def _raise_public_parse_error(
+    error: Exception, *, impersonation_active: bool
+) -> None:
     message = str(error)
     if "Cannot parse data" in message or "Unsupported impersonate target" in message:
+        if impersonation_active:
+            raise RuntimeError(
+                "Facebook 已啟用 curl-cffi 瀏覽器模擬，但公開頁未提供可下載媒體；"
+                "該內容可能需要登入、貼文權限或地區存取。MediaManager 不會讀取 Cookie。"
+            ) from error
         raise RuntimeError(
-            "Facebook 公開頁無法解析；請確認已安裝 curl-cffi 瀏覽器模擬支援，"
-            "且該 Reel 不需要登入、權限或地區存取。"
+            "Facebook 公開頁無法解析；目前未偵測到 curl-cffi 瀏覽器模擬支援。"
         ) from error
     raise error
 
@@ -256,7 +271,9 @@ def analyze(request: dict[str, Any]) -> dict[str, Any]:
         with YoutubeDL(options) as ydl:
             info = ydl.extract_info(url, download=False)
     except Exception as error:
-        _raise_public_parse_error(error)
+        _raise_public_parse_error(
+            error, impersonation_active="impersonate" in options
+        )
     if not isinstance(info, dict):
         raise ValueError("Facebook did not return public video metadata")
     audio_languages, subtitle_languages = _languages(info)
@@ -425,7 +442,9 @@ def download(request: dict[str, Any]) -> str:
                 _completed_path(ydl, info, output, output_filename, audio_suffix)
             )
     except Exception as error:
-        _raise_public_parse_error(error)
+        _raise_public_parse_error(
+            error, impersonation_active="impersonate" in options
+        )
         raise AssertionError("unreachable")
 
 

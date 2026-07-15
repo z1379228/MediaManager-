@@ -1,5 +1,28 @@
 # MediaManager 開發版更新紀錄 10.0～11.0
 
+## 10.6
+
+- 修正 Facebook provider 在 yt-dlp Python API 傳入字串型 `impersonate`，會在真正連線前觸發 `AssertionError` 的問題；現在使用 yt-dlp 正式 `ImpersonateTarget` 型別。
+- Facebook 公開頁若已啟用 curl-cffi 仍沒有媒體，會明確說明可能受登入、貼文權限或地區限制，並重申不讀取 Cookie；未安裝 curl-cffi 時則顯示不同依賴原因。
+- 修正核心雖能找到官方 Windows MEGAcmd，卻拒絕 `mega-get.bat`／`mega-speedlimit.bat`，導致 MEGA MOD 永遠無法初始化的問題；只對 MEGA 固定工具名稱放行 Windows `.bat`，其他任意批次檔仍拒絕。
+- MEGA 獨立工作區現在會接收核心語言事件，從 MEGA MOD 語言資料切換繁中、簡中、英文與日文標題、副標題、啟用文字及網址提示。
+- 網站下載按鈕現在同時檢查主 provider 已啟用；只貼入合法網址但主 MOD 關閉時，不再顯示可加入佇列的錯誤狀態。
+
+### 10.6 實機與邊界驗證
+
+- 官方 `MEGAcmdSetup64.exe` 2.5.2.0 由 `Mega Limited` 簽署且 Authenticode 驗證為 Valid；安裝後核心可同時載入 `mega-get.bat` 與 `mega-speedlimit.bat`，依賴狀態為核心 4/4、選用 1/3。
+- MEGA 以刻意無效的完整公開分享網址執行 subprocess 端到端測試：provider 正確呼叫官方工具、回傳受控失敗，輸出資料夾保持 0 個檔案；成功下載仍由既有模擬官方工具測試覆蓋，未使用陌生網路分享冒充實機成功。
+- 使用者提供的 Facebook Reel `1010600518536222` 已通過 typed impersonation 並進入真正網站解析；Facebook 回傳頁面不含可下載公開媒體，因此正確停在無 Cookie 存取限制，不再出現程式 `AssertionError`。
+- MEGA 公開資料夾維持辨識但不下載：目前核心完成契約只接受單一可驗證檔案，尚無可安全限制遞迴大小與對應單一 transfer tag 的資料夾輸出契約。
+
+### 10.6 發行狀態
+
+- 通道：Development；維持 `SAFE_MODE`，不建立或上傳 Stable 版本。
+- 依次版本政策只更新 10.6 來源與本整檔更新簡介；不覆寫既有 `Version/Development` 版本資料夾。
+- Ruff：通過。
+- Pytest：704 passed、2 skipped；兩項 skipped 均為此 Windows 帳戶不允許建立 symlink。
+- 413 個 Git 已追蹤／待加入文字檔的嚴格 UTF-8、衝突標記與工具殘留掃描通過；版本稽核結果維持 3 個保留版本全部通過。
+
 ## 10.5
 
 - YouTube／YouTube Music 維持單一專屬工作區：搜尋、官方縮圖、多選帶入、單片 30 秒試聽／60 秒影片預覽、播放清單展開與批量下載使用同一條受控流程；播放清單仍預設不勾選。
