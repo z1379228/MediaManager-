@@ -1,5 +1,32 @@
 # MediaManager 開發版更新紀錄 10.0～11.0
 
+## 10.5
+
+- YouTube／YouTube Music 維持單一專屬工作區：搜尋、官方縮圖、多選帶入、單片 30 秒試聽／60 秒影片預覽、播放清單展開與批量下載使用同一條受控流程；播放清單仍預設不勾選。
+- YouTube 搜尋子 MOD 現在和其他網站群組一致，必須先啟用 YouTube 主 MOD 才能啟用或搜尋；核心語言事件會同步讀取 YouTube MOD 的繁中、簡中、英文與日文資料。
+- Bilibili 新增內嵌專屬搜尋工作區，結果只接受 Bilibili 官方網址與 hdslb 官方縮圖；可依目前搜尋結果鎖定 UP 主、多選後帶入同頁下載設定。
+- Bilibili UP 主空間可展開最近 50 支影片，改用完整但有界的中繼資料取得真實影片標題與官方縮圖；UP 主網址只能先展開，不能誤當成單一影片直接下載。
+- Bilibili 分 P 先向官方影片資訊端點讀取 `pages[].part`、長度與首幀，失敗時才回退至 yt-dlp／母影片名稱；實測 186 分段影片可展開前 20 段並顯示真實名稱。
+- 修正 Bilibili 分段下載把 DASH 來源錯誤降成 progressive-only 格式的問題；480p／720p／1080p 切段會保留視訊＋音訊選擇並交由 FFmpeg 合併。
+- 修正含 `[BV…]` 的檔名被當成 glob 語法，造成已下載的彈幕 XML 找不到、ASS 不會產生的問題；現在使用受限 XML 清單與字面檔名比對。
+- Bilibili 官方搜尋 API 若要求驗證或限流，介面會明確顯示原因並提供「官網搜尋／驗證」入口；不保存瀏覽器 Cookie、不改用 YouTube，也不繞過網站限制。
+- YouTube 與 Bilibili 搜尋均為可取消、無乾淨啟動背景網路工作的子 MOD；主 MOD 關閉時子 MOD 會停用並隱藏可執行狀態。
+
+### 10.5 實際網站驗證
+
+- YouTube Music 範例播放清單展開 48 項，48 項皆可用且皆有縮圖；第一項 3 秒 MP3 試聽、搜尋結果 3 秒 H.264／AAC 預覽與下載均由 ffprobe 驗證。
+- Bilibili 公開影片可展開 20 個具名分 P；UP 主頁前 5 支影片回傳真實標題；一般 3 秒 H.264／AAC 分段下載通過。
+- Bilibili 10～18 秒彈幕案例保留 XML 與 ASS，產生 MKV，ffprobe 確認包含 H.264、音訊與 ASS 字幕流。
+- 當前網路的 Bilibili 官方搜尋 API 回傳 412 瀏覽器驗證／限流；程式正確 fail closed，直接網址、分 P、UP 主清單、下載與彈幕流程不受此搜尋端點狀態影響。
+
+### 10.5 發行狀態
+
+- 通道：Development；維持 `SAFE_MODE`，不建立或上傳 Stable 版本。
+- 依次版本政策只更新 10.5 來源與本整檔更新簡介；不覆寫 `Version/Development/10.3`，也不把未封裝的 10.4／10.5 假稱為公開附件。
+- Ruff：通過。
+- Pytest：700 passed、2 skipped；兩項 skipped 均為此 Windows 帳戶不允許建立 symlink。
+- `pytest-timeout` 未安裝於本機虛擬環境，因此完整測試使用既有 pytest 參數完成；這不是測試失敗或功能阻擋。
+
 ## 10.4
 
 - MEGA 從共用影音 `DownloadPanel` 完整拆出，改用獨立雲端檔案工作區；YouTube／Bilibili 的格式、字幕、播放清單、試聽、影片預覽與切段控制不再出現在 MEGA。

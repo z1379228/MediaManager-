@@ -399,8 +399,20 @@ def test_core_language_event_updates_built_in_site_mod_ui(
         assert youtube_panel.workspace_title.text() == "YouTube Download Workspace"
         assert youtube_panel.enabled.text() == "Enable YouTube main MOD"
         assert youtube_panel.urls_label.text() == "YouTube video / playlist URLs"
+        assert youtube_panel.youtube_workspace.title.text() == (
+            "YouTube Search and Batch Selection"
+        )
+        assert youtube_panel.youtube_workspace.subtitle.text().startswith(
+            "Search public YouTube"
+        )
         assert bilibili_panel.workspace_title.text() == (
             "Bilibili Download Workspace"
+        )
+        assert bilibili_panel.bilibili_workspace.title.text() == (
+            "Bilibili Search and UP Creator Batch"
+        )
+        assert bilibili_panel.bilibili_workspace.subtitle.text().startswith(
+            "Search public videos"
         )
         assert search_panel.enabled.text() == "YouTube Search"
         assert search_panel.bilibili_search_enabled.text() == "Bilibili Search"

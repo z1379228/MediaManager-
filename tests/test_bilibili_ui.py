@@ -60,7 +60,31 @@ def test_bilibili_ui_builds_segmented_ass_mkv_request(
     try:
         panel = create_download_panel(context, site_family="bilibili")
         panel.timer.stop()
+        assert panel.bilibili_workspace is not None
+        assert not panel.bilibili_workspace.enabled.isEnabled()
+        assert "先啟用" in panel.bilibili_workspace.enabled.text()
         panel.enabled.setChecked(True)
+        app.processEvents()
+        assert panel.bilibili_workspace.enabled.isEnabled()
+        panel.bilibili_workspace.enabled.setChecked(True)
+        app.processEvents()
+        assert context.discovery.is_enabled("bilibili-search")
+        panel.urls.setPlainText(
+            "https://www.bilibili.com/video/BVexample"
+        )
+        app.processEvents()
+        assert "Bilibili 影片" in panel.url_classification.text()
+        assert panel.add_download.isEnabled()
+        assert panel.read_info.isEnabled()
+        assert panel.expand_playlist.isEnabled()
+
+        panel.urls.setPlainText("https://space.bilibili.com/12345/video")
+        app.processEvents()
+        assert "UP 主影片清單" in panel.url_classification.text()
+        assert not panel.add_download.isEnabled()
+        assert not panel.read_info.isEnabled()
+        assert panel.expand_playlist.isEnabled()
+
         panel.urls.setPlainText(
             "https://www.bilibili.com/video/BVexample"
         )

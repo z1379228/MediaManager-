@@ -154,6 +154,10 @@ def test_bilibili_playlist_normalizes_multipart_and_bangumi_urls(
 
     monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYoutubeDL)
     namespace = runpy.run_path(str(PROVIDER_ROOT / "provider.py"))
+    namespace["playlist"].__globals__["_official_video_pages"] = lambda *_: {
+        1: ("官方 Opening", 31.0, "https://i0.hdslb.com/bfs/storyff/one.jpg"),
+        2: ("官方 Lesson", 62.0, ""),
+    }
     entries = namespace["playlist"](
         {"url": "https://www.bilibili.com/video/BVpart", "limit": 10}
     )
@@ -167,10 +171,118 @@ def test_bilibili_playlist_normalizes_multipart_and_bangumi_urls(
     assert entries[1]["url"].endswith("/video/BVpart?p=2")
     assert "/bangumi/play/ep123" in entries[2]["url"]
     assert all(entry["available"] for entry in entries)
-    assert entries[0]["title"] == "Opening"
-    assert entries[1]["title"] == "Parent title · P2"
+    assert entries[0]["title"] == "官方 Opening"
+    assert entries[1]["title"] == "官方 Lesson"
+    assert entries[0]["duration"] == 31.0
     assert entries[1]["artist"] == "Parent uploader"
+    assert entries[0]["thumbnail_url"].endswith("/one.jpg")
     assert entries[1]["thumbnail_url"].endswith("/parent.jpg")
+
+
+def test_bilibili_creator_playlist_resolves_titles_with_bounded_limit(
+    monkeypatch,
+) -> None:
+    import yt_dlp
+
+    captured: list[dict[str, object]] = []
+
+    class FakeYoutubeDL:
+        def __init__(self, options):
+            captured.append(options)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, url, *, download):
+            assert url == "https://space.bilibili.com/123/video"
+            assert not download
+            return {
+                "entries": [
+                    {
+                        "id": "BV1zW411u7T6",
+                        "webpage_url": "https://www.bilibili.com/video/BV1zW411u7T6",
+                        "title": "UP 主影片標題",
+                        "uploader": "UP 主",
+                        "duration": 80,
+                        "thumbnail": "http://i0.hdslb.com/bfs/archive/creator.jpg",
+                    }
+                ]
+            }
+
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYoutubeDL)
+    namespace = runpy.run_path(str(PROVIDER_ROOT / "provider.py"))
+    namespace["playlist"].__globals__["_official_video_pages"] = lambda *_: {}
+    entries = namespace["playlist"](
+        {"url": "https://space.bilibili.com/123/video", "limit": 500}
+    )
+
+    assert captured[0]["extract_flat"] is False
+    assert captured[0]["playlistend"] == 50
+    assert entries[0]["title"] == "UP 主影片標題"
+    assert entries[0]["thumbnail_url"] == (
+        "https://i0.hdslb.com/bfs/archive/creator.jpg"
+    )
+
+
+def test_bilibili_official_pages_are_bounded_and_exact(monkeypatch) -> None:
+    namespace = runpy.run_path(str(PROVIDER_ROOT / "provider.py"))
+    request_module = namespace["url_request"]
+    payload = json.dumps(
+        {
+            "code": 0,
+            "data": {
+                "bvid": "BV1zW411u7T6",
+                "pages": [
+                    {
+                        "page": 1,
+                        "part": " 第一段 ",
+                        "duration": 45,
+                        "first_frame": "http://i0.hdslb.com/bfs/storyff/one.jpg",
+                    }
+                ],
+            },
+        }
+    ).encode()
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def geturl(self):
+            return "https://api.bilibili.com/x/web-interface/view?bvid=BV1zW411u7T6"
+
+        def read(self, _limit):
+            return payload
+
+    class Opener:
+        def open(self, outgoing, *, timeout):
+            assert timeout == 20
+            assert "bvid=BV1zW411u7T6" in outgoing.full_url
+            return Response()
+
+    monkeypatch.setattr(request_module, "build_opener", lambda _handler: Opener())
+    pages = namespace["_official_video_pages"](
+        "https://www.bilibili.com/video/BV1zW411u7T6",
+        20,
+    )
+
+    assert pages == {
+        1: (
+            "第一段",
+            45.0,
+            "https://i0.hdslb.com/bfs/storyff/one.jpg",
+        )
+    }
+    assert namespace["_official_video_pages"](
+        "https://www.youtube.com/watch?v=wrong",
+        20,
+    ) == {}
 
 
 def test_bilibili_support_matrix_is_explicit() -> None:
@@ -243,6 +355,19 @@ def test_bilibili_download_keeps_danmaku_as_xml_sidecar(
     assert captured[0]["continuedl"] is True
     assert captured[0]["nopart"] is False
     assert captured[0]["overwrites"] is False
+
+
+def test_bilibili_finds_danmaku_for_literal_bracketed_media_name(
+    tmp_path: Path,
+) -> None:
+    namespace = runpy.run_path(str(PROVIDER_ROOT / "provider.py"))
+    media = tmp_path / "Video [BVexample].mkv"
+    media.write_bytes(b"media")
+    xml = tmp_path / "Video [BVexample].danmaku.xml"
+    xml.write_text("<i></i>", encoding="utf-8")
+    (tmp_path / "unrelated.danmaku.xml").write_text("<i></i>", encoding="utf-8")
+
+    assert namespace["_find_danmaku_xml"](tmp_path, media) == xml
 
 
 def test_bilibili_download_converts_danmaku_to_ass_and_retains_xml(
@@ -359,6 +484,7 @@ def test_bilibili_segmented_ass_is_retimed_before_mkv_mux(
     assert Path(result) == tmp_path / "clip.mp4"
     assert "download_ranges" in captured[0]
     assert captured[0]["force_keyframes_at_cuts"] is True
+    assert "+ba" in captured[0]["format"]
     ass = (tmp_path / "clip.danmaku.ass").read_text(encoding="utf-8-sig")
     assert "before" not in ass
     assert "at-end" not in ass

@@ -14,6 +14,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,9 +29,17 @@ from core.downloads.subprocess_provider import (  # noqa: E402
 
 
 DEFAULT_QUERY = "Big Buck Bunny official Blender Foundation"
+DEFAULT_MUSIC_PLAYLIST = (
+    "https://music.youtube.com/playlist?"
+    "list=PL2yqXecZHhEYKaKiTSsfUhEeqeAm89wcp"
+)
 
 
-def _provider(provider_id: str, release_root: Path) -> SubprocessDownloadProvider:
+def _provider(
+    provider_id: str,
+    release_root: Path,
+    work_root: Path,
+) -> SubprocessDownloadProvider:
     tools = release_root / "tools"
     arguments: dict[str, object] = {
         "application_root": ROOT,
@@ -44,6 +53,7 @@ def _provider(provider_id: str, release_root: Path) -> SubprocessDownloadProvide
             ffmpeg_location=str(tools / "ffmpeg.exe"),
             download_timeout=300.0,
             idle_timeout=90.0,
+            preview_root=work_root / "audio-preview",
         )
     if provider_id == "youtube-player":
         arguments.update(
@@ -102,7 +112,36 @@ def _probe(path: Path, ffprobe: Path) -> dict[str, object]:
     return {"duration": round(duration, 3), "streams": streams}
 
 
-def run(*, release_root: Path, work_root: Path, keep_output: bool) -> dict[str, object]:
+def _official_youtube_thumbnail(url: str) -> bool:
+    if not url:
+        return True
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").casefold()
+    return (
+        parsed.scheme == "https"
+        and parsed.username is None
+        and parsed.password is None
+        and port is None
+        and (
+            host == "i.ytimg.com"
+            or host.endswith(".ytimg.com")
+            or host == "yt3.ggpht.com"
+            or host.endswith(".googleusercontent.com")
+        )
+    )
+
+
+def run(
+    *,
+    release_root: Path,
+    work_root: Path,
+    keep_output: bool,
+    playlist_url: str = "",
+) -> dict[str, object]:
     release_root = release_root.resolve()
     work_root = work_root.resolve()
     _validate_tools(release_root)
@@ -113,12 +152,49 @@ def run(*, release_root: Path, work_root: Path, keep_output: bool) -> dict[str, 
     output_dir = work_root / "output"
     output_dir.mkdir(parents=True)
 
-    search_provider = _provider("youtube-search", release_root)
-    download_provider = _provider("youtube", release_root)
-    split_provider = _provider("youtube-auto-split", release_root)
-    player_provider = _provider("youtube-player", release_root)
+    search_provider = _provider("youtube-search", release_root, work_root)
+    download_provider = _provider("youtube", release_root, work_root)
+    split_provider = _provider("youtube-auto-split", release_root, work_root)
+    player_provider = _provider("youtube-player", release_root, work_root)
     progress_events: list[dict[str, object]] = []
+    playlist_report: dict[str, object] = {}
     try:
+        if playlist_url:
+            print("[playlist] Expanding YouTube Music playlist...", flush=True)
+            entries = download_provider.playlist(playlist_url, limit=50)
+            available = tuple(entry for entry in entries if entry.available)
+            if not available:
+                raise RuntimeError("YouTube Music playlist has no available entries")
+            if any(
+                not _official_youtube_thumbnail(entry.thumbnail_url)
+                for entry in entries
+            ):
+                raise RuntimeError("playlist returned a non-official thumbnail")
+            first = available[0]
+            duration = float(first.duration or 0)
+            if duration <= 0:
+                duration = float(download_provider.analyze(first.url).get("duration") or 0)
+            if duration <= 0:
+                raise RuntimeError("first playlist entry has no previewable duration")
+            audio_preview = download_provider.prepare_audio_preview(
+                first.url,
+                duration=duration,
+                preview_length=3,
+            )
+            playlist_preview = _probe(
+                audio_preview,
+                release_root / "tools" / "ffprobe.exe",
+            )
+            if not download_provider.cleanup_audio_preview(audio_preview):
+                raise RuntimeError("playlist audio preview was not cleaned")
+            playlist_report = {
+                "playlist_entries": len(entries),
+                "playlist_available": len(available),
+                "playlist_first_title": first.title,
+                "playlist_thumbnails": sum(bool(entry.thumbnail_url) for entry in entries),
+                "playlist_audio_preview": playlist_preview,
+            }
+
         print("[1/6] Searching YouTube...", flush=True)
         search_results = search_provider.search(DEFAULT_QUERY, limit=3)
         if not search_results:
@@ -187,6 +263,7 @@ def run(*, release_root: Path, work_root: Path, keep_output: bool) -> dict[str, 
             "output_bytes": output_path.stat().st_size,
             "progress_events": len(progress_events),
             "video_preview": preview_media,
+            **playlist_report,
             **media,
         }
         print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)
@@ -219,12 +296,21 @@ def main() -> int:
         action="store_true",
         help="Keep the downloaded test segment for manual inspection",
     )
+    parser.add_argument(
+        "--playlist-url",
+        default="",
+        help=(
+            "Optionally expand and preview one YouTube/YouTube Music playlist; "
+            f"example: {DEFAULT_MUSIC_PLAYLIST}"
+        ),
+    )
     args = parser.parse_args()
     try:
         run(
             release_root=args.release_root,
             work_root=args.work_root,
             keep_output=args.keep_output,
+            playlist_url=args.playlist_url,
         )
     except Exception as error:
         print(f"FAIL: {type(error).__name__}: {error}", file=sys.stderr)

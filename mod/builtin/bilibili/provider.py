@@ -11,6 +11,8 @@ import sys
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib import parse as url_parse
+from urllib import request as url_request
 from urllib.parse import urlsplit
 
 
@@ -29,6 +31,35 @@ PROVIDER_ID = "bilibili"
 DISPLAY_NAME = "Bilibili"
 _MEDIA_SUFFIXES = (".mp4", ".mkv", ".webm", ".m4a", ".mp3")
 _BILIBILI_VIDEO_ID = re.compile(r"^(?:BV[0-9A-Za-z]+|av\d+)$", re.IGNORECASE)
+_VIEW_API = "https://api.bilibili.com/x/web-interface/view"
+_MAX_VIEW_RESPONSE_BYTES = 2 * 1024 * 1024
+
+
+class _OfficialApiRedirectHandler(url_request.HTTPRedirectHandler):
+    def redirect_request(
+        self,
+        req: url_request.Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: object,
+        newurl: str,
+    ) -> url_request.Request | None:
+        absolute = url_parse.urljoin(req.full_url, newurl)
+        try:
+            parsed = urlsplit(absolute)
+            port = parsed.port
+        except ValueError as error:
+            raise ValueError("Bilibili metadata redirect is invalid") from error
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != "api.bilibili.com"
+            or parsed.username is not None
+            or parsed.password is not None
+            or port is not None
+        ):
+            raise ValueError("Bilibili metadata redirect left the official API")
+        return super().redirect_request(req, fp, code, msg, headers, absolute)
 
 
 def _thumbnail_url(*values: object) -> str:
@@ -38,6 +69,15 @@ def _thumbnail_url(*values: object) -> str:
             value = "https:" + value
         try:
             parsed = urlsplit(value)
+            if (
+                parsed.scheme == "http"
+                and (parsed.hostname or "").casefold().endswith(".hdslb.com")
+                and parsed.username is None
+                and parsed.password is None
+                and parsed.port is None
+            ):
+                value = "https://" + value.removeprefix("http://")
+                parsed = urlsplit(value)
             if (
                 parsed.scheme == "https"
                 and (parsed.hostname or "").casefold().endswith(".hdslb.com")
@@ -60,6 +100,68 @@ def _entry_title(raw: dict[str, Any], parent_title: str, position: int) -> str:
     if parent_title:
         return f"{parent_title} · P{position}"[:300]
     return f"Bilibili 分段 P{position}"
+
+
+def _bvid_from_url(value: str) -> str:
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return ""
+    parts = tuple(part for part in parsed.path.split("/") if part)
+    candidate = parts[1] if len(parts) >= 2 and parts[0] == "video" else ""
+    return candidate if re.fullmatch(r"BV[0-9A-Za-z]{10,20}", candidate) else ""
+
+
+def _official_video_pages(
+    video_url: str,
+    limit: int,
+) -> dict[int, tuple[str, float | None, str]]:
+    bvid = _bvid_from_url(video_url)
+    if not bvid:
+        return {}
+    outgoing = url_request.Request(
+        f"{_VIEW_API}?{url_parse.urlencode({'bvid': bvid})}",
+        headers={
+            "Accept": "application/json",
+            "Referer": video_url,
+            "User-Agent": "MediaManager/10 BilibiliMetadata",
+        },
+    )
+    opener = url_request.build_opener(_OfficialApiRedirectHandler())
+    with opener.open(outgoing, timeout=20) as response:
+        final = urlsplit(response.geturl())
+        if final.scheme != "https" or final.hostname != "api.bilibili.com":
+            raise ValueError("Bilibili metadata redirected outside the official API")
+        payload = response.read(_MAX_VIEW_RESPONSE_BYTES + 1)
+    if len(payload) > _MAX_VIEW_RESPONSE_BYTES:
+        raise ValueError("Bilibili metadata response is too large")
+    raw = json.loads(payload.decode("utf-8"))
+    data = raw.get("data") if isinstance(raw, dict) and raw.get("code") == 0 else None
+    pages = data.get("pages") if isinstance(data, dict) and data.get("bvid") == bvid else None
+    if not isinstance(pages, list) or len(pages) > 500:
+        raise ValueError("Bilibili metadata pages are invalid")
+    result: dict[int, tuple[str, float | None, str]] = {}
+    for raw_page in pages[:limit]:
+        if not isinstance(raw_page, dict):
+            continue
+        position = raw_page.get("page")
+        if (
+            not isinstance(position, int)
+            or isinstance(position, bool)
+            or not 1 <= position <= 500
+            or position in result
+        ):
+            continue
+        title = " ".join(str(raw_page.get("part") or "").split())[:300]
+        first_frame = str(raw_page.get("first_frame") or "")[:1000]
+        if first_frame.startswith("http://"):
+            first_frame = "https://" + first_frame.removeprefix("http://")
+        result[position] = (
+            title,
+            _finite_duration(raw_page.get("duration")),
+            _thumbnail_url(first_frame),
+        )
+    return result
 
 
 def emit(message: dict[str, Any]) -> None:
@@ -256,19 +358,27 @@ def playlist(request: dict[str, Any]) -> list[dict[str, Any]]:
     limit = int(request.get("limit", 500))
     if not 1 <= limit <= 500:
         raise ValueError("playlist limit is invalid")
+    requested_url = str(request["url"])
+    is_creator = (urlsplit(requested_url).hostname or "").casefold() == (
+        "space.bilibili.com"
+    )
+    effective_limit = min(limit, 50) if is_creator else limit
     options: dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
-        "extract_flat": "in_playlist",
+        # UP pages need resolved entries for real titles/thumbnails. Limit
+        # those metadata requests to 50; multipart videos remain lightweight
+        # and receive names from the official view API below.
+        "extract_flat": False if is_creator else "in_playlist",
         "ignoreerrors": True,
-        "playlistend": limit,
+        "playlistend": effective_limit,
         "socket_timeout": 20,
         "extractor_retries": 3,
     }
     options.update(runtime_options(request))
     with YoutubeDL(options) as ydl:
-        info = ydl.extract_info(request["url"], download=False)
+        info = ydl.extract_info(requested_url, download=False)
     raw_entries = info.get("entries") if isinstance(info, dict) else None
     if raw_entries is None:
         raise ValueError("URL does not contain a supported Bilibili list")
@@ -280,10 +390,14 @@ def playlist(request: dict[str, Any]) -> list[dict[str, Any]]:
         info.get("uploader") or info.get("channel") or info.get("creator") or ""
     )[:200]
     parent_thumbnail = _thumbnail_url(info.get("thumbnail"))
+    try:
+        official_pages = _official_video_pages(requested_url, effective_limit)
+    except (OSError, TypeError, ValueError):
+        official_pages = {}
     entries: list[dict[str, Any]] = []
     seen: set[str] = set()
     for position, raw in enumerate(raw_entries, start=1):
-        if position > limit:
+        if position > effective_limit:
             break
         if not isinstance(raw, dict):
             entries.append(
@@ -314,21 +428,27 @@ def playlist(request: dict[str, Any]) -> list[dict[str, Any]]:
             reason = "清單內重複分段"
         if available:
             seen.add(entry_id)
+        official_title, official_duration, official_thumbnail = official_pages.get(
+            position,
+            ("", None, ""),
+        )
         entries.append(
             {
                 "entry_id": entry_id,
                 "url": url if valid_url else "",
-                "title": _entry_title(raw, parent_title, position),
+                "title": official_title or _entry_title(raw, parent_title, position),
                 "artist": str(
                     raw.get("uploader")
                     or raw.get("channel")
                     or raw.get("creator")
                     or parent_artist
                 )[:200],
-                "duration": _finite_duration(raw.get("duration")),
+                "duration": official_duration or _finite_duration(raw.get("duration")),
                 "position": position,
                 "thumbnail_url": _thumbnail_url(
-                    raw.get("thumbnail"), parent_thumbnail
+                    official_thumbnail,
+                    raw.get("thumbnail"),
+                    parent_thumbnail,
                 ),
                 "available": available,
                 "unavailable_reason": reason[:200],
@@ -413,11 +533,24 @@ def _completed_media_path(
 
 
 def _find_danmaku_xml(output: Path, media: Path) -> Path | None:
-    matches = sorted(output.glob(f"{media.stem}*danmaku*.xml"))
+    # Media titles commonly contain glob metacharacters such as `[BV...]`.
+    # Enumerate only XML files and compare literal names instead of injecting
+    # the title into a glob pattern.
+    all_xml = sorted(output.glob("*.xml"), key=lambda path: path.name)[:1000]
+    matches = [
+        candidate
+        for candidate in all_xml
+        if candidate.stem.startswith(media.stem)
+        and "danmaku" in candidate.stem.casefold()
+    ]
     if not matches:
-        all_xml = sorted(output.glob(f"{media.stem}*.xml"))
-        if len(all_xml) == 1:
-            matches = all_xml
+        same_media = [
+            candidate
+            for candidate in all_xml
+            if candidate.stem.startswith(media.stem)
+        ]
+        if len(same_media) == 1:
+            matches = same_media
     for candidate in matches:
         try:
             if (
@@ -631,13 +764,10 @@ def download(request: dict[str, Any]) -> str:
     start, end = request.get("start_time"), request.get("end_time")
     if start is not None or end is not None:
         if not audio_only:
-            maximum_height = {
-                "video-480": 480,
-                "video-720": 720,
-                "video-1080": 1080,
-                "best": 1080,
-            }[preset]
-            options["format"] = f"b[height<={maximum_height}]/b"
+            # Public Bilibili videos commonly expose separate video/audio DASH
+            # streams and no progressive `b` format. Keep the bounded preset
+            # selector so FFmpeg can merge and cut the selected streams.
+            options["format"] = formats[preset]
         options["download_ranges"] = download_range_func(
             None, [(start or 0.0, end or float("inf"))]
         )

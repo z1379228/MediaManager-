@@ -43,6 +43,11 @@ from core.mod_groups import BuiltinModGroupError, load_builtin_mod_group
 from core.site_routing import classify_site_url
 from core.settings import SettingsService, normalized_download_workers
 from trusted_ui.batch_import_dialog import show_batch_import_dialog
+from trusted_ui.bilibili_workspace import (
+    bilibili_url_kind_label,
+    create_bilibili_workspace,
+    merge_bilibili_download_urls,
+)
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.empty_state import create_empty_state
 from trusted_ui.playlist_dialog import show_playlist_dialog
@@ -325,6 +330,7 @@ def create_download_panel(
             page.addLayout(heading)
 
             self.youtube_workspace = None
+            self.bilibili_workspace = None
             if site_family == "youtube":
                 self.youtube_workspace = create_youtube_workspace(
                     context,
@@ -332,6 +338,13 @@ def create_download_panel(
                     self,
                 )
                 page.addWidget(self.youtube_workspace)
+            elif site_family == "bilibili":
+                self.bilibili_workspace = create_bilibili_workspace(
+                    context,
+                    self.append_bilibili_search_urls,
+                    self,
+                )
+                page.addWidget(self.bilibili_workspace)
 
             input_card = QFrame()
             input_card.setObjectName("card")
@@ -413,7 +426,9 @@ def create_download_panel(
             self.url_classification = QLabel()
             self.url_classification.setObjectName("urlClassification")
             self.url_classification.setWordWrap(True)
-            self.url_classification.setVisible(site_family == "youtube")
+            self.url_classification.setVisible(
+                site_family in {"youtube", "bilibili"}
+            )
             input_layout.addWidget(self.url_classification)
 
             self.official_bridge_notice = QWidget(self)
@@ -783,6 +798,10 @@ def create_download_panel(
                 if self.provider_id in provider_ids
                 else f"{self.workspace_text['enable']}（不可用）"
             )
+            if self.youtube_workspace is not None:
+                self.youtube_workspace.apply_language(locale)
+            if self.bilibili_workspace is not None:
+                self.bilibili_workspace.apply_language(locale)
 
         def handle_builtin_mod_changed(self, payload: object) -> None:
             if not isinstance(payload, dict):
@@ -804,6 +823,10 @@ def create_download_panel(
                 "youtube-player",
             } and self.youtube_workspace:
                 self.youtube_workspace.refresh_availability()
+            if changed_provider_id in {"bilibili", "bilibili-search"} and (
+                self.bilibili_workspace
+            ):
+                self.bilibili_workspace.refresh_availability()
             if changed_provider_id in {"youtube", "youtube-player"}:
                 if self.media_preview_controls is not None:
                     self.media_preview_controls.refresh()
@@ -822,6 +845,27 @@ def create_download_panel(
             self.preview.setText(
                 f"已從 YouTube 搜尋帶入 {added} 筆新網址；"
                 "請確認格式、字幕、開始／結束時間與播放清單選項後再加入佇列。"
+            )
+            self.urls.setFocus()
+
+        def append_bilibili_search_urls(
+            self, selected_urls: tuple[str, ...]
+        ) -> None:
+            """Bring Bilibili search results into this site's reviewed flow."""
+
+            before = tuple(
+                line.strip()
+                for line in self.urls.toPlainText().splitlines()
+                if line.strip()
+            )
+            merged = merge_bilibili_download_urls(
+                self.urls.toPlainText(), selected_urls
+            )
+            self.urls.setPlainText("\n".join(merged))
+            added = max(0, len(merged) - len(dict.fromkeys(before)))
+            self.preview.setText(
+                f"已從 Bilibili 搜尋帶入 {added} 筆新網址；"
+                "請確認格式、字幕、分 P 與彈幕選項後再加入佇列。"
             )
             self.urls.setFocus()
 
@@ -1025,7 +1069,15 @@ def create_download_panel(
                 route is None or route.site_family != self.site_family
                 for route in routes
             )
-            self.add_download.setEnabled(bool(urls) and not wrong_site)
+            bilibili_creator = (
+                self.site_family == "bilibili"
+                and len(routes) == 1
+                and routes[0] is not None
+                and routes[0].resource_kind == "creator"
+            )
+            self.add_download.setEnabled(
+                bool(urls) and not wrong_site and not bilibili_creator
+            )
             if wrong_site:
                 self.preview.setText(self.workspace_text["wrong_site"])
             if self.site_family == "youtube":
@@ -1041,6 +1093,19 @@ def create_download_panel(
                         "單片試聽、影片預覽與播放清單展開已停用。"
                     )
                 self.url_classification.setText(classification)
+            elif self.site_family == "bilibili":
+                if not urls:
+                    classification = "尚未輸入 Bilibili 網址。"
+                elif wrong_site:
+                    classification = self.workspace_text["wrong_site"]
+                elif len(urls) == 1:
+                    classification = bilibili_url_kind_label(urls[0])
+                else:
+                    classification = (
+                        f"已確認：Bilibili 批量網址（{len(urls)} 筆）；"
+                        "字幕與彈幕選項會套用到全部工作，清單展開僅支援單一網址。"
+                    )
+                self.url_classification.setText(classification)
 
             single_valid = len(urls) == 1 and not wrong_site
             provider_enabled = self.any_download_provider_enabled()
@@ -1052,7 +1117,13 @@ def create_download_panel(
                 )
             else:
                 playlist_ready = single_valid
-                info_ready = single_valid
+                info_ready = single_valid and not bilibili_creator
+                if self.site_family == "bilibili":
+                    self.expand_playlist.setToolTip(
+                        ""
+                        if playlist_ready
+                        else "只有單一 UP 主、番劇或分 P 網址才能展開"
+                    )
             self.expand_playlist.setEnabled(
                 provider_enabled and playlist_ready and not self.playlist_busy
             )
@@ -2193,6 +2264,8 @@ def create_download_panel(
                 )
             if self.youtube_workspace is not None:
                 self.youtube_workspace.shutdown()
+            if self.bilibili_workspace is not None:
+                self.bilibili_workspace.shutdown()
             if self.media_preview_controls is not None:
                 self.media_preview_controls.shutdown()
             if self.thumbnail_loader is not None:
