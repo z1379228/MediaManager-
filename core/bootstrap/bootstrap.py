@@ -56,6 +56,7 @@ from core.settings import (
 )
 from core.storage.paths import AppPaths
 from core.updates.offline_bundle import OfflineUpdateInstaller
+from core.version import BUILD_CHANNEL
 
 
 _BUILTIN_DOWNLOAD_DETAILS = {
@@ -169,7 +170,9 @@ class Bootstrap:
             if not result.valid:
                 security.block("; ".join(result.errors))
         else:
-            security.enter_safe_mode("development build has no signed release manifest")
+            security.enter_safe_mode(
+                f"{BUILD_CHANNEL} build has no signed release manifest"
+            )
         return security, trust_store
 
     def verify_only(self) -> SafeMode:

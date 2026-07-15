@@ -14,7 +14,12 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from core.version import BUILD_CHANNEL, CORE_VERSION, release_track
+from core.version import (
+    BUILD_CHANNEL,
+    CORE_VERSION,
+    release_identity_version,
+    release_track,
+)
 from tools.portable_runtime import cached_ffmpeg_paths, cached_runtime_path
 from tools.stage_version import stage_version, version_folder_name
 
@@ -33,11 +38,12 @@ def version_build_paths(
     version: str,
     *,
     channel: str = BUILD_CHANNEL,
+    release_version: str | None = None,
     attempt_id: str | None = None,
 ) -> VersionBuildPaths:
     if attempt_id is not None and not re.fullmatch(r"[a-z0-9-]{1,32}", attempt_id):
         raise ValueError("build attempt id is invalid")
-    folder = version_folder_name(version)
+    folder = version_folder_name(release_version or version)
     if attempt_id is not None:
         folder = f"{folder}-attempt-{attempt_id}"
     work = (
@@ -130,10 +136,12 @@ def build_version(
             "stable packaging requires explicit user confirmation"
         )
     validate_build_version(root, version)
+    public_version = release_identity_version(channel)
     paths = version_build_paths(
         root,
         version,
         channel=channel,
+        release_version=public_version,
         attempt_id=secrets.token_hex(4),
     )
     portable_tools = portable_release_tools(root, enabled=portable_runtime)
@@ -183,6 +191,7 @@ def build_version(
     target = stage_version(
         root,
         version=version,
+        release_version=public_version,
         executable=executable,
         wheel=wheel,
         portable_tools=portable_tools,
@@ -205,7 +214,9 @@ def main() -> int:
     parser.add_argument("--version", default=CORE_VERSION)
     parser.add_argument("--keep-work", action="store_true")
     parser.add_argument(
-        "--channel", choices=("development", "stable"), default=BUILD_CHANNEL
+        "--channel",
+        choices=("development", "testing", "stable"),
+        default=BUILD_CHANNEL,
     )
     parser.add_argument("--confirm-stable", action="store_true")
     parser.add_argument(

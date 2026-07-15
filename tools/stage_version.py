@@ -18,8 +18,8 @@ from tools.source_fingerprint import source_fingerprint, source_revision
 
 _REPLACE_ATTEMPTS = 5
 _REPLACE_DELAY_SECONDS = 0.05
-RELEASE_INFO_SCHEMA_VERSION = 2
-RELEASE_TOOL_SCHEMA_VERSION = 2
+RELEASE_INFO_SCHEMA_VERSION = 3
+RELEASE_TOOL_SCHEMA_VERSION = 3
 
 
 def version_folder_name(version: str) -> str:
@@ -74,6 +74,7 @@ def stage_version(
     *,
     output_root: Path | None = None,
     version: str = CORE_VERSION,
+    release_version: str | None = None,
     executable: Path | None = None,
     wheel: Path | None = None,
     portable_tools: Mapping[str, Path] | None = None,
@@ -88,7 +89,8 @@ def stage_version(
             "stable packaging requires explicit user confirmation"
         )
     output_root = (output_root / track).resolve()
-    folder = version_folder_name(version)
+    public_version = release_version or version
+    folder = version_folder_name(public_version)
     target = output_root / folder
     staging = output_root / f".{folder}.staging"
     backup = output_root / f".{folder}.backup"
@@ -142,6 +144,7 @@ def stage_version(
         build_digest = hashlib.sha256()
         build_digest.update(fingerprint.encode("ascii"))
         build_digest.update(version.encode("ascii"))
+        build_digest.update(public_version.encode("ascii"))
         build_digest.update(channel.encode("ascii"))
         build_digest.update(_sha256(staging / "MediaManager.exe").encode("ascii"))
         build_digest.update(_sha256(staging / wheel.name).encode("ascii"))
@@ -149,6 +152,7 @@ def stage_version(
             "schema_version": RELEASE_INFO_SCHEMA_VERSION,
             "tool_schema_version": RELEASE_TOOL_SCHEMA_VERSION,
             "core_version": version,
+            "release_version": public_version,
             "build_channel": channel,
             "release_track": track,
             "version_folder": folder,
@@ -202,10 +206,13 @@ def main() -> int:
     parser.add_argument("--source-root", type=Path, default=Path.cwd())
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--version", default=CORE_VERSION)
+    parser.add_argument("--release-version")
     parser.add_argument("--executable", type=Path)
     parser.add_argument("--wheel", type=Path)
     parser.add_argument(
-        "--channel", choices=("development", "stable"), default=BUILD_CHANNEL
+        "--channel",
+        choices=("development", "testing", "stable"),
+        default=BUILD_CHANNEL,
     )
     parser.add_argument("--confirm-stable", action="store_true")
     args = parser.parse_args()
@@ -213,6 +220,7 @@ def main() -> int:
         args.source_root,
         output_root=args.output_root,
         version=args.version,
+        release_version=args.release_version,
         executable=args.executable,
         wheel=args.wheel,
         channel=args.channel,

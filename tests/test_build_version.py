@@ -24,13 +24,23 @@ def test_build_version_sources_match_and_override_is_rejected() -> None:
 
 
 def test_version_build_paths_are_isolated_under_work(tmp_path: Path) -> None:
-    paths = version_build_paths(tmp_path, "1.2.3")
-    assert paths.work == tmp_path / ".work" / "Development" / "1.2"
+    paths = version_build_paths(
+        tmp_path,
+        "11.0.0",
+        channel="testing",
+        release_version="1.0.0",
+    )
+    assert paths.work == tmp_path / ".work" / "Testing" / "1.0"
     assert paths.temp == paths.work / "temp"
     assert paths.pyinstaller_work == paths.work / "pyinstaller"
     assert paths.executable_output == paths.work / "exe"
     assert paths.wheel_output == paths.work / "wheel"
-    retry = version_build_paths(tmp_path, "1.2.3", attempt_id="a1b2c3d4")
+    retry = version_build_paths(
+        tmp_path,
+        "1.2.3",
+        channel="development",
+        attempt_id="a1b2c3d4",
+    )
     assert retry.work == (
         tmp_path / ".work" / "Development" / "1.2-attempt-a1b2c3d4"
     )

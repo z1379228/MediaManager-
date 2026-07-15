@@ -1,26 +1,28 @@
 # Versioned release folders
 
-> 下列原有 `Version/<major>.<minor>` 路徑描述適用於 5.0 既有產物。雙軌版本
-> 遷移完成後，新產物使用 `Version/Development` 與 `Version/Stable`；歷史資料
+> 下列原有 `Version/<major>.<minor>` 路徑描述適用於 5.0 既有產物。分軌版本
+> 遷移完成後，新產物使用 `Version/Development`、`Version/Testing` 與
+> `Version/Stable`；歷史資料
 > 不原地改名，以免破壞已發布雜湊。
 
-## 雙軌發布政策
+## 三軌發布政策
 
 | 通道 | 顯示範例 | 主要用途 | 預設發布內容 |
 | --- | --- | --- | --- |
 | Development | 開發版 5.0、開發版 6.0 | 新功能、MOD 適配與回饋測試 | `X.0` 完整上傳；`X.1` 至 `X.9` 只提供更新簡介 |
+| Testing | 測試版 1.0、測試版 1.1 | 將已驗證開發功能交給使用者測試 | GitHub Pre-release；未簽署並維持 `SAFE_MODE` |
 | Stable | 正式版 1.0、正式版 1.1 | 一般使用者與長期支援 | 通過候選評估且取得使用者確認後才包裝及上傳 |
 
-雙軌目錄目標：
+三軌目錄目標：
 
 ```text
 Version/
 ├─ Development/
-│  ├─ 5.0/
-│  └─ 6.0/
+│  └─ 11.0/
+├─ Testing/
+│  └─ 1.0/
 └─ Stable/
-   ├─ 1.0/
-   └─ 1.1/
+   └─ 1.0/
 ```
 
 `product_version`、`development_generation` 與 `release_channel` 必須分開保存。
@@ -31,10 +33,10 @@ Version/
 不得產生 Stable EXE、簽章或 GitHub Release。
 
 Legacy MediaManager releases remain under `Version/<major>.<minor>`. New builds
-live under `Version/Development/<major>.<minor>` or
-`Version/Stable/<major>.<minor>` according to their explicit release channel.
-The folder name is derived from `CORE_VERSION`: `1.0.0` becomes `1.0`,
-`1.1.0` becomes `1.1`, and so on.
+live under `Version/Development`, `Version/Testing` or `Version/Stable` according
+to their explicit release channel. Release-info schema v3 separates
+`core_version` from `release_version`: testing release 1.0.0 may retain core
+compatibility version 11.0.0, while its folder remains `Testing/1.0`.
 
 `core/version.py` and `pyproject.toml` must contain the same version. The build
 command fails before packaging when they differ or when `--version` attempts to

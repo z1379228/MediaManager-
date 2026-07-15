@@ -20,7 +20,7 @@ _POST_STAGE_SIGNING_FILES = {
     "security/release-manifest.json",
     "security/release-manifest.sig",
 }
-_RELEASE_TRACKS = ("Development", "Stable")
+_RELEASE_TRACKS = ("Development", "Testing", "Stable")
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,11 +104,13 @@ def audit_version(root: Path) -> VersionAudit:
     if not isinstance(info, dict):
         info = {}
     schema_version = info.get("schema_version")
-    if schema_version not in {1, 2}:
-        errors.append("release-info schema_version must be 1 or 2")
-    if schema_version == 2:
-        if info.get("tool_schema_version") != 2:
-            errors.append("release-info tool_schema_version must be 2")
+    if schema_version not in {1, 2, 3}:
+        errors.append("release-info schema_version must be 1, 2, or 3")
+    if schema_version in {2, 3}:
+        if info.get("tool_schema_version") != schema_version:
+            errors.append(
+                "release-info tool_schema_version must match schema_version"
+            )
         for field in ("source_fingerprint", "build_id"):
             value = info.get(field)
             if (
@@ -125,11 +127,24 @@ def audit_version(root: Path) -> VersionAudit:
     raw_version = info.get("core_version")
     if isinstance(raw_version, str):
         core_version = raw_version
-    version_match = _VERSION_PATTERN.fullmatch(core_version)
-    if version_match is None:
+    core_version_match = _VERSION_PATTERN.fullmatch(core_version)
+    if core_version_match is None:
         errors.append("core_version must use canonical major.minor.patch")
-    elif f"{version_match.group(1)}.{version_match.group(2)}" != folder:
-        errors.append("core_version does not match the version folder")
+    raw_release_version = (
+        info.get("release_version") if schema_version == 3 else core_version
+    )
+    release_version_match = (
+        _VERSION_PATTERN.fullmatch(raw_release_version)
+        if isinstance(raw_release_version, str)
+        else None
+    )
+    if release_version_match is None:
+        errors.append("release_version must use canonical major.minor.patch")
+    elif (
+        f"{release_version_match.group(1)}.{release_version_match.group(2)}"
+        != folder
+    ):
+        errors.append("release_version does not match the version folder")
     if info.get("version_folder") != folder:
         errors.append("release-info version_folder does not match the folder")
     declared_track = info.get("release_track")
@@ -248,6 +263,7 @@ def audit_versions(
     grouped_roots: dict[str, list[Path]] = {
         "Legacy": [],
         "Development": [],
+        "Testing": [],
         "Stable": [],
     }
     for path in root.iterdir():
@@ -268,7 +284,7 @@ def audit_versions(
         else:
             errors.append(f"unexpected version root entry: {path.name}")
     version_roots: list[Path] = []
-    for track in ("Legacy", "Stable", "Development"):
+    for track in ("Legacy", "Stable", "Testing", "Development"):
         values = grouped_roots[track]
         values.sort(
             key=lambda path: tuple(int(part) for part in path.name.split("."))
