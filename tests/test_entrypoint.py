@@ -82,8 +82,8 @@ def test_frozen_cli_stdio_does_not_require_stdin(monkeypatch) -> None:
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(
         stdio,
-        "_windows_stream",
-        lambda identifier, _mode: stdout if identifier == -11 else stderr,
+        "_windows_cli_writer",
+        lambda identifier: stdout if identifier == -11 else stderr,
     )
     try:
         assert stdio.restore_frozen_cli_stdio()
