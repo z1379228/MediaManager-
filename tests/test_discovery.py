@@ -128,6 +128,27 @@ def test_federated_search_rejects_explicitly_selected_disabled_source(
     service.close()
 
 
+def test_federated_search_rejects_missing_source_without_fallback(tmp_path) -> None:
+    provider = Mock()
+    provider.provider_id = "youtube-search"
+    provider.display_name = "YouTube Search"
+    provider.search_capability = SearchCapabilityV2(
+        "youtube-search", ("youtube",), ("all",), 7, "none", False, False
+    )
+    provider.search.return_value = ()
+    service = DiscoveryService(tmp_path / "discovery-state.json")
+    service.register(provider, enabled=True)
+
+    with pytest.raises(RuntimeError, match="unavailable: missing-search"):
+        service.federated_search(
+            "example",
+            provider_ids=("missing-search",),
+        )
+
+    provider.search.assert_not_called()
+    service.close()
+
+
 def test_search_source_health_tracks_failure_and_recovery(tmp_path) -> None:
     provider = Mock()
     provider.provider_id = "catalog-search"

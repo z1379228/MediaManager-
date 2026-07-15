@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "locale": "zh-TW",
+  "group_name": "MEGA",
+  "workspace": {
+    "title": "MEGA 下載工作區",
+    "subtitle": "辨識公開分享連結；檔案下載交由官方 MEGAcmd，不接收帳號或工作階段。",
+    "enable": "啟用 MEGA 主 MOD",
+    "url_label": "MEGA 公開分享網址",
+    "placeholder": "每行貼上一個 https://mega.nz/file/...#... 網址",
+    "initial_preview": "輸入 MEGA 公開分享網址後可確認類型與官方工具狀態。",
+    "wrong_site": "此頁只接受帶有完整解密片段的 MEGA 公開分享網址。"
+  },
+  "modules": {
+    "mega": {
+      "name": "MEGA Download",
+      "purpose": "辨識公開檔案分享並分流給官方 mega-get；9.2 不下載資料夾分享",
+      "control_location": "MOD 管理啟用後顯示 MEGA 下載工作區"
+    }
+  }
+}

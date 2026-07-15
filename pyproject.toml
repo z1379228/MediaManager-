@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mediamanager"
-version = "9.1.0"
+version = "10.3.0"
 description = "Platform-independent desktop media manager core"
 requires-python = ">=3.14"
 license = "MIT"
 dependencies = [
   "cryptography>=44",
-  "yt-dlp[default]>=2026.7.4",
+  "yt-dlp[default,curl-cffi]>=2026.7.4",
   "yt-dlp-ejs>=0.8.0",
 ]
 

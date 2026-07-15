@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,12 @@ from tools.release_preflight import PreflightResult, check_release
 
 @dataclass(frozen=True, slots=True)
 class CandidateEvidence:
+    schema_version: int
+    tool_schema_version: int
+    development_version: str
+    release_build_id: str
+    source_fingerprint: str
+    checksums_sha256: str
     ruff: bool
     pytest: bool
     copied_folder_smoke: bool
@@ -28,6 +35,12 @@ class CandidateEvidence:
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "CandidateEvidence":
         required = {
+            "schema_version",
+            "tool_schema_version",
+            "development_version",
+            "release_build_id",
+            "source_fingerprint",
+            "checksums_sha256",
             "ruff",
             "pytest",
             "copied_folder_smoke",
@@ -39,6 +52,17 @@ class CandidateEvidence:
         }
         if not isinstance(raw, dict) or set(raw) != required:
             raise ValueError("candidate evidence fields are invalid")
+        if raw["schema_version"] != 2 or raw["tool_schema_version"] != 2:
+            raise ValueError("candidate evidence schema is unsupported")
+        release_version(raw["development_version"])
+        for field in ("release_build_id", "source_fingerprint", "checksums_sha256"):
+            value = raw[field]
+            if (
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(char not in "0123456789abcdef" for char in value)
+            ):
+                raise ValueError("candidate evidence digest is invalid")
         for field in (
             "ruff",
             "pytest",
@@ -89,8 +113,27 @@ def assess_candidate(
         info = {}
         blockers.append("release-info.json is missing or invalid")
     development_version = str(info.get("core_version") or "")
+    if info.get("schema_version") != 2 or info.get("tool_schema_version") != 2:
+        blockers.append("candidate release metadata schema is stale")
     if info.get("build_channel") != "development":
         blockers.append("candidate must come from a development build")
+    bindings = {
+        "development_version": development_version,
+        "release_build_id": str(info.get("build_id") or ""),
+        "source_fingerprint": str(info.get("source_fingerprint") or ""),
+        "tool_schema_version": info.get("tool_schema_version"),
+    }
+    for field, expected in bindings.items():
+        if getattr(evidence, field) != expected:
+            blockers.append(f"candidate evidence does not match {field}")
+    try:
+        checksums_digest = hashlib.sha256(
+            (release_root / "SHA256SUMS.txt").read_bytes()
+        ).hexdigest()
+    except OSError:
+        checksums_digest = ""
+    if evidence.checksums_sha256 != checksums_digest:
+        blockers.append("candidate evidence does not match SHA256SUMS.txt")
     audit = audit_checker(release_root)
     if not audit.valid:
         blockers.append("version checksum audit failed")

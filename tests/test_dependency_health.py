@@ -62,7 +62,8 @@ def test_dependency_report_marks_full_support_ready(
 
     assert report.youtube_ready
     assert report.ready_count == 4
-    assert report.issue_count == 0
+    assert report.total_count == 7
+    assert report.issue_count == 3
 
 
 def test_dependency_report_rejects_old_or_incomplete_python_components(
@@ -96,10 +97,12 @@ def test_dependency_report_explains_missing_media_and_js(
 
     assert not report.youtube_ready
     assert report.ready_count == 1
-    assert report.issue_count == 3
+    assert report.issue_count == 6
     details = {status.dependency_id: status.detail for status in report.statuses}
     assert "分段" in details["ffmpeg"]
     assert "Deno" in details["javascript-runtime"]
+    assert "mega-get" in details["mega-get"]
+    assert "whisper-cli" in details["whisper-cli"]
 
 
 def test_find_javascript_runtime_returns_yt_dlp_key_and_path(

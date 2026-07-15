@@ -16,6 +16,11 @@ from typing import Callable, Sequence
 from core.runtime_policy import DENO_EXECUTABLE_SHA256, FFMPEG_PORTABLE_SHA256
 
 
+CORE_DEPENDENCY_IDS = frozenset(
+    {"yt-dlp", "yt-dlp-ejs", "ffmpeg", "javascript-runtime"}
+)
+
+
 @dataclass(frozen=True, slots=True)
 class DependencyStatus:
     dependency_id: str
@@ -43,8 +48,36 @@ class DependencyReport:
         return self.total_count - self.ready_count
 
     @property
+    def core_statuses(self) -> tuple[DependencyStatus, ...]:
+        return tuple(
+            status
+            for status in self.statuses
+            if status.dependency_id in CORE_DEPENDENCY_IDS
+        )
+
+    @property
+    def optional_statuses(self) -> tuple[DependencyStatus, ...]:
+        return tuple(
+            status
+            for status in self.statuses
+            if status.dependency_id not in CORE_DEPENDENCY_IDS
+        )
+
+    @property
+    def core_ready_count(self) -> int:
+        return sum(status.available for status in self.core_statuses)
+
+    @property
+    def optional_ready_count(self) -> int:
+        return sum(status.available for status in self.optional_statuses)
+
+    @property
     def youtube_ready(self) -> bool:
-        return self.issue_count == 0
+        statuses = {status.dependency_id: status for status in self.statuses}
+        return all(
+            dependency_id in statuses and statuses[dependency_id].available
+            for dependency_id in CORE_DEPENDENCY_IDS
+        )
 
 
 Runner = Callable[[Sequence[str]], tuple[int, str]]
@@ -194,6 +227,7 @@ def find_javascript_runtime(
 def check_dependencies(
     application_root: Path,
     *,
+    data_root: Path | None = None,
     runner: Runner = _run_version,
 ) -> DependencyReport:
     application_root = application_root.resolve()
@@ -294,4 +328,59 @@ def check_dependencies(
             else "需要 Deno 2.3+、Node.js 22+ 或 QuickJS；建議優先使用 Deno"
         ),
     )
-    return DependencyReport((ytdlp, ejs, media_tools, runtime))
+    mega_get_path = find_executable(application_root, "mega-get") or ""
+    mega_get = DependencyStatus(
+        "mega-get",
+        "MEGAcmd mega-get",
+        bool(mega_get_path),
+        "",
+        mega_get_path,
+        (
+            "MEGA 公開檔案下載可用"
+            if mega_get_path
+            else "未偵測到官方 mega-get；MEGA 網址仍可辨識但無法下載"
+        ),
+    )
+    whisper_path = find_executable(application_root, "whisper-cli") or ""
+    whisper = DependencyStatus(
+        "whisper-cli",
+        "whisper-cli",
+        bool(whisper_path),
+        "",
+        whisper_path,
+        (
+            "本機語音轉文字執行器可用"
+            if whisper_path
+            else "未偵測到 whisper-cli；Speech to Text 無法執行"
+        ),
+    )
+    model_root = (
+        data_root.resolve() / "models" / "speech-to-text"
+        if data_root is not None
+        else None
+    )
+    model_files: tuple[Path, ...] = ()
+    if model_root is not None and model_root.is_dir() and not model_root.is_symlink():
+        try:
+            model_files = tuple(
+                path
+                for path in model_root.iterdir()
+                if path.is_file() and not path.is_symlink() and path.stat().st_size > 0
+            )[:64]
+        except OSError:
+            model_files = ()
+    speech_model = DependencyStatus(
+        "speech-model",
+        "Speech model",
+        bool(model_files),
+        f"{len(model_files)} 個模型" if model_files else "",
+        str(model_root) if model_root is not None else "",
+        (
+            "至少一個本機語音模型可用"
+            if model_files
+            else "尚未匯入本機語音模型；Speech to Text 無法開始轉錄"
+        ),
+    )
+    return DependencyReport(
+        (ytdlp, ejs, media_tools, runtime, mega_get, whisper, speech_model)
+    )

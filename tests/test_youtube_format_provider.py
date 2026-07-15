@@ -139,3 +139,46 @@ def test_analysis_format_summaries_are_bounded_and_sorted() -> None:
     assert [item["format_id"] for item in summaries] == ["720p", "audio"]
     assert summaries[0]["estimated_bytes"] == 1000
     assert summaries[1]["height"] is None
+
+
+def test_playlist_keeps_only_official_youtube_thumbnails(monkeypatch) -> None:
+    package = ModuleType("yt_dlp")
+
+    class YoutubeDL:
+        def __init__(self, _options):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def extract_info(self, _url, download):
+            assert download is False
+            return {
+                "entries": [
+                    {
+                        "id": "one",
+                        "title": "One",
+                        "url": "one",
+                        "thumbnail": "https://i.ytimg.com/vi/one/mqdefault.jpg",
+                    },
+                    {
+                        "id": "two",
+                        "title": "Two",
+                        "url": "two",
+                        "thumbnail": "https://example.com/tracker.jpg",
+                    },
+                ]
+            }
+
+    package.YoutubeDL = YoutubeDL
+    monkeypatch.setitem(sys.modules, "yt_dlp", package)
+
+    entries = load_provider().playlist(
+        {"url": "https://music.youtube.com/playlist?list=example"}
+    )
+
+    assert entries[0]["thumbnail_url"].startswith("https://i.ytimg.com/")
+    assert entries[1]["thumbnail_url"] == ""

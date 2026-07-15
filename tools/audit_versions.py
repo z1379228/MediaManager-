@@ -103,8 +103,25 @@ def audit_version(root: Path) -> VersionAudit:
         errors.append("release-info.json is missing or invalid")
     if not isinstance(info, dict):
         info = {}
-    if info.get("schema_version") != 1:
-        errors.append("release-info schema_version must be 1")
+    schema_version = info.get("schema_version")
+    if schema_version not in {1, 2}:
+        errors.append("release-info schema_version must be 1 or 2")
+    if schema_version == 2:
+        if info.get("tool_schema_version") != 2:
+            errors.append("release-info tool_schema_version must be 2")
+        for field in ("source_fingerprint", "build_id"):
+            value = info.get(field)
+            if (
+                not isinstance(value, str)
+                or re.fullmatch(r"[0-9a-f]{64}", value) is None
+            ):
+                errors.append(f"release-info {field} must be a SHA-256 value")
+        revision = info.get("source_revision")
+        if revision != "unavailable" and (
+            not isinstance(revision, str)
+            or re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", revision) is None
+        ):
+            errors.append("release-info source_revision is invalid")
     raw_version = info.get("core_version")
     if isinstance(raw_version, str):
         core_version = raw_version

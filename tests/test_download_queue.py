@@ -226,17 +226,17 @@ def test_pause_resume_all_and_dynamic_worker_count(tmp_path: Path) -> None:
     downloads.shutdown()
 
 
-def test_queue_restores_waiting_task_from_disk(tmp_path: Path) -> None:
+def test_queue_restores_waiting_task_as_paused(tmp_path: Path) -> None:
     state = tmp_path / "queue.json"
     original = DownloadQueue(RecordingBackend(), workers=1, state_path=state)
     task_id = original.add(DownloadRequest("https://youtu.be/x", tmp_path))
     restored = DownloadQueue(RecordingBackend(), workers=1, state_path=state)
     task = restored.snapshots()[0]
     assert task.task_id == task_id
-    assert task.state is DownloadState.QUEUED
+    assert task.state is DownloadState.PAUSED
 
 
-def test_running_task_is_requeued_after_restart(tmp_path: Path) -> None:
+def test_running_task_is_paused_after_restart(tmp_path: Path) -> None:
     state = tmp_path / "queue.json"
     state.write_text(
         '[{"task_id":"abc","url":"https://youtu.be/x",'
@@ -245,7 +245,56 @@ def test_running_task_is_requeued_after_restart(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     restored = DownloadQueue(RecordingBackend(), workers=1, state_path=state)
-    assert restored.snapshots()[0].state is DownloadState.QUEUED
+    assert restored.snapshots()[0].state is DownloadState.PAUSED
+
+
+def test_restored_task_does_not_start_until_user_resumes(tmp_path: Path) -> None:
+    state = tmp_path / "queue.json"
+    backend = RecordingBackend()
+    backend.release.set()
+    original = DownloadQueue(backend, workers=1, state_path=state)
+    task_id = original.add(DownloadRequest("https://youtu.be/x", tmp_path))
+
+    restored = DownloadQueue(backend, workers=1, state_path=state)
+    restored.start()
+    time.sleep(0.05)
+    assert backend.urls == []
+    assert restored.snapshots()[0].state is DownloadState.PAUSED
+
+    assert restored.resume(task_id)
+    wait_for(lambda: restored.snapshots()[0].state is DownloadState.COMPLETED)
+    assert backend.urls == ["https://youtu.be/x"]
+    restored.shutdown()
+
+
+def test_requested_pause_and_cancel_survive_restart(tmp_path: Path) -> None:
+    state = tmp_path / "queue.json"
+    backend = CancelAwareBackend()
+    downloads = DownloadQueue(backend, workers=1, state_path=state)
+    paused_id = downloads.add(DownloadRequest("https://youtu.be/pause", tmp_path))
+    downloads.start()
+    assert backend.started.wait(2)
+    assert downloads.pause(paused_id)
+
+    paused = DownloadQueue(RecordingBackend(), state_path=state)
+    assert paused.snapshots()[0].state is DownloadState.PAUSED
+    downloads.shutdown()
+
+    cancel_state = tmp_path / "cancel-queue.json"
+    cancel_backend = CancelAwareBackend()
+    cancelling = DownloadQueue(
+        cancel_backend, workers=1, state_path=cancel_state
+    )
+    cancelled_id = cancelling.add(
+        DownloadRequest("https://youtu.be/cancel", tmp_path)
+    )
+    cancelling.start()
+    assert cancel_backend.started.wait(2)
+    assert cancelling.cancel(cancelled_id)
+
+    cancelled = DownloadQueue(RecordingBackend(), state_path=cancel_state)
+    assert cancelled.snapshots()[0].state is DownloadState.CANCELLED
+    cancelling.shutdown()
 
 
 def test_failed_task_can_be_retried(tmp_path: Path) -> None:

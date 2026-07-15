@@ -6,6 +6,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Iterable
 
+from core.builtin_mod_catalog import (
+    BUILTIN_MOD_CATALOG,
+    BUILTIN_MOD_IDS as BUILTIN_MOD_IDS,
+)
 from core.mod_groups import (
     SITE_MOD_PARENT,
     BuiltinModGroup,
@@ -26,85 +30,6 @@ class BuiltinModRow:
     group_name: str = ""
     parent_provider_id: str = ""
     module_id: str = ""
-
-
-_BUILTIN_MODS = (
-    ("youtube", "YouTube", "批量、分段與音訊下載", "YouTube 下載工作區"),
-    (
-        "generic-ytdlp",
-        "其他網站 Beta",
-        "白名單網站的分析、清單與下載",
-        "MOD 管理（預設停用；不顯示於 YouTube／Bilibili 工作區）",
-    ),
-    (
-        "bilibili",
-        "Bilibili",
-        "影片、分段與彈幕 XML／ASS／MKV",
-        "Bilibili 下載工作區（預設停用）",
-    ),
-    ("youtube-search", "YouTube Search", "搜尋 YouTube 影片與音樂", "網站搜尋 → 搜尋 MOD"),
-    (
-        "bilibili-search",
-        "Bilibili Search",
-        "獨立搜尋 Bilibili 公開影片",
-        "網站搜尋 → 搜尋 MOD（預設停用）",
-    ),
-    (
-        "ani-gamer-search",
-        "動畫瘋官方搜尋",
-        "搜尋官方公開作品目錄；只開官方頁",
-        "網站搜尋 → 搜尋 MOD（預設停用）",
-    ),
-    (
-        "youtube-player",
-        "YouTube Player",
-        "可選的低畫質影片預覽",
-        "網站搜尋 → 搜尋 MOD",
-    ),
-    (
-        "youtube-history",
-        "YouTube History",
-        "記錄有限搜尋偏好",
-        "網站搜尋 → 搜尋 MOD",
-    ),
-    (
-        "youtube-recovery",
-        "YouTube Recovery",
-        "尋找失效影片替代項目",
-        "網站搜尋 → 搜尋 MOD",
-    ),
-    (
-        "youtube-similar",
-        "YouTube Similar",
-        "隨機尋找相似內容",
-        "網站搜尋 → 搜尋 MOD",
-    ),
-    (
-        "youtube-auto-split",
-        "YouTube Auto Split",
-        "分析並預覽長影片切割點",
-        "MOD 管理啟用；YouTube 下載工作區使用",
-    ),
-    (
-        "media-convert",
-        "Media Convert",
-        "本機轉封裝、轉檔、壓縮、串接、切割與字幕處理",
-        "啟用後顯示 Media Convert 工作區",
-    ),
-    (
-        "speech-to-text",
-        "Speech to Text",
-        "本機語音轉文字與 TXT、SRT、VTT 輸出",
-        "啟用後顯示 Speech to Text 工作區",
-    ),
-    (
-        "automation",
-        "Automation",
-        "排程網址、監看資料夾與剪貼簿網址候選",
-        "啟用後顯示 Automation 工作區；規則仍預設關閉",
-    ),
-)
-BUILTIN_MOD_IDS = frozenset(item[0] for item in _BUILTIN_MODS)
 
 
 def builtin_mod_rows(
@@ -135,7 +60,8 @@ def builtin_mod_rows(
         for module in group.modules
     }
     rows = []
-    for provider_id, fallback_name, purpose, control_location in _BUILTIN_MODS:
+    for descriptor in BUILTIN_MOD_CATALOG:
+        provider_id = descriptor.provider_id
         status = statuses.get(provider_id)
         localized = localized_modules.get(provider_id)
         group_name = localized[0] if localized is not None else ""
@@ -160,9 +86,11 @@ def builtin_mod_rows(
                 if module is not None
                 else str(status.display_name)
                 if status is not None
-                else fallback_name,
-                module.purpose if module is not None else purpose,
-                module.control_location if module is not None else control_location,
+                else descriptor.display_name,
+                module.purpose if module is not None else descriptor.purpose,
+                module.control_location
+                if module is not None
+                else descriptor.control_location,
                 available,
                 bool(status.enabled) if status is not None and available else False,
                 reason,
@@ -300,7 +228,7 @@ def create_builtin_mod_panel(context: object, parent: object = None) -> object:
         )
         summary.setToolTip(
             "製作中表示已確立但尚未成為可執行 MOD；P0／P1／P2 代表優先級。"
-            "Facebook、Instagram、Threads 與動畫瘋是既有官方橋接，不是未完成下載 MOD。"
+            "Instagram、Threads 與動畫瘋保留官方橋接；Facebook、MEGA 已有獨立下載 MOD。"
             + (
                 "\n初始化失敗：\n"
                 + "\n".join(

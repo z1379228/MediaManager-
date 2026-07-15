@@ -56,6 +56,7 @@ class SubprocessDownloadProvider:
         application_root: Path,
         ffmpeg_location: str | None = None,
         js_runtime: tuple[str, str] | None = None,
+        external_tools: dict[str, str] | None = None,
         analyze_timeout: float = 45.0,
         download_timeout: float = 900.0,
         idle_timeout: float = 90.0,
@@ -101,6 +102,24 @@ class SubprocessDownloadProvider:
                     "JavaScript runtime configuration is invalid"
                 )
             self.js_runtime = (name, str(runtime_path))
+        allowed_tool_names = {
+            "mega": frozenset({"mega-get"}),
+        }.get(self.provider_id, frozenset())
+        raw_tools = dict(external_tools or {})
+        if set(raw_tools) - allowed_tool_names:
+            raise ProviderProtocolError("external tool configuration is not allowed")
+        self.external_tools: dict[str, str] = {}
+        for tool_name, raw_path in raw_tools.items():
+            tool_path = Path(raw_path).resolve()
+            expected_names = {tool_name.casefold(), f"{tool_name.casefold()}.exe"}
+            if (
+                not tool_path.is_file()
+                or tool_path.name.casefold() not in expected_names
+            ):
+                raise ProviderProtocolError("external tool executable is invalid")
+            self.external_tools[tool_name] = str(tool_path)
+        if self.external_tools and "process.megacmd" not in self.permissions:
+            raise ProviderProtocolError("external tool permission is missing")
         self._verify_expected_files()
 
     def _load_manifest(
@@ -204,6 +223,17 @@ class SubprocessDownloadProvider:
                 "process.ffmpeg",
                 "process.javascript",
             },
+            "facebook": {
+                "network.facebook",
+                "storage.downloads.write",
+                "process.ffmpeg",
+                "process.javascript",
+            },
+            "mega": {
+                "network.mega",
+                "storage.downloads.write",
+                "process.megacmd",
+            },
             "test": {
                 "network.youtube",
                 "storage.downloads.write",
@@ -300,6 +330,8 @@ class SubprocessDownloadProvider:
         permission = {
             "generic-ytdlp": "network.generic",
             "bilibili": "network.bilibili",
+            "facebook": "network.facebook",
+            "mega": "network.mega",
         }.get(self.provider_id, "network.youtube")
         self._require_permissions(permission)
 
@@ -890,6 +922,8 @@ class SubprocessDownloadProvider:
                 "name": runtime_name,
                 "path": runtime_path,
             }
+        if self.provider_id == "mega":
+            payload["external_tools"] = dict(self.external_tools)
         job = ProviderJob()
         try:
             process = subprocess.Popen(
@@ -919,6 +953,22 @@ class SubprocessDownloadProvider:
         stderr_size = 0
         stderr_truncated = False
         stderr_lock = threading.Lock()
+
+        def stop_process_tree(*, force: bool = False) -> None:
+            # On Windows, closing the kill-on-close Job Object is what stops
+            # yt-dlp's FFmpeg and JavaScript-runtime children as well as the
+            # provider host. Terminating only the host can leave those child
+            # processes downloading after the UI says the task has stopped.
+            if os.name == "nt":
+                job.close()
+            if process.poll() is None:
+                try:
+                    if force:
+                        process.kill()
+                    else:
+                        process.terminate()
+                except OSError:
+                    pass
 
         def post_message(message: str | None | ProviderProtocolError) -> bool:
             while not reader_stopping.is_set():
@@ -981,13 +1031,13 @@ class SubprocessDownloadProvider:
             last_activity = time.monotonic()
             while True:
                 if cancel_event.is_set():
-                    process.terminate()
+                    stop_process_tree()
                     raise DownloadCancelled("download cancelled")
                 if time.monotonic() - last_activity > idle_timeout:
-                    process.kill()
+                    stop_process_tree(force=True)
                     raise TimeoutError("provider stopped reporting progress")
                 if time.monotonic() > deadline:
-                    process.kill()
+                    stop_process_tree(force=True)
                     raise TimeoutError("provider operation timed out")
                 try:
                     line = messages.get(timeout=0.1)
@@ -1040,12 +1090,11 @@ class SubprocessDownloadProvider:
                 return message.get("value")
         finally:
             reader_stopping.set()
-            if process.poll() is None:
-                process.terminate()
+            stop_process_tree()
             try:
                 process.wait(timeout=3)
             except subprocess.TimeoutExpired:
-                process.kill()
+                stop_process_tree(force=True)
                 process.wait(timeout=3)
             stdout_thread.join(timeout=0.5)
             stderr_thread.join(timeout=0.5)

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "locale": "en",
+  "group_name": "Facebook",
+  "workspace": {
+    "title": "Facebook Downloads",
+    "subtitle": "Public Facebook video pages only; no cookies, private posts, or signed-in content.",
+    "enable": "Enable Facebook main MOD",
+    "url_label": "Public Facebook video URLs",
+    "placeholder": "One watch, reel, videos, or fb.watch URL per line",
+    "initial_preview": "Enter a public Facebook video URL to read its title and thumbnail.",
+    "wrong_site": "This workspace accepts supported public Facebook video URLs only."
+  },
+  "modules": {
+    "facebook": {
+      "name": "Facebook Download",
+      "purpose": "Read public video metadata and thumbnails and route downloads to Facebook",
+      "control_location": "Enable in MOD Manager to show the Facebook download workspace"
+    }
+  }
+}

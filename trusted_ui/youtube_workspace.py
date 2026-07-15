@@ -11,6 +11,10 @@ from contracts.discovery_v1 import DiscoveryItemV1
 from core.discovery.adapters import FederatedSearchResult
 from core.site_routing import YOUTUBE_HOSTS, classify_site_url
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
+from trusted_ui.media_preview_controls import (
+    PreviewSource,
+    create_media_preview_controls,
+)
 from trusted_ui.thumbnail_loader import create_thumbnail_loader
 
 
@@ -47,6 +51,32 @@ def is_youtube_playlist_url(value: object) -> bool:
         "playlist",
         "playlist-context",
     }
+
+
+def is_youtube_video_url(value: object) -> bool:
+    """Return whether a URL identifies one playable YouTube item."""
+
+    route = classify_site_url(value)
+    return route is not None and route.resource_kind in {
+        "video",
+        "playlist-context",
+    }
+
+
+def youtube_url_kind_label(value: object) -> str:
+    """Describe an exact YouTube route without performing network I/O."""
+
+    route = classify_site_url(value)
+    if route is None or route.site_family != "youtube":
+        return "無法辨識為受支援的 YouTube 網址"
+    return {
+        "video": "已確認：單一 YouTube 影片",
+        "playlist": "已確認：YouTube 播放清單",
+        "playlist-context": (
+            "已確認：播放清單中的單一 YouTube 影片；"
+            "可試聽／預覽，也可展開完整播放清單"
+        ),
+    }.get(route.resource_kind, "已確認：YouTube 網址")
 
 
 def merge_download_urls(
@@ -209,9 +239,22 @@ def create_youtube_workspace(
             header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-            self.table.itemSelectionChanged.connect(self.update_action_state)
+            self.table.itemSelectionChanged.connect(self.handle_selection_changed)
             self.table.itemDoubleClicked.connect(lambda *_: self.add_selected())
             body_layout.addWidget(self.table)
+
+            self.preview_controls = create_media_preview_controls(
+                self,
+                source=self.selected_preview_source,
+                audio_provider=lambda url: context.download_providers.provider_for(
+                    url
+                ),
+                video_provider=lambda: context.discovery.video_preview_provider(),
+                audio_available=self.audio_preview_available,
+                video_available=self.video_preview_available,
+                object_prefix="youtubeSearch",
+            )
+            body_layout.addWidget(self.preview_controls)
 
             actions = QHBoxLayout()
             actions.addStretch()
@@ -236,6 +279,28 @@ def create_youtube_workspace(
             )
             if expanded:
                 self.query.setFocus()
+            else:
+                self.preview_controls.stop_all()
+                self.preview_controls.refresh()
+
+        def audio_preview_available(self) -> bool:
+            return context.download_providers.is_enabled("youtube")
+
+        def video_preview_available(self) -> bool:
+            return self.audio_preview_available() and context.discovery.is_enabled(
+                "youtube-player"
+            )
+
+        def selected_preview_source(self) -> PreviewSource | None:
+            row = self.table.currentRow()
+            if not 0 <= row < len(self.results):
+                return None
+            item = self.results[row]
+            return PreviewSource(item.url, item.duration, item.title)
+
+        def handle_selection_changed(self) -> None:
+            self.preview_controls.refresh()
+            self.update_action_state()
 
         def refresh_availability(self) -> None:
             try:
@@ -259,6 +324,7 @@ def create_youtube_workspace(
                 self.enabled.setText("啟用 YouTube 搜尋 MOD")
                 if not enabled and not self.busy:
                     self.status.setText("YouTube 搜尋 MOD 已停用；可在此直接啟用。")
+            self.preview_controls.refresh()
             self.update_action_state()
 
         def toggle_search_mod(self, enabled: bool) -> None:
@@ -467,11 +533,14 @@ def create_youtube_workspace(
             self.cancel_button.setEnabled(self.busy and not cancelled)
             self.table.setEnabled(not self.busy)
             self.add_button.setEnabled(not self.busy and bool(self.selected_urls()))
+            self.preview_controls.setEnabled(not self.busy)
+            self.preview_controls.refresh()
 
         def shutdown(self) -> None:
             self.closing = True
             self.generation += 1
             self.thumbnail_loader.cancel_pending()
+            self.preview_controls.shutdown()
 
         def closeEvent(self, event: object) -> None:
             self.shutdown()

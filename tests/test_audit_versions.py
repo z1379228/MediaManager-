@@ -173,3 +173,34 @@ def test_audit_version_allows_only_a_complete_post_stage_signature_pair(
     (security / "release-manifest.sig").write_bytes(b"signature")
 
     assert audit_version(release).valid
+
+
+def test_audit_version_accepts_schema_two_build_binding(tmp_path: Path) -> None:
+    release = _write_release(tmp_path / "Version", "2.0.0")
+    info_path = release / "release-info.json"
+    info = json.loads(info_path.read_text(encoding="utf-8"))
+    info.update(
+        {
+            "schema_version": 2,
+            "tool_schema_version": 2,
+            "source_revision": "unavailable",
+            "source_fingerprint": "a" * 64,
+            "build_id": "b" * 64,
+        }
+    )
+    info_path.write_text(json.dumps(info), encoding="utf-8")
+    files = sorted(
+        path
+        for path in release.rglob("*")
+        if path.is_file() and path.name != "SHA256SUMS.txt"
+    )
+    (release / "SHA256SUMS.txt").write_text(
+        "".join(
+            f"{hashlib.sha256(path.read_bytes()).hexdigest()}  "
+            f"{path.relative_to(release).as_posix()}\n"
+            for path in files
+        ),
+        encoding="ascii",
+    )
+
+    assert audit_version(release).valid

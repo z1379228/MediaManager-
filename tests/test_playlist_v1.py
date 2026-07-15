@@ -32,6 +32,17 @@ def test_playlist_entry_requires_url_only_when_available() -> None:
     assert entry(available=False).unavailable_reason == "private"
     with pytest.raises(ValueError, match="URL"):
         PlaylistEntryV1("abc", "", "Title", "", None, 1, True)
+    with pytest.raises(ValueError, match="thumbnail"):
+        PlaylistEntryV1(
+            "abc",
+            "https://www.youtube.com/watch?v=abc",
+            "Title",
+            "",
+            None,
+            1,
+            True,
+            thumbnail_url="http://i.ytimg.com/vi/abc/mqdefault.jpg",
+        )
 
 
 def test_playlist_contract_rejects_coerced_provider_types() -> None:
@@ -96,15 +107,37 @@ def test_playlist_filter_matches_title_or_artist() -> None:
 def test_playlist_dialog_renders_entries_offscreen(monkeypatch) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QDialog
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication, QDialog, QPushButton, QTableWidget
 
     from trusted_ui.playlist_dialog import show_playlist_dialog
 
     app = QApplication.instance() or QApplication([])
-    monkeypatch.setattr(
-        QDialog,
-        "exec",
-        lambda _dialog: QDialog.DialogCode.Rejected,
+    def inspect_dialog(dialog):
+        table = dialog.findChild(QTableWidget, "playlistEntries")
+        assert table is not None
+        assert table.columnCount() == 7
+        assert table.horizontalHeaderItem(1).text() == "縮圖"
+        preview = dialog.findChild(QPushButton, "playlistPreview")
+        stop = dialog.findChild(QPushButton, "playlistStopPreview")
+        video_preview = dialog.findChild(QPushButton, "playlistVideoPreview")
+        stop_video = dialog.findChild(QPushButton, "playlistStopVideoPreview")
+        assert preview is not None and preview.text() == "試聽 30 秒"
+        assert stop is not None and stop.text() == "停止試聽"
+        assert video_preview is not None and video_preview.text() == "影片預覽 60 秒"
+        assert stop_video is not None and stop_video.text() == "停止影片預覽"
+        assert not stop.isEnabled()
+        assert not stop_video.isEnabled()
+        assert table.item(0, 0).checkState() == Qt.CheckState.Unchecked
+        return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(QDialog, "exec", inspect_dialog)
+    assert (
+        show_playlist_dialog(
+            (entry(), entry("private", available=False)),
+            preview_provider=object(),
+            video_preview_provider=object(),
+        )
+        is None
     )
-    assert show_playlist_dialog((entry(), entry("private", available=False))) is None
     app.processEvents()

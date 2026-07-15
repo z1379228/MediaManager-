@@ -1,8 +1,9 @@
 # Facebook and Instagram feasibility review
 
 Review date: 2026-07-14
-Release decision: MediaManager 1.7.2 provides official-page and official-export
-bridges only. It does not enable a Facebook or Instagram download provider.
+Release decision: the official-page and export bridges remain. Development 9.2
+adds a separate, disabled-by-default Facebook public-video MOD; Instagram and
+Threads remain bridge-only.
 
 ## Evidence
 
@@ -25,8 +26,9 @@ bridges only. It does not enable a Facebook or Instagram download provider.
 
 ## Delivered scope
 
-Facebook and Instagram stay excluded from `generic-ytdlp`. The candidate MOD
-page supplies a shared, compact official-site bridge:
+Facebook, Instagram and Threads stay excluded from `generic-ytdlp`. The compact
+official-site bridge remains available, while Development 9.2 adds a separate
+Facebook download workspace:
 
 - Facebook accepts the HTTPS homepage, canonical `watch` or `video.php` URLs
   with a numeric video id, numeric Reel URLs and bounded Page video paths.
@@ -39,14 +41,23 @@ page supplies a shared, compact official-site bridge:
   receives the user's Meta password, browser cookies or exported archive.
 - No network request occurs before the user clicks a button. Media playback,
   sign-in and data export remain in the system browser on Meta's official site.
+- The Facebook download MOD is off by default and accepts only the bounded
+  public video forms above plus `fb.watch`. It uses yt-dlp in an isolated
+  provider process to read public metadata and a bounded `fbcdn.net` thumbnail,
+  then routes an explicit download through the shared queue.
+- The provider does not accept cookies, credentials, feeds, profiles, comments,
+  stories, private pages or arbitrary Facebook paths. Extractor availability is
+  not presented as official Meta support and may stop working when the site
+  changes.
 
 ## Explicit exclusions
 
 MediaManager does not scrape profiles, feeds, comments, stories or private
 content; import cookies or sessions; automate sign-in; resolve private media
-URLs; bypass rate, region or access controls; or download third-party Facebook
-and Instagram media.
+URLs; bypass rate, region or access controls; or provide Instagram/Threads
+downloads. Users remain responsible for permission to save a public Facebook
+video.
 
-Download support can be reconsidered only after documented Meta permission or
-an official API/licence allows the intended third-party download workflow. A
-maintained extractor and public test content would still be required afterward.
+The 9.2 Facebook adapter remains a Development feature rather than a Stable
+support guarantee. Stable promotion still requires live public-content smoke,
+documented legal/release review and a maintained extractor.

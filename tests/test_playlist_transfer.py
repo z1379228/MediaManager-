@@ -21,6 +21,7 @@ def entry(entry_id: str, position: int) -> PlaylistEntryV1:
         duration=180.0,
         position=position,
         available=True,
+        thumbnail_url="https://i.ytimg.com/vi/example/mqdefault.jpg",
     )
 
 

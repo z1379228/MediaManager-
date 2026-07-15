@@ -8,24 +8,41 @@ from trusted_ui.dependency_dialog import (
 
 
 def _report(available: tuple[bool, ...]) -> DependencyReport:
+    dependency_ids = (
+        "yt-dlp",
+        "yt-dlp-ejs",
+        "ffmpeg",
+        "javascript-runtime",
+    )
     return DependencyReport(
         tuple(
-            DependencyStatus(str(index), str(index), ready, "", "", "")
-            for index, ready in enumerate(available)
+            DependencyStatus(dependency_id, dependency_id, ready, "", "", "")
+            for dependency_id, ready in zip(dependency_ids, available, strict=True)
         )
     )
 
 
 def test_dependency_badge_is_compact_and_explicit() -> None:
     assert dependency_presentation(_report((True, True, True, True))) == (
-        "環境 4/4",
+        "核心 4/4",
         "ready",
-        "YouTube 完整支援所需元件均可用",
+        "核心下載環境已就緒；MEGAcmd、whisper-cli 與語音模型依使用的 MOD 選裝。",
     )
     assert dependency_presentation(_report((True, False, True, False))) == (
-        "環境 2/4",
+        "核心 2/4",
         "warning",
-        "有 2 個元件需要處理",
+        "缺少 2 項核心依賴，請開啟環境檢查。",
+    )
+
+
+def test_dependency_badge_separates_optional_mod_tools() -> None:
+    statuses = _report((True, True, True, True)).statuses + (
+        DependencyStatus("mega-get", "MEGAcmd", False, "", "", ""),
+        DependencyStatus("whisper-cli", "whisper-cli", False, "", "", ""),
+        DependencyStatus("speech-model", "Speech model", False, "", "", ""),
+    )
+    assert dependency_presentation(DependencyReport(statuses))[0] == (
+        "核心 4/4｜選用 0/3"
     )
 
 

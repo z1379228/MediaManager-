@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "locale": "ja",
+  "group_name": "Facebook",
+  "workspace": {
+    "title": "Facebook ダウンロード",
+    "subtitle": "公開動画ページのみ対応し、Cookie・非公開投稿・ログイン限定内容は使用しません。",
+    "enable": "Facebook メイン MOD を有効化",
+    "url_label": "Facebook 公開動画 URL",
+    "placeholder": "watch、reel、videos、fb.watch の URL を1行ずつ入力",
+    "initial_preview": "公開 Facebook 動画 URL からタイトルとサムネイルを確認できます。",
+    "wrong_site": "この画面は対応する Facebook 公開動画 URL のみ受け付けます。"
+  },
+  "modules": {
+    "facebook": {
+      "name": "Facebook Download",
+      "purpose": "公開動画の情報とサムネイルを読み取り Facebook provider に振り分けます",
+      "control_location": "MOD 管理で有効にすると Facebook ダウンロード画面を表示"
+    }
+  }
+}

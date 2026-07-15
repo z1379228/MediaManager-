@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeVar
 
+from core.builtin_mod_catalog import builtin_default_enabled
 from core.bootstrap.lifecycle import Lifecycle
 from core.bootstrap.startup_state import StartupPhase, StartupState
 from core.downloads.builtin import (
@@ -14,6 +15,7 @@ from core.downloads.builtin import (
     ensure_builtin_provider,
 )
 from core.dependency_health import find_executable, find_javascript_runtime
+from core.dependency_snapshot import DependencySnapshotService
 from core.discovery.service import DiscoveryService
 from core.downloads.capabilities import builtin_download_capability
 from core.downloads.builtin_integrity import BUILTIN_PROVIDER_HASHES
@@ -98,6 +100,14 @@ _BUILTIN_DOWNLOAD_DETAILS = {
             "b23.tv",
         ),
     ),
+    "facebook": (
+        "Facebook",
+        ("facebook.com", "www.facebook.com", "m.facebook.com", "fb.watch"),
+    ),
+    "mega": (
+        "MEGA",
+        ("mega.nz", "www.mega.nz"),
+    ),
 }
 _BuiltinT = TypeVar("_BuiltinT")
 
@@ -133,6 +143,7 @@ class AppContext:
     conversion: ConversionService | None
     transcription: TranscriptionService | None
     automation: AutomationService | None
+    dependencies: DependencySnapshotService
 
 
 class Bootstrap:
@@ -179,6 +190,7 @@ class Bootstrap:
         paths.migrate_legacy_user_data()
         paths.migrate_legacy_mod_state()
         paths.ensure_runtime_directories()
+        dependencies = DependencySnapshotService(paths.application, paths.data)
         self.state.advance(StartupPhase.PATHS_READY, "runtime paths ready")
         settings_service = SettingsService(paths.settings / "settings.json")
         settings = settings_service.load()
@@ -259,7 +271,9 @@ class Bootstrap:
             ),
         )
         if youtube is not None:
-            download_providers.register(youtube, enabled=True)
+            download_providers.register(
+                youtube, enabled=builtin_default_enabled("youtube")
+            )
             download_providers.register_capability(
                 builtin_download_capability("youtube")
             )
@@ -276,7 +290,10 @@ class Bootstrap:
             ),
         )
         if generic_ytdlp is not None:
-            download_providers.register(generic_ytdlp, enabled=False)
+            download_providers.register(
+                generic_ytdlp,
+                enabled=builtin_default_enabled("generic-ytdlp"),
+            )
             download_providers.register_capability(
                 builtin_download_capability("generic-ytdlp")
             )
@@ -293,9 +310,51 @@ class Bootstrap:
             ),
         )
         if bilibili is not None:
-            download_providers.register(bilibili, enabled=False)
+            download_providers.register(
+                bilibili, enabled=builtin_default_enabled("bilibili")
+            )
             download_providers.register_capability(
                 builtin_download_capability("bilibili")
+            )
+
+        facebook = load_builtin(
+            "facebook",
+            lambda provider_root: SubprocessDownloadProvider(
+                provider_root,
+                application_root=paths.application,
+                ffmpeg_location=find_executable(paths.application, "ffmpeg"),
+                js_runtime=javascript_runtime,
+                expected_hashes=BUILTIN_PROVIDER_HASHES["facebook"],
+                runtime_home=paths.temp / "provider-runtime" / "facebook",
+            ),
+        )
+        if facebook is not None:
+            download_providers.register(
+                facebook, enabled=builtin_default_enabled("facebook")
+            )
+            download_providers.register_capability(
+                builtin_download_capability("facebook")
+            )
+
+        mega_get = find_executable(paths.application, "mega-get")
+        mega = load_builtin(
+            "mega",
+            lambda provider_root: SubprocessDownloadProvider(
+                provider_root,
+                application_root=paths.application,
+                external_tools={"mega-get": mega_get} if mega_get else {},
+                expected_hashes=BUILTIN_PROVIDER_HASHES["mega"],
+                download_timeout=86_400,
+                idle_timeout=900,
+                runtime_home=paths.temp / "provider-runtime" / "mega",
+            ),
+        )
+        if mega is not None:
+            download_providers.register(
+                mega, enabled=builtin_default_enabled("mega")
+            )
+            download_providers.register_capability(
+                builtin_download_capability("mega")
             )
 
         youtube_search = load_builtin(
@@ -309,7 +368,10 @@ class Bootstrap:
             ),
         )
         if youtube_search is not None:
-            discovery.register(youtube_search, enabled=True)
+            discovery.register(
+                youtube_search,
+                enabled=builtin_default_enabled("youtube-search"),
+            )
 
         bilibili_search = load_builtin(
             "bilibili-search",
@@ -321,7 +383,10 @@ class Bootstrap:
             ),
         )
         if bilibili_search is not None:
-            discovery.register(bilibili_search, enabled=False)
+            discovery.register(
+                bilibili_search,
+                enabled=builtin_default_enabled("bilibili-search"),
+            )
 
         ani_gamer_search = load_builtin(
             "ani-gamer-search",
@@ -333,7 +398,10 @@ class Bootstrap:
             ),
         )
         if ani_gamer_search is not None:
-            discovery.register(ani_gamer_search, enabled=False)
+            discovery.register(
+                ani_gamer_search,
+                enabled=builtin_default_enabled("ani-gamer-search"),
+            )
 
         youtube_player = load_builtin(
             "youtube-player",
@@ -348,7 +416,10 @@ class Bootstrap:
             ),
         )
         if youtube_player is not None:
-            discovery.register_video_preview(youtube_player, enabled=False)
+            discovery.register_video_preview(
+                youtube_player,
+                enabled=builtin_default_enabled("youtube-player"),
+            )
 
         youtube_history = load_builtin(
             "youtube-history",
@@ -361,7 +432,10 @@ class Bootstrap:
             ),
         )
         if youtube_history is not None:
-            discovery.register_history(youtube_history, enabled=True)
+            discovery.register_history(
+                youtube_history,
+                enabled=builtin_default_enabled("youtube-history"),
+            )
 
         youtube_recovery = load_builtin(
             "youtube-recovery",
@@ -373,7 +447,10 @@ class Bootstrap:
             ),
         )
         if youtube_recovery is not None:
-            discovery.register_recovery(youtube_recovery, enabled=True)
+            discovery.register_recovery(
+                youtube_recovery,
+                enabled=builtin_default_enabled("youtube-recovery"),
+            )
 
         youtube_similar = load_builtin(
             "youtube-similar",
@@ -385,7 +462,10 @@ class Bootstrap:
             ),
         )
         if youtube_similar is not None:
-            discovery.register_similar(youtube_similar, enabled=True)
+            discovery.register_similar(
+                youtube_similar,
+                enabled=builtin_default_enabled("youtube-similar"),
+            )
 
         youtube_auto_split = load_builtin(
             "youtube-auto-split",
@@ -399,7 +479,10 @@ class Bootstrap:
             ),
         )
         if youtube_auto_split is not None:
-            discovery.register_split(youtube_auto_split, enabled=True)
+            discovery.register_split(
+                youtube_auto_split,
+                enabled=builtin_default_enabled("youtube-auto-split"),
+            )
 
         # Flat-MOD builds allowed saved child states to outlive a disabled
         # site parent. Reconcile that legacy state before any UI is created.
@@ -427,7 +510,10 @@ class Bootstrap:
             ),
         )
         if conversion is not None:
-            features.register(conversion, enabled=False)
+            features.register(
+                conversion,
+                enabled=builtin_default_enabled("media-convert"),
+            )
 
         transcription = load_builtin(
             "speech-to-text",
@@ -438,7 +524,10 @@ class Bootstrap:
             ),
         )
         if transcription is not None:
-            features.register(transcription, enabled=False)
+            features.register(
+                transcription,
+                enabled=builtin_default_enabled("speech-to-text"),
+            )
         automation_root = load_builtin("automation", lambda provider_root: provider_root)
         download_queue = DownloadQueue(
             download_providers,
@@ -545,7 +634,10 @@ class Bootstrap:
                     paths.data / "automation.sqlite3",
                     dispatch_automation,
                 )
-                features.register(automation, enabled=False)
+                features.register(
+                    automation,
+                    enabled=builtin_default_enabled("automation"),
+                )
             except Exception as error:
                 record_builtin_failure("automation", error)
                 automation = None
@@ -653,6 +745,7 @@ class Bootstrap:
             conversion=conversion,
             transcription=transcription,
             automation=automation,
+            dependencies=dependencies,
         )
         self.state.advance(StartupPhase.READY, "core ready")
         return context

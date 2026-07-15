@@ -1,7 +1,8 @@
 # MEGA website MOD feasibility
 
-Status: candidate catalog and official-link bridge only. MediaManager does not
-currently claim that MEGA downloads are supported.
+Status: Development 9.2 implements a disabled-by-default public-file adapter
+backed by the official `mega-get` command. Public folders are recognized but
+are not downloaded in 9.2.
 
 ## Why MEGA needs a dedicated MOD
 
@@ -12,32 +13,36 @@ that can download a public link without signing in. This is a better trust
 boundary than copying historical MegaDownloader behavior or passing a MEGA link
 to the generic yt-dlp provider.
 
-## Implemented candidate surface
+## Implemented Development 9.2 surface
 
-- `mega` appears in the read-only website MOD candidate catalog.
-- The official bridge accepts only HTTPS `mega.io`/`mega.nz` home pages or
-  bounded modern `mega.nz/file/...#...` and `mega.nz/folder/...#...` public
-  links.
-- Accepted links are opened by the system browser only after explicit user
-  action. They are not sent to MediaManager providers, logs or background jobs.
+- `mega` is an independent main MOD with its own trusted download workspace;
+  it is not routed through yt-dlp or another website MOD.
+- The provider accepts only bounded modern HTTPS `mega.nz/file/...#...` and
+  `mega.nz/folder/...#...` public links. The separate official bridge may still
+  open `mega.io`/`mega.nz` home pages in the system browser.
+- Analysis is local-only: it identifies file versus folder, shows a local
+  file/folder thumbnail and reports whether official `mega-get` was detected.
+- Public file downloads are routed through an explicitly injected, verified
+  `mega-get` executable and the shared queue. Public folders fail closed with a
+  clear 9.2 limitation instead of starting a partial download.
+- Share keys are removed from analysis labels and ordinary status/error text;
+  the full link is passed only to the explicitly started local download process.
 - Credentials, account sessions, legacy links, query parameters, nested folder
   paths, lookalike hosts and links without decryption material are rejected.
 
-## Future independent MOD boundary
+## Preserved boundary and next work
 
-A future `mega` download MOD may use a user-installed official MEGAcmd or a
-separately packaged and verified MEGA SDK adapter. It must:
+The adapter continues to:
 
-1. Handle public links first without requiring account login.
-2. Detect and disclose the external dependency at startup without installing it
-   silently.
+1. Handle public file links without requiring account login.
+2. Detect and disclose the external dependency without installing it silently.
 3. Keep link keys out of ordinary logs, history labels and diagnostic bundles.
-4. Use the shared queue for destination checks, progress, pause/cancel, retries
+4. Use the shared queue for destination checks, progress, cancellation, retries
    and completion notifications.
 5. Respect MEGA access controls, copyright requirements and transfer quotas; it
    must not use quota-bypass services or account/session scraping.
-6. Remain disabled by default and add no background server until the user
-   explicitly enables the MOD and starts a task.
+6. Remain disabled by default and start no provider process until the user
+   explicitly requests analysis or download.
 
 Account sync, backup, upload, WebDAV and remote cloud management remain out of
 scope for the first download-only adapter.

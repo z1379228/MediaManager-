@@ -13,10 +13,13 @@ from typing import Mapping
 from core.security.release_layout import SOURCE_RELEASE_FILES
 from core.version import BUILD_CHANNEL, CORE_VERSION, release_track, release_version
 from tools.release_inventory import build_cyclonedx_sbom, build_inventory
+from tools.source_fingerprint import source_fingerprint, source_revision
 
 
 _REPLACE_ATTEMPTS = 5
 _REPLACE_DELAY_SECONDS = 0.05
+RELEASE_INFO_SCHEMA_VERSION = 2
+RELEASE_TOOL_SCHEMA_VERSION = 2
 
 
 def version_folder_name(version: str) -> str:
@@ -94,6 +97,11 @@ def stage_version(
         if candidate.parent != output_root:
             raise ValueError("unsafe version output path")
     _recover_stage_transaction(target, staging, backup)
+    if target.exists():
+        raise FileExistsError(
+            f"version folder already exists: {target}; increment the development "
+            "minor version instead of replacing a packaged build"
+        )
 
     executable = (executable or source_root / "dist" / "MediaManager.exe").resolve()
     wheel = (
@@ -129,12 +137,24 @@ def stage_version(
                 raise FileNotFoundError(f"release file missing or unsafe: {name}")
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
+        fingerprint = source_fingerprint(source_root)
+        revision = source_revision(source_root)
+        build_digest = hashlib.sha256()
+        build_digest.update(fingerprint.encode("ascii"))
+        build_digest.update(version.encode("ascii"))
+        build_digest.update(channel.encode("ascii"))
+        build_digest.update(_sha256(staging / "MediaManager.exe").encode("ascii"))
+        build_digest.update(_sha256(staging / wheel.name).encode("ascii"))
         info = {
-            "schema_version": 1,
+            "schema_version": RELEASE_INFO_SCHEMA_VERSION,
+            "tool_schema_version": RELEASE_TOOL_SCHEMA_VERSION,
             "core_version": version,
             "build_channel": channel,
             "release_track": track,
             "version_folder": folder,
+            "source_revision": revision,
+            "source_fingerprint": fingerprint,
+            "build_id": build_digest.hexdigest(),
             "portable_tools": staged_tools,
         }
         (staging / "release-info.json").write_text(
@@ -167,17 +187,11 @@ def stage_version(
         (staging / "SHA256SUMS.txt").write_text(
             "\n".join(lines) + "\n", encoding="utf-8"
         )
-        if target.exists():
-            _replace_with_retry(target, backup)
         _replace_with_retry(staging, target)
-        if backup.exists():
-            shutil.rmtree(backup)
         return target
     except Exception:
         if staging.exists():
             shutil.rmtree(staging)
-        if backup.exists() and not target.exists():
-            _replace_with_retry(backup, target)
         raise
 
 

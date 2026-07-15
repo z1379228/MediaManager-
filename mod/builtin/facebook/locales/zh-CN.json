@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "locale": "zh-CN",
+  "group_name": "Facebook",
+  "workspace": {
+    "title": "Facebook 下载工作区",
+    "subtitle": "仅处理公开 Facebook 视频页；不读取 Cookie、私人帖子或登录内容。",
+    "enable": "启用 Facebook 主 MOD",
+    "url_label": "Facebook 公开视频网址",
+    "placeholder": "每行粘贴一个 watch、reel、videos 或 fb.watch 网址",
+    "initial_preview": "输入公开 Facebook 视频网址后可读取标题与缩略图。",
+    "wrong_site": "此页只接受受支持的 Facebook 公开视频网址。"
+  },
+  "modules": {
+    "facebook": {
+      "name": "Facebook Download",
+      "purpose": "读取公开视频信息、缩略图并分流到 Facebook 下载 provider",
+      "control_location": "在 MOD 管理启用后显示 Facebook 下载工作区"
+    }
+  }
+}

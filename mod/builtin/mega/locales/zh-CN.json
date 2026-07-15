@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "locale": "zh-CN",
+  "group_name": "MEGA",
+  "workspace": {
+    "title": "MEGA 下载工作区",
+    "subtitle": "识别公开分享链接；文件下载交由官方 MEGAcmd，不接收账号或会话。",
+    "enable": "启用 MEGA 主 MOD",
+    "url_label": "MEGA 公开分享网址",
+    "placeholder": "每行粘贴一个 https://mega.nz/file/...#... 网址",
+    "initial_preview": "输入 MEGA 公开分享网址后可确认类型与官方工具状态。",
+    "wrong_site": "此页只接受带有完整解密片段的 MEGA 公开分享网址。"
+  },
+  "modules": {
+    "mega": {
+      "name": "MEGA Download",
+      "purpose": "识别公开文件分享并分流给官方 mega-get；9.2 不下载文件夹分享",
+      "control_location": "在 MOD 管理启用后显示 MEGA 下载工作区"
+    }
+  }
+}

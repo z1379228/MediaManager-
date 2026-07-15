@@ -8,6 +8,8 @@ yt_dlp_hiddenimports = (
 )
 ejs_hiddenimports = collect_submodules('yt_dlp_ejs')
 ejs_datas = collect_data_files('yt_dlp_ejs') + copy_metadata('yt-dlp-ejs')
+curl_hiddenimports = collect_submodules('curl_cffi')
+curl_datas = collect_data_files('curl_cffi') + copy_metadata('curl-cffi')
 
 
 a = Analysis(
@@ -18,8 +20,9 @@ a = Analysis(
         ('mod/builtin', 'mod/builtin'),
         ('trusted_ui/assets/app-icon.png', 'trusted_ui/assets'),
         *ejs_datas,
+        *curl_datas,
     ],
-    hiddenimports=yt_dlp_hiddenimports + ejs_hiddenimports,
+    hiddenimports=yt_dlp_hiddenimports + ejs_hiddenimports + curl_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

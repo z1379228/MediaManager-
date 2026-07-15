@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "locale": "ja",
+  "group_name": "MEGA",
+  "workspace": {
+    "title": "MEGA ダウンロード",
+    "subtitle": "公開共有を判定し、アカウントやセッションを使わず公式 MEGAcmd に渡します。",
+    "enable": "MEGA メイン MOD を有効化",
+    "url_label": "MEGA 公開共有 URL",
+    "placeholder": "https://mega.nz/file/...#... URL を1行ずつ入力",
+    "initial_preview": "公開 MEGA 共有の種類と公式ツール状態を確認できます。",
+    "wrong_site": "この画面は完全な MEGA 公開共有 URL のみ受け付けます。"
+  },
+  "modules": {
+    "mega": {
+      "name": "MEGA Download",
+      "purpose": "公開ファイル共有を公式 mega-get に振り分けます。9.2 ではフォルダーを保存しません",
+      "control_location": "MOD 管理で有効にすると MEGA ダウンロード画面を表示"
+    }
+  }
+}

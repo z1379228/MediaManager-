@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 
 from contracts.media_options_v1 import FORMAT_PRESETS_V1
+from contracts.download_capability_v2 import DownloadCapabilityV2
 from contracts.media_analysis_v1 import (
     MediaAnalysisContractError,
     parse_media_formats,
@@ -48,10 +49,17 @@ from trusted_ui.playlist_dialog import show_playlist_dialog
 from trusted_ui.recovery_dialog import show_recovery_dialog
 from trusted_ui.split_dialog import show_split_dialog
 from trusted_ui.theme import COLORS
+from trusted_ui.thumbnail_loader import create_thumbnail_loader
+from trusted_ui.media_preview_controls import (
+    PreviewSource,
+    create_media_preview_controls,
+)
 from trusted_ui.youtube_workspace import (
     create_youtube_workspace,
     is_youtube_playlist_url,
+    is_youtube_video_url,
     merge_download_urls,
+    youtube_url_kind_label,
 )
 
 
@@ -66,7 +74,12 @@ def site_workspace_text(site_family: str, locale: object) -> dict[str, str]:
     try:
         return dict(load_builtin_mod_group(site_family, locale=locale).workspace)
     except BuiltinModGroupError:
-        site_label = "YouTube" if site_family == "youtube" else "Bilibili"
+        site_label = {
+            "youtube": "YouTube",
+            "bilibili": "Bilibili",
+            "facebook": "Facebook",
+            "mega": "MEGA",
+        }.get(site_family, site_family)
         return {
             "title": f"{site_label} 下載工作區",
             "subtitle": f"{site_label} 網址與選項只在此工作區處理。",
@@ -150,6 +163,14 @@ def task_detail_summary(task: DownloadTask) -> str:
         if output is not None:
             return f"{title}\n輸出：{output}"
         return f"{title}\n任務已完成，但輸出檔案已移動或目前不存在。"
+    if task.state is DownloadState.RUNNING and task.pause_requested.is_set():
+        return f"{title}\n正在暫停；下載子程序停止後會保留為可手動繼續的工作。"
+    if (
+        task.state is DownloadState.RUNNING
+        and task.cancel_event.is_set()
+        and not task.pause_requested.is_set()
+    ):
+        return f"{title}\n正在停止；yt-dlp 與其 FFmpeg 子程序正在清理。"
     try:
         destination = task.request.output_dir.resolve()
     except OSError:
@@ -174,6 +195,7 @@ def download_render_signature(
             task.output_path,
             task.request.priority,
             task.pause_requested.is_set(),
+            task.cancel_event.is_set(),
         )
         for task in tasks
     )
@@ -185,12 +207,18 @@ def create_download_panel(
     *,
     site_family: str = "youtube",
 ) -> object:
-    if site_family not in {"youtube", "bilibili"}:
+    site_labels = {
+        "youtube": "YouTube",
+        "bilibili": "Bilibili",
+        "facebook": "Facebook",
+        "mega": "MEGA",
+    }
+    if site_family not in site_labels:
         raise ValueError("download workspace site family is unsupported")
-    provider_id = "youtube" if site_family == "youtube" else "bilibili"
-    site_label = "YouTube" if site_family == "youtube" else "Bilibili"
+    provider_id = site_family
+    site_label = site_labels[site_family]
     from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
-    from PySide6.QtGui import QAction, QColor, QDesktopServices
+    from PySide6.QtGui import QAction, QColor, QDesktopServices, QPainter, QPixmap
     from PySide6.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -244,6 +272,8 @@ def create_download_panel(
             self.split_bridge.finished.connect(self.show_split_results)
             self.playlist_bridge = PlaylistBridge()
             self.playlist_bridge.finished.connect(self.show_playlist_results)
+            self.playlist_busy = False
+            self.info_busy = False
             self.pending_recovery_request: DownloadRequest | None = None
             self.confirmed_split_plan = None
             self.analyzed_url = ""
@@ -252,6 +282,14 @@ def create_download_panel(
             self.analyzed_audio_languages = ()
             self.analyzed_subtitle_languages = ()
             self.filename_manually_edited = False
+            self.thumbnail_generation = 0
+            self.thumbnail_loader = (
+                create_thumbnail_loader(self) if site_family == "facebook" else None
+            )
+            capability = context.download_providers.capability_for_provider(provider_id)
+            self.capability = (
+                capability if isinstance(capability, DownloadCapabilityV2) else None
+            )
             self.render_signature: tuple[object, ...] | None = None
             self.rendered_task_ids: tuple[str, ...] = ()
             shell = QVBoxLayout(self)
@@ -359,10 +397,13 @@ def create_download_panel(
             import_urls.setToolTip("最多 500 列、2 MiB，匯入前會先顯示檢查結果")
             import_urls.clicked.connect(self.import_batch_file)
             urls_heading.addWidget(import_urls)
-            import_playlist = QPushButton("匯入播放清單 ID…")
-            import_playlist.setObjectName("ghost")
-            import_playlist.clicked.connect(self.import_playlist_file)
-            urls_heading.addWidget(import_playlist)
+            self.import_playlist = QPushButton("匯入播放清單 ID…")
+            self.import_playlist.setObjectName("ghost")
+            self.import_playlist.clicked.connect(self.import_playlist_file)
+            self.import_playlist.setVisible(
+                bool(self.capability and self.capability.supports_playlist)
+            )
+            urls_heading.addWidget(self.import_playlist)
             input_layout.addLayout(urls_heading)
             self.urls = QPlainTextEdit()
             self.urls.setAccessibleName(f"{site_label} 下載網址清單")
@@ -370,6 +411,11 @@ def create_download_panel(
             self.urls.setMaximumHeight(104)
             self.urls.textChanged.connect(self.update_site_options)
             input_layout.addWidget(self.urls)
+            self.url_classification = QLabel()
+            self.url_classification.setObjectName("urlClassification")
+            self.url_classification.setWordWrap(True)
+            self.url_classification.setVisible(site_family == "youtube")
+            input_layout.addWidget(self.url_classification)
 
             self.official_bridge_notice = QWidget(self)
             self.official_bridge_notice.setObjectName("officialBridgeNotice")
@@ -395,6 +441,13 @@ def create_download_panel(
             # own workspaces/MOD pages, never to YouTube or Bilibili.
 
             preview_row = QHBoxLayout()
+            self.thumbnail_preview = QLabel()
+            self.thumbnail_preview.setObjectName("downloadThumbnail")
+            self.thumbnail_preview.setAccessibleName(f"{site_label} 網址縮圖")
+            self.thumbnail_preview.setFixedSize(104, 62)
+            self.thumbnail_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.thumbnail_preview.setVisible(site_family in {"facebook", "mega"})
+            self.set_thumbnail_placeholder()
             self.preview = QLabel(self.workspace_text["initial_preview"])
             self.preview.setObjectName("preview")
             self.preview.setWordWrap(True)
@@ -402,14 +455,31 @@ def create_download_panel(
             self.read_info.clicked.connect(self.analyze_first)
             self.expand_playlist = QPushButton("展開播放清單")
             self.expand_playlist.clicked.connect(self.prepare_playlist)
+            self.expand_playlist.setVisible(
+                bool(self.capability and self.capability.supports_playlist)
+            )
             self.prepare_split = QPushButton("準備切割")
             self.prepare_split.setVisible(False)
             self.prepare_split.clicked.connect(self.prepare_split_preview)
+            preview_row.addWidget(self.thumbnail_preview)
             preview_row.addWidget(self.preview, 1)
             preview_row.addWidget(self.prepare_split)
             preview_row.addWidget(self.expand_playlist)
             preview_row.addWidget(self.read_info)
             input_layout.addLayout(preview_row)
+
+            self.media_preview_controls = None
+            if site_family == "youtube":
+                self.media_preview_controls = create_media_preview_controls(
+                    self,
+                    source=self.single_youtube_preview_source,
+                    audio_provider=context.download_providers.provider_for,
+                    video_provider=context.discovery.video_preview_provider,
+                    audio_available=self.youtube_audio_preview_available,
+                    video_available=self.youtube_video_preview_available,
+                    object_prefix="singleUrl",
+                )
+                input_layout.addWidget(self.media_preview_controls)
 
             options = QHBoxLayout()
             options.setSpacing(8)
@@ -423,20 +493,30 @@ def create_download_panel(
             self.priority.addItem("最高", 10)
             self.priority.setCurrentIndex(1)
             options.addWidget(self.priority)
-            start_label = QLabel("開始秒數")
-            start_label.setObjectName("fieldLabel")
-            options.addWidget(start_label)
+            self.start_label = QLabel("開始秒數")
+            self.start_label.setObjectName("fieldLabel")
+            options.addWidget(self.start_label)
             self.start_time = QLineEdit()
             self.start_time.setPlaceholderText("從頭")
             self.start_time.setMaximumWidth(100)
             options.addWidget(self.start_time)
-            end_label = QLabel("結束秒數")
-            end_label.setObjectName("fieldLabel")
-            options.addWidget(end_label)
+            self.end_label = QLabel("結束秒數")
+            self.end_label.setObjectName("fieldLabel")
+            options.addWidget(self.end_label)
             self.end_time = QLineEdit()
             self.end_time.setPlaceholderText("到結尾")
             self.end_time.setMaximumWidth(100)
             options.addWidget(self.end_time)
+            segment_controls_visible = bool(
+                self.capability and self.capability.supports_segments
+            )
+            for widget in (
+                self.start_label,
+                self.start_time,
+                self.end_label,
+                self.end_time,
+            ):
+                widget.setVisible(segment_controls_visible)
             options.addStretch()
             self.add_download = QPushButton("加入下載佇列")
             self.add_download.setObjectName("primary")
@@ -654,12 +734,48 @@ def create_download_panel(
             self.timer.start(IDLE_REFRESH_INTERVAL_MS)
             self.refresh()
             events = getattr(context, "events", None)
+            self.events = events
             if events is not None:
                 events.subscribe(
                     "builtin_mod.changed", self.handle_builtin_mod_changed
                 )
                 events.subscribe("ui.language.changed", self.apply_site_language)
+            self.update_available_presets()
+            self.update_available_subtitles()
             self.update_site_options()
+
+        def set_thumbnail_placeholder(self, kind: str = "") -> None:
+            if self.site_family not in {"facebook", "mega"}:
+                self.thumbnail_preview.clear()
+                return
+            mega_labels = {
+                "mega-folder": "MEGA\nFOLDER",
+                "mega-video": "MEGA\nVIDEO",
+                "mega-archive": "MEGA\nARCHIVE",
+                "mega-document": "MEGA\nDOCUMENT",
+                "mega-audio": "MEGA\nAUDIO",
+                "mega-image": "MEGA\nIMAGE",
+            }
+            label = (
+                "FB"
+                if self.site_family == "facebook"
+                else mega_labels.get(kind, "MEGA\nFILE")
+            )
+            color = QColor("#1877F2" if self.site_family == "facebook" else "#D9272E")
+            pixmap = QPixmap(96, 54)
+            pixmap.fill(color)
+            painter = QPainter(pixmap)
+            painter.setPen(QColor("#FFFFFF"))
+            painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, label)
+            painter.end()
+            self.thumbnail_preview.setPixmap(pixmap)
+            self.thumbnail_preview.setToolTip("本機預設縮圖")
+
+        def apply_thumbnail(self, url: str, pixmap: object | None) -> None:
+            if url != self.analyzed_url or pixmap is None:
+                return
+            self.thumbnail_preview.setPixmap(pixmap)
+            self.thumbnail_preview.setToolTip("Facebook 公開影片縮圖")
 
         def apply_site_language(self, payload: object = None) -> None:
             locale = (
@@ -695,8 +811,15 @@ def create_download_panel(
                 self.update_site_options()
             if changed_provider_id in {"youtube-recovery", "youtube-auto-split"}:
                 self.update_action_state()
-            if changed_provider_id == "youtube-search" and self.youtube_workspace:
+            if changed_provider_id in {
+                "youtube",
+                "youtube-search",
+                "youtube-player",
+            } and self.youtube_workspace:
                 self.youtube_workspace.refresh_availability()
+            if changed_provider_id in {"youtube", "youtube-player"}:
+                if self.media_preview_controls is not None:
+                    self.media_preview_controls.refresh()
 
         def append_youtube_search_urls(self, selected_urls: tuple[str, ...]) -> None:
             """Bring search results into the existing reviewed download flow."""
@@ -714,6 +837,49 @@ def create_download_panel(
                 "請確認格式、字幕、開始／結束時間與播放清單選項後再加入佇列。"
             )
             self.urls.setFocus()
+
+        def apply_search_result_metadata(self, payload: object) -> None:
+            """Prime a single-result request without trusting arbitrary MOD fields."""
+
+            if not isinstance(payload, dict):
+                return
+            url = payload.get("url")
+            if not isinstance(url, str) or url != self.urls.toPlainText().strip():
+                return
+
+            def bounded_text(name: str, limit: int) -> str:
+                value = payload.get(name, "")
+                return value.strip()[:limit] if isinstance(value, str) else ""
+
+            duration = payload.get("duration")
+            safe_duration = (
+                int(duration)
+                if isinstance(duration, (int, float))
+                and not isinstance(duration, bool)
+                and 0 <= duration <= 86_400
+                else None
+            )
+            self.analyzed_url = url
+            self.analyzed_info = {
+                "id": bounded_text("video_id", 100),
+                "title": bounded_text("title", 300),
+                "uploader": bounded_text("artist", 200),
+                "duration": safe_duration,
+                "thumbnail": bounded_text("thumbnail_url", 1_000),
+                "language": bounded_text("language", 32),
+                "category": bounded_text("category", 100),
+            }
+            self.analyzed_formats = ()
+            self.analyzed_audio_languages = ()
+            self.analyzed_subtitle_languages = ()
+            self.filename_manually_edited = False
+            self.confirmed_split_plan = None
+            self.prepare_split.setVisible(False)
+            self.update_available_presets()
+            self.update_available_subtitles()
+            self.update_download_preparation()
+            if self.media_preview_controls is not None:
+                self.media_preview_controls.refresh()
 
         def update_action_state(self) -> None:
             task = self.selected_task()
@@ -743,6 +909,11 @@ def create_download_panel(
                 state in {DownloadState.FAILED, DownloadState.CANCELLED}
             )
             pause_requested = bool(task and task.pause_requested.is_set())
+            stop_requested = bool(
+                task
+                and task.state is DownloadState.RUNNING
+                and task.cancel_event.is_set()
+            )
             self.pause_button.setText(
                 "繼續" if state is DownloadState.PAUSED else "暫停"
             )
@@ -754,6 +925,7 @@ def create_download_panel(
                     DownloadState.PAUSED,
                 }
                 and not pause_requested
+                and not stop_requested
             )
             self.cancel_button.setEnabled(
                 state
@@ -762,6 +934,7 @@ def create_download_panel(
                     DownloadState.RUNNING,
                     DownloadState.PAUSED,
                 }
+                and not stop_requested
             )
             recovery_available = (
                 state is DownloadState.FAILED
@@ -821,20 +994,97 @@ def create_download_panel(
             self.update_provider_badge()
             self.update_site_options()
 
+        @staticmethod
+        def youtube_audio_preview_available() -> bool:
+            return context.download_providers.is_enabled("youtube")
+
+        @staticmethod
+        def youtube_video_preview_available() -> bool:
+            return context.download_providers.is_enabled(
+                "youtube"
+            ) and context.discovery.is_enabled("youtube-player")
+
+        def single_youtube_preview_source(self) -> PreviewSource | None:
+            urls = [
+                line.strip()
+                for line in self.urls.toPlainText().splitlines()
+                if line.strip()
+            ]
+            if len(urls) != 1 or not is_youtube_video_url(urls[0]):
+                return None
+            duration: float | None = None
+            title = ""
+            if self.analyzed_url == urls[0]:
+                raw_duration = self.analyzed_info.get("duration")
+                if (
+                    isinstance(raw_duration, (int, float))
+                    and not isinstance(raw_duration, bool)
+                    and raw_duration > 0
+                ):
+                    duration = float(raw_duration)
+                raw_title = self.analyzed_info.get("title")
+                if isinstance(raw_title, str):
+                    title = raw_title[:300]
+            return PreviewSource(urls[0], duration=duration, title=title)
+
         def update_site_options(self) -> None:
             urls = [
                 line.strip()
                 for line in self.urls.toPlainText().splitlines()
                 if line.strip()
             ]
+            routes = tuple(classify_site_url(url) for url in urls)
             wrong_site = any(
-                (route := classify_site_url(url)) is None
-                or route.site_family != self.site_family
-                for url in urls
+                route is None or route.site_family != self.site_family
+                for route in routes
             )
-            self.add_download.setEnabled(bool(urls) and not wrong_site)
+            unsupported_mega_folder = any(
+                route is not None
+                and route.site_family == "mega"
+                and route.resource_kind == "public-folder"
+                for url in urls
+                if (route := classify_site_url(url)) is not None
+            )
+            self.add_download.setEnabled(
+                bool(urls) and not wrong_site and not unsupported_mega_folder
+            )
             if wrong_site:
                 self.preview.setText(self.workspace_text["wrong_site"])
+            elif unsupported_mega_folder:
+                self.preview.setText(
+                    "已辨識 MEGA 公開資料夾；Development 9.2 先支援公開檔案下載。"
+                )
+            if self.site_family == "youtube":
+                if not urls:
+                    classification = "尚未輸入 YouTube 網址。"
+                elif wrong_site:
+                    classification = self.workspace_text["wrong_site"]
+                elif len(urls) == 1:
+                    classification = youtube_url_kind_label(urls[0])
+                else:
+                    classification = (
+                        f"已確認：YouTube 批量網址（{len(urls)} 筆）；"
+                        "單片試聽、影片預覽與播放清單展開已停用。"
+                    )
+                self.url_classification.setText(classification)
+
+            single_valid = len(urls) == 1 and not wrong_site
+            provider_enabled = self.any_download_provider_enabled()
+            if self.site_family == "youtube":
+                playlist_ready = single_valid and is_youtube_playlist_url(urls[0])
+                info_ready = single_valid and is_youtube_video_url(urls[0])
+                self.expand_playlist.setToolTip(
+                    "" if playlist_ready else "只有播放清單網址才能展開"
+                )
+            else:
+                playlist_ready = single_valid
+                info_ready = single_valid
+            self.expand_playlist.setEnabled(
+                provider_enabled and playlist_ready and not self.playlist_busy
+            )
+            self.read_info.setEnabled(
+                provider_enabled and info_ready and not self.info_busy
+            )
             is_bilibili_batch = (
                 self.site_family == "bilibili" and bool(urls) and not wrong_site
             )
@@ -847,6 +1097,8 @@ def create_download_panel(
                 "" if single_item else "批量下載會為每個項目各自產生檔名"
             )
             self.update_danmaku_options()
+            if self.media_preview_controls is not None:
+                self.media_preview_controls.refresh()
 
         def open_official_bridge_catalog(self) -> None:
             if not self.official_bridge_id:
@@ -865,6 +1117,19 @@ def create_download_panel(
                 self.preparation_preview.setText("尚未取得實際格式與容量資訊")
                 return
             preset_id = str(self.format_preset.currentData())
+            if self.site_family == "mega":
+                if not self.filename_manually_edited:
+                    self.output_filename.clear()
+                dependency = (
+                    "mega-get 已偵測，可加入下載佇列"
+                    if self.analyzed_info.get("dependency_available") is True
+                    else "未偵測到官方 mega-get；可讀取網址，但下載會保持失敗關閉"
+                )
+                self.preparation_preview.setText(dependency)
+                self.preparation_preview.setToolTip(
+                    "MEGA 公開連結的原始檔名由官方 MEGAcmd 決定。"
+                )
+                return
             if not self.filename_manually_edited:
                 self.output_filename.setText(
                     suggest_output_filename(
@@ -892,6 +1157,8 @@ def create_download_panel(
         def update_available_presets(self) -> None:
             current = str(self.format_preset.currentData() or "best")
             allowed = set(available_preset_ids(self.analyzed_formats))
+            if self.capability is not None:
+                allowed &= set(self.capability.format_presets)
             self.format_preset.blockSignals(True)
             self.format_preset.clear()
             for preset in FORMAT_PRESETS_V1:
@@ -907,8 +1174,19 @@ def create_download_panel(
             self.subtitle_mode.blockSignals(True)
             self.subtitle_mode.clear()
             self.subtitle_mode.addItem("不下載字幕", "none")
-            if self.analyzed_subtitle_languages:
+            allowed_modes = (
+                set(self.capability.subtitle_modes)
+                if self.capability is not None
+                else {"none", "selected", "all"}
+            )
+            has_analysis = bool(self.analyzed_info)
+            if (
+                not has_analysis or self.analyzed_subtitle_languages
+            ) and "selected" in allowed_modes:
                 self.subtitle_mode.addItem("指定語言", "selected")
+            if (
+                not has_analysis or self.analyzed_subtitle_languages
+            ) and "all" in allowed_modes:
                 self.subtitle_mode.addItem("全部可用字幕", "all")
             index = self.subtitle_mode.findData(current)
             self.subtitle_mode.setCurrentIndex(max(0, index))
@@ -974,7 +1252,11 @@ def create_download_panel(
                 return
             if self.reject_wrong_site_urls(urls):
                 return
-            if len(urls) == 1 and is_youtube_playlist_url(urls[0]):
+            if (
+                len(urls) == 1
+                and is_youtube_playlist_url(urls[0])
+                and not is_youtube_video_url(urls[0])
+            ):
                 self.preview.setText(
                     "已辨識為 YouTube 播放清單；改用播放清單展開與批量選取。"
                 )
@@ -985,6 +1267,8 @@ def create_download_panel(
             self.analyzed_formats = ()
             self.analyzed_audio_languages = ()
             self.analyzed_subtitle_languages = ()
+            self.thumbnail_generation += 1
+            self.set_thumbnail_placeholder()
             self.filename_manually_edited = False
             self.output_filename.clear()
             self.update_available_presets()
@@ -992,7 +1276,8 @@ def create_download_panel(
             self.update_download_preparation()
             self.confirmed_split_plan = None
             self.prepare_split.setVisible(False)
-            self.read_info.setEnabled(False)
+            self.info_busy = True
+            self.update_site_options()
             self.preview.setText("正在讀取影片資訊…")
 
             def worker() -> None:
@@ -1005,11 +1290,14 @@ def create_download_panel(
             threading.Thread(target=worker, daemon=True).start()
 
         def show_info(self, info: object, error: str) -> None:
-            self.read_info.setEnabled(True)
+            self.info_busy = False
+            self.update_site_options()
             if error:
                 self.analyzed_info = {}
                 self.prepare_split.setVisible(False)
                 self.preview.setText(f"讀取失敗：{error}")
+                if self.media_preview_controls is not None:
+                    self.media_preview_controls.refresh()
                 return
             data = info if isinstance(info, dict) else {}
             self.analyzed_info = data
@@ -1036,6 +1324,25 @@ def create_download_panel(
                 f"{data.get('title', '未知標題')}  ·  "
                 f"{data.get('uploader', '未知作者')}  ·  {duration_text}"
             )
+            thumbnail_kind = str(data.get("thumbnail_kind") or "")
+            if self.site_family == "mega":
+                self.set_thumbnail_placeholder(thumbnail_kind)
+                dependency_text = (
+                    "官方 mega-get 已偵測"
+                    if data.get("dependency_available") is True
+                    else "尚未偵測到官方 mega-get"
+                )
+                self.preview.setText(f"{self.preview.text()}  ·  {dependency_text}")
+            elif self.site_family == "facebook":
+                thumbnail_url = str(data.get("thumbnail") or "")
+                if self.thumbnail_loader is not None and thumbnail_url:
+                    analyzed_url = self.analyzed_url
+                    self.thumbnail_loader.load(
+                        thumbnail_url,
+                        lambda pixmap, url=analyzed_url: self.apply_thumbnail(
+                            url, pixmap
+                        ),
+                    )
             part_count = data.get("part_count")
             if isinstance(part_count, int) and part_count > 1:
                 self.preview.setText(
@@ -1054,6 +1361,8 @@ def create_download_panel(
             self.update_available_presets()
             self.update_available_subtitles()
             self.update_download_preparation()
+            if self.media_preview_controls is not None:
+                self.media_preview_controls.refresh()
 
         def prepare_playlist(self) -> None:
             if not self.any_download_provider_enabled():
@@ -1075,7 +1384,18 @@ def create_download_panel(
                 return
             if self.reject_wrong_site_urls(urls):
                 return
-            self.expand_playlist.setEnabled(False)
+            if self.site_family == "youtube" and not is_youtube_playlist_url(
+                urls[0]
+            ):
+                QMessageBox.information(
+                    self,
+                    "展開播放清單",
+                    "此網址已確認為單一影片，不能展開播放清單。",
+                )
+                self.update_site_options()
+                return
+            self.playlist_busy = True
+            self.update_site_options()
             self.expand_playlist.setText("正在展開…")
 
             def worker() -> None:
@@ -1088,8 +1408,9 @@ def create_download_panel(
             threading.Thread(target=worker, daemon=True).start()
 
         def show_playlist_results(self, result: object, error: str) -> None:
-            self.expand_playlist.setEnabled(True)
+            self.playlist_busy = False
             self.expand_playlist.setText("展開播放清單")
+            self.update_site_options()
             if error:
                 QMessageBox.warning(self, "播放清單展開失敗", error)
                 return
@@ -1104,7 +1425,27 @@ def create_download_panel(
                     self, "展開播放清單", "播放清單沒有可顯示的項目。"
                 )
                 return
-            selected = show_playlist_dialog(entries, self)
+            preview_provider = None
+            video_preview_provider = None
+            if self.site_family == "youtube":
+                try:
+                    candidate = context.download_providers.provider_for(entries[0].url)
+                    if candidate.provider_id == "youtube":
+                        preview_provider = candidate
+                except (LookupError, RuntimeError, ValueError):
+                    preview_provider = None
+                try:
+                    video_preview_provider = (
+                        context.discovery.video_preview_provider()
+                    )
+                except (LookupError, RuntimeError, ValueError):
+                    video_preview_provider = None
+            selected = show_playlist_dialog(
+                entries,
+                self,
+                preview_provider=preview_provider,
+                video_preview_provider=video_preview_provider,
+            )
             if selected is None:
                 return
             if not selected:
@@ -1165,7 +1506,27 @@ def create_download_panel(
             except (OSError, ValueError) as error:
                 QMessageBox.warning(self, "匯入播放清單失敗", str(error))
                 return
-            selected = show_playlist_dialog(entries, self)
+            preview_provider = None
+            video_preview_provider = None
+            if self.site_family == "youtube" and entries:
+                try:
+                    candidate = context.download_providers.provider_for(entries[0].url)
+                    if candidate.provider_id == "youtube":
+                        preview_provider = candidate
+                except (LookupError, RuntimeError, ValueError):
+                    preview_provider = None
+                try:
+                    video_preview_provider = (
+                        context.discovery.video_preview_provider()
+                    )
+                except (LookupError, RuntimeError, ValueError):
+                    video_preview_provider = None
+            selected = show_playlist_dialog(
+                entries,
+                self,
+                preview_provider=preview_provider,
+                video_preview_provider=video_preview_provider,
+            )
             if selected:
                 self.enqueue_playlist_entries(selected)
 
@@ -1482,7 +1843,12 @@ def create_download_panel(
                             source_video_id=str(info.get("id") or ""),
                             source_title=str(info.get("title") or ""),
                             source_artist=str(info.get("uploader") or ""),
-                            source_category="video" if info else "",
+                            source_language=str(info.get("language") or ""),
+                            source_category=(
+                                str(info.get("category") or "video")
+                                if info
+                                else ""
+                            ),
                             output_filename=(
                                 self.output_filename.text().strip()
                                 if len(urls) == 1
@@ -1617,6 +1983,16 @@ def create_download_panel(
                         status.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                         self.table.setItem(row, 1, status)
                     status_text, status_color = states[str(task.state)]
+                    if (
+                        task.state is DownloadState.RUNNING
+                        and task.pause_requested.is_set()
+                    ):
+                        status_text, status_color = "正在暫停", COLORS["warning"]
+                    elif (
+                        task.state is DownloadState.RUNNING
+                        and task.cancel_event.is_set()
+                    ):
+                        status_text, status_color = "正在停止", COLORS["warning"]
                     status.setText(status_text)
                     status.setForeground(QColor(status_color))
 
@@ -1817,9 +2193,17 @@ def create_download_panel(
             task_id = self.selected_task_id()
             if task_id:
                 try:
-                    context.download_queue.cancel(task_id)
+                    changed = context.download_queue.cancel(task_id)
                 except (OSError, RuntimeError) as error:
                     QMessageBox.warning(self, "取消任務失敗", str(error))
+                    return
+                if not changed:
+                    QMessageBox.information(
+                        self,
+                        "取消任務",
+                        "工作狀態已改變，請重新選擇後再試。",
+                    )
+                self.refresh()
 
         def clear_finished(self) -> None:
             try:
@@ -1848,8 +2232,19 @@ def create_download_panel(
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
         def closeEvent(self, event: object) -> None:
+            if self.events is not None:
+                self.events.unsubscribe(
+                    "builtin_mod.changed", self.handle_builtin_mod_changed
+                )
+                self.events.unsubscribe(
+                    "ui.language.changed", self.apply_site_language
+                )
             if self.youtube_workspace is not None:
                 self.youtube_workspace.shutdown()
+            if self.media_preview_controls is not None:
+                self.media_preview_controls.shutdown()
+            if self.thumbnail_loader is not None:
+                self.thumbnail_loader.cancel_pending()
             super().closeEvent(event)
 
     return DownloadPanel()

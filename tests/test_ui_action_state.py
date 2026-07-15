@@ -81,6 +81,7 @@ def test_download_prefill_opens_full_site_setup_and_rejects_unsafe_urls() -> Non
         "https://www.bilibili.com/video/BV1example123"
     )
     panel.update_site_options.assert_called_once_with()
+    panel.apply_search_result_metadata.assert_called_once()
     assert "分段、字幕與網站專屬選項" in panel.preview.setText.call_args.args[0]
     tabs.setCurrentWidget.assert_called_once_with(panel)
     panel.urls.setFocus.assert_called_once_with()
@@ -106,6 +107,62 @@ def test_download_prefill_opens_full_site_setup_and_rejects_unsafe_urls() -> Non
     panel.urls.setPlainText.assert_not_called()
 
 
+def test_youtube_search_result_can_be_added_as_single_download(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtWidgets import QApplication, QMessageBox, QTabWidget
+
+    app = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        Mock(return_value=QMessageBox.StandardButton.Yes),
+    )
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    panel = create_download_panel(context, site_family="youtube")
+    panel.timer.stop()
+    tabs = QTabWidget()
+    tabs.addTab(panel, "YouTube")
+    payload = {
+        "url": "https://www.youtube.com/watch?v=example",
+        "provider_id": "youtube",
+        "video_id": "example",
+        "title": "Search result",
+        "artist": "Uploader",
+        "duration": 125,
+        "language": "zh-TW",
+        "category": "music",
+        "thumbnail_url": "https://i.ytimg.com/vi/example/mqdefault.jpg",
+    }
+    try:
+        assert apply_download_prefill(panel, tabs, payload)
+        assert panel.analyzed_url == payload["url"]
+        assert panel.analyzed_info["title"] == "Search result"
+        assert panel.add_download.isEnabled()
+
+        panel.add_batch()
+
+        tasks = context.download_queue.snapshots()
+        assert len(tasks) == 1
+        request = tasks[0].request
+        assert request.url == payload["url"]
+        assert request.source_video_id == "example"
+        assert request.source_title == "Search result"
+        assert request.source_artist == "Uploader"
+        assert request.source_language == "zh-TW"
+        assert request.source_category == "music"
+    finally:
+        panel.close()
+        tabs.close()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
 def test_empty_workspace_actions_are_disabled(tmp_path, monkeypatch) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
@@ -121,6 +178,20 @@ def test_empty_workspace_actions_are_disabled(tmp_path, monkeypatch) -> None:
     bilibili_panel = None
     try:
         search_panel = create_search_panel(context)
+        youtube_source = search_panel.search_source.findData("youtube-search")
+        ani_gamer_source = search_panel.search_source.findData("ani-gamer-search")
+        assert youtube_source >= 0
+        assert ani_gamer_source >= 0
+        assert search_panel.search_source.itemText(youtube_source).startswith(
+            "YouTube 搜尋"
+        )
+        assert search_panel.search_source.itemText(ani_gamer_source).startswith(
+            "動畫瘋官方搜尋"
+        )
+        assert search_panel.search_source.findData("bilibili-search") < 0
+        assert "Bilibili 搜尋需先啟用 Bilibili 主 MOD" in (
+            search_panel.search_source_summary.text()
+        )
         search_buttons = {
             button.text(): button for button in search_panel.findChildren(QPushButton)
         }
@@ -159,6 +230,12 @@ def test_empty_workspace_actions_are_disabled(tmp_path, monkeypatch) -> None:
         youtube_panel.subtitle_mode.setCurrentIndex(0)
 
         bilibili_panel.enabled.setChecked(True)
+        app.processEvents()
+        bilibili_source = search_panel.search_source.findData("bilibili-search")
+        assert bilibili_source >= 0
+        assert search_panel.search_source.itemText(bilibili_source).startswith(
+            "Bilibili 搜尋"
+        )
         bilibili_panel.urls.setPlainText(
             "https://www.bilibili.com/video/BVexample"
         )
@@ -215,6 +292,74 @@ def test_empty_workspace_actions_are_disabled(tmp_path, monkeypatch) -> None:
         context.lifecycle.shutdown()
 
 
+def test_facebook_and_mega_workspaces_enable_and_route_independently(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    facebook_panel = create_download_panel(context, site_family="facebook")
+    mega_panel = create_download_panel(context, site_family="mega")
+    facebook_panel.timer.stop()
+    mega_panel.timer.stop()
+    try:
+        assert not facebook_panel.enabled.isChecked()
+        assert not mega_panel.enabled.isChecked()
+        assert facebook_panel.workspace_title.text() == "Facebook 下載工作區"
+        assert mega_panel.workspace_title.text() == "MEGA 下載工作區"
+        assert facebook_panel.thumbnail_preview.pixmap() is not None
+        assert mega_panel.thumbnail_preview.pixmap() is not None
+
+        facebook_panel.enabled.setChecked(True)
+        mega_panel.enabled.setChecked(True)
+        app.processEvents()
+        assert context.download_providers.is_enabled("facebook")
+        assert context.download_providers.is_enabled("mega")
+
+        facebook_url = "https://www.facebook.com/reel/123456"
+        facebook_panel.urls.setPlainText(facebook_url)
+        app.processEvents()
+        assert facebook_panel.read_info.isEnabled()
+        assert facebook_panel.add_download.isEnabled()
+        assert context.download_providers.provider_for(facebook_url).provider_id == (
+            "facebook"
+        )
+
+        mega_file = "https://mega.nz/file/AbCdEf12#abcdefghijklmnop"
+        mega_panel.urls.setPlainText(mega_file)
+        app.processEvents()
+        assert mega_panel.read_info.isEnabled()
+        assert mega_panel.add_download.isEnabled()
+        assert mega_panel.format_preset.count() == 1
+        assert mega_panel.format_preset.currentData() == "best"
+        assert mega_panel.subtitle_mode.count() == 1
+        assert context.download_providers.provider_for(mega_file).provider_id == "mega"
+
+        mega_panel.urls.setPlainText(
+            "https://mega.nz/folder/AbCdEf12#abcdefghijklmnop"
+        )
+        app.processEvents()
+        assert mega_panel.read_info.isEnabled()
+        assert not mega_panel.add_download.isEnabled()
+
+        facebook_panel.urls.setPlainText(mega_file)
+        app.processEvents()
+        assert not facebook_panel.add_download.isEnabled()
+    finally:
+        facebook_panel.close()
+        mega_panel.close()
+        facebook_panel.deleteLater()
+        mega_panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
 def test_core_language_event_updates_built_in_site_mod_ui(
     tmp_path, monkeypatch
 ) -> None:
@@ -246,8 +391,8 @@ def test_core_language_event_updates_built_in_site_mod_ui(
         assert bilibili_panel.workspace_title.text() == (
             "Bilibili Download Workspace"
         )
-        assert search_panel.enabled.text() == "Search"
-        assert search_panel.bilibili_search_enabled.text() == "Search"
+        assert search_panel.enabled.text() == "YouTube Search"
+        assert search_panel.bilibili_search_enabled.text() == "Bilibili Search"
     finally:
         search_panel.shutdown()
         search_panel.close()
@@ -413,6 +558,10 @@ def test_site_search_mods_toggle_independently_and_never_use_youtube_actions(
     panel = None
     try:
         panel = create_search_panel(context)
+        assert panel.search_source.findData("youtube-search") >= 0
+        assert panel.search_source.findData("bilibili-search") >= 0
+        assert panel.search_source.findData("ani-gamer-search") >= 0
+        assert "一次查一個網站" in panel.search_source_summary.text()
         assert context.discovery.is_enabled("youtube-search")
         assert not context.discovery.is_enabled("bilibili-search")
         assert not context.discovery.is_enabled("ani-gamer-search")
@@ -492,7 +641,7 @@ def test_site_search_mods_toggle_independently_and_never_use_youtube_actions(
         assert panel.selected_result_source() == "bilibili-search"
         assert panel.next_search_cursor == "opaque-next-page"
         assert panel.next_page_button.isEnabled()
-        assert panel.table.item(0, 5).text() == "搜尋器"
+        assert panel.table.item(0, 5).text() == "Bilibili 搜尋"
         assert panel.download_button.isEnabled()
 
         context.download_providers.set_enabled("bilibili", True)
@@ -520,8 +669,10 @@ def test_site_search_mods_toggle_independently_and_never_use_youtube_actions(
                 "video_id": result.video_id,
                 "title": result.title,
                 "artist": result.artist,
+                "duration": result.duration,
                 "language": result.language,
                 "category": result.category,
+                "thumbnail_url": result.thumbnail_url,
             }
         ]
         assert panel.status.text() == (
@@ -546,7 +697,7 @@ def test_site_search_mods_toggle_independently_and_never_use_youtube_actions(
         assert "1 個來源失敗" in panel.status.text()
         panel.failure_button.click()
         warning.assert_called_once()
-        assert "搜尋器" in warning.call_args.args[2]
+        assert "Bilibili 搜尋" in warning.call_args.args[2]
         assert "provider exited without a result" in warning.call_args.args[2]
 
         ani_index = panel.search_source.findData("ani-gamer-search")

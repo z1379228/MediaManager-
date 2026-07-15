@@ -312,13 +312,6 @@ SITE_MOD_CANDIDATES = (
         "不擷取影片或彈幕、不接收 Cookie；不規避廣告、地區、IP 或串流限制",
     ),
     SiteModCandidate(
-        "facebook",
-        "Facebook",
-        "不可下載 · 官方工具",
-        "驗證官方影片頁並提供官方資料匯出說明",
-        "不啟用自動擷取器、不接收帳密或 Cookie；不繞過私人內容限制",
-    ),
-    SiteModCandidate(
         "instagram",
         "Instagram",
         "不可下載 · 官方工具",
@@ -331,13 +324,6 @@ SITE_MOD_CANDIDATES = (
         "不可下載 · 官方工具",
         "驗證官方貼文頁並提供官方 Threads 資料匯出說明",
         "沒有專用擷取器；不自動收集貼文、不匯入登入資料或處理私人內容",
-    ),
-    SiteModCandidate(
-        "mega",
-        "MEGA",
-        "尚未支援 · SDK 評估",
-        "驗證官方公開分享連結；規劃以 MEGA SDK 或 MEGAcmd 建立獨立下載 MOD",
-        "不接收帳密或工作階段、不繞過傳輸配額或權限；驗證完成前不宣稱下載支援",
     ),
 )
 
@@ -474,7 +460,12 @@ def create_site_mod_catalog_panel(
         official_url.clear()
         official_url.setPlaceholderText(bridge.placeholder)
         open_help.setVisible(bool(bridge.help_url))
-        if bridge.bridge_id in META_OFFICIAL_BRIDGE_NAMES:
+        if bridge.bridge_id in {"facebook", "mega"}:
+            official_status.setText(
+                f"{bridge.display_name}：下載由可停用的獨立網站 MOD 處理；"
+                "此處只開啟官方頁面或說明，不會在背景連線。"
+            )
+        elif bridge.bridge_id in META_OFFICIAL_BRIDGE_NAMES:
             official_status.setText(
                 f"{bridge.display_name}：官方工具限定，不支援下載；"
                 "等待使用者操作，不會在背景連線。"

@@ -31,6 +31,8 @@ def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
             ProviderStatus("youtube", "YouTube", True),
             ProviderStatus("generic-ytdlp", "Other Sites", False),
             ProviderStatus("bilibili", "Bilibili", False),
+            ProviderStatus("facebook", "Facebook", False),
+            ProviderStatus("mega", "MEGA", False),
         ),
         (
             ProviderStatus("youtube-search", "Search", True),
@@ -48,11 +50,11 @@ def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
             FeatureStatus("automation", "Automation", False),
         ),
     )
-    assert len(rows) == 14
+    assert len(rows) == 16
     assert all(row.available for row in rows)
     assert sum(row.enabled for row in rows) == 5
-    assert rows[6].provider_id == "youtube-player"
-    assert not rows[6].enabled
+    assert rows[8].provider_id == "youtube-player"
+    assert not rows[8].enabled
 
 
 def test_builtin_mod_rows_keep_missing_expected_mod_visible() -> None:
@@ -61,6 +63,8 @@ def test_builtin_mod_rows_keep_missing_expected_mod_visible() -> None:
         "youtube",
         "generic-ytdlp",
         "bilibili",
+        "facebook",
+        "mega",
         "youtube-search",
         "bilibili-search",
         "ani-gamer-search",
@@ -81,8 +85,10 @@ def test_download_mod_locations_do_not_mix_site_workspaces() -> None:
 
     assert rows["youtube"].control_location == "YouTube 下載工作區"
     assert rows["bilibili"].control_location == "Bilibili 下載工作區"
+    assert "Facebook 下載工作區" in rows["facebook"].control_location
+    assert "MEGA 下載工作區" in rows["mega"].control_location
     assert "YouTube 下載工作區" not in rows["bilibili"].control_location
-    assert "YouTube／Bilibili 工作區" in rows["generic-ytdlp"].control_location
+    assert "不顯示於網站工作區" in rows["generic-ytdlp"].control_location
 
 
 def test_builtin_mod_rows_preserve_bounded_initialization_reason() -> None:
@@ -120,6 +126,8 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
                 ProviderStatus("youtube", "YouTube", True),
                 ProviderStatus("generic-ytdlp", "Other Sites", False),
                 ProviderStatus("bilibili", "Bilibili", False),
+                ProviderStatus("facebook", "Facebook", False),
+                ProviderStatus("mega", "MEGA", False),
             )
         ),
         discovery=StatusSource(
@@ -157,18 +165,18 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
         for planned in PLANNED_MODS
         if planned.provider_id != "bilibili-danmaku"
     )
-    assert table.rowCount() == 13 + len(visible_planned)
+    assert table.rowCount() == 15 + len(visible_planned)
     assert table.accessibleName() == "內建與製作中 MOD 狀態"
     toggles = [
         button
         for button in panel.findChildren(QPushButton)
         if button.accessibleName().endswith("啟用狀態")
     ]
-    assert len(toggles) == 13
+    assert len(toggles) == 15
     assert {button.text() for button in toggles} == {"啟用", "停用"}
     assert summary.text() == (
-        "內建 MOD 14/14 已註冊 · 9 個已啟用 · "
-        f"目前顯示 13 個父／子 MOD · 製作中 {len(PLANNED_MODS)} 項"
+        "內建 MOD 16/16 已註冊 · 9 個已啟用 · "
+        f"目前顯示 15 個父／子 MOD · 製作中 {len(PLANNED_MODS)} 項"
     )
     planned_start = table.rowCount() - len(visible_planned)
     assert [
@@ -267,6 +275,7 @@ def test_plugin_manager_defaults_to_actionable_builtin_mods(
         tabs = dialog.findChild(QTabWidget, "pluginManagerTabs")
         assert tabs.currentIndex() == 1
         assert tabs.tabText(1) == "內建 MOD 狀態"
+        assert tabs.tabText(6) == "自我檢查"
         assert any(
             label.text() == "尚無外部 MOD 介面"
             for label in dialog.findChildren(QLabel)

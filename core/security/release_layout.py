@@ -29,6 +29,20 @@ SOURCE_RELEASE_FILES = (
     "mod/builtin/generic-ytdlp/provider.py",
     "mod/builtin/generic-ytdlp/provider.json",
     "mod/builtin/generic-ytdlp/site-matrix.json",
+    "mod/builtin/facebook/provider.py",
+    "mod/builtin/facebook/provider.json",
+    "mod/builtin/facebook/group.json",
+    "mod/builtin/facebook/locales/en.json",
+    "mod/builtin/facebook/locales/ja.json",
+    "mod/builtin/facebook/locales/zh-CN.json",
+    "mod/builtin/facebook/locales/zh-TW.json",
+    "mod/builtin/mega/provider.py",
+    "mod/builtin/mega/provider.json",
+    "mod/builtin/mega/group.json",
+    "mod/builtin/mega/locales/en.json",
+    "mod/builtin/mega/locales/ja.json",
+    "mod/builtin/mega/locales/zh-CN.json",
+    "mod/builtin/mega/locales/zh-TW.json",
     "mod/builtin/youtube/provider.py",
     "mod/builtin/youtube/provider.json",
     "mod/builtin/youtube/site-matrix.json",
@@ -68,3 +82,13 @@ PORTABLE_RUNTIME_FILES = (
 DEFAULT_RELEASE_FILES = (
     SOURCE_RELEASE_FILES + PORTABLE_RUNTIME_FILES + GENERATED_RELEASE_FILES
 )
+
+
+def stable_signed_files(version: str) -> tuple[str, ...]:
+    """Anchor metadata, wheel and checksum manifest in a Stable signature."""
+
+    return DEFAULT_RELEASE_FILES + (
+        f"mediamanager-{version}-py3-none-any.whl",
+        "release-info.json",
+        "SHA256SUMS.txt",
+    )

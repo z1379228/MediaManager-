@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from urllib.parse import parse_qsl, urlsplit
 
 
@@ -32,6 +33,7 @@ FACEBOOK_HOSTS = frozenset(
         "fb.watch",
     }
 )
+MEGA_HOSTS = frozenset({"mega.nz", "www.mega.nz"})
 ANI_GAMER_HOSTS = frozenset({"ani.gamer.com.tw"})
 
 
@@ -116,17 +118,58 @@ def _bilibili_route(host: str, path: str) -> SiteRoute | None:
     return SiteRoute("bilibili", kind, "bilibili", "bilibili-search")
 
 
-def _facebook_route(host: str, path: str) -> SiteRoute | None:
+def _facebook_route(host: str, path: str, query: str) -> SiteRoute | None:
     parts = tuple(part for part in path.split("/") if part)
-    is_media = (
-        (host == "fb.watch" and len(parts) == 1)
-        or (parts and parts[0] == "watch")
-        or (len(parts) == 2 and parts[0] in {"reel", "videos"})
-        or (len(parts) >= 3 and parts[-2] == "videos")
-    )
-    if not is_media:
+    if host == "fb.watch":
+        if (
+            query
+            or len(parts) != 1
+            or not re.fullmatch(r"[A-Za-z0-9_-]{4,64}", parts[0])
+        ):
+            return None
+        return SiteRoute("facebook", "short-link", "facebook", None)
+    if path in {"/watch", "/watch/", "/video.php"}:
+        values = _query_values(query)
+        video_id = (values.get("v") or ("",))[0] if values is not None else ""
+        if (
+            values is None
+            or set(values) != {"v"}
+            or not video_id.isascii()
+            or not video_id.isdigit()
+            or not 1 <= len(video_id) <= 32
+        ):
+            return None
+        return SiteRoute("facebook", "video-page", "facebook", None)
+    if query:
         return None
-    return SiteRoute("facebook", "video-page", "facebook", None)
+    if (
+        len(parts) == 2
+        and parts[0] in {"reel", "videos"}
+        and parts[1].isascii()
+        and parts[1].isdigit()
+        and 1 <= len(parts[1]) <= 32
+    ):
+        return SiteRoute("facebook", "video-page", "facebook", None)
+    if (
+        len(parts) == 3
+        and re.fullmatch(r"[A-Za-z0-9._-]{1,100}", parts[0])
+        and parts[1] == "videos"
+        and parts[2].isascii()
+        and parts[2].isdigit()
+        and 1 <= len(parts[2]) <= 32
+    ):
+        return SiteRoute("facebook", "video-page", "facebook", None)
+    return None
+
+
+def _mega_route(path: str, query: str, fragment: str) -> SiteRoute | None:
+    if query:
+        return None
+    share = re.fullmatch(r"/(file|folder)/([A-Za-z0-9_-]{6,64})/?", path)
+    if share is None or not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", fragment):
+        return None
+    kind = "public-file" if share.group(1) == "file" else "public-folder"
+    return SiteRoute("mega", kind, "mega", None)
 
 
 def _ani_gamer_route(path: str, query: str) -> SiteRoute | None:
@@ -173,15 +216,18 @@ def classify_site_url(value: object) -> SiteRoute | None:
         or parsed.username is not None
         or parsed.password is not None
         or port is not None
-        or parsed.fragment
     ):
+        return None
+    if host in MEGA_HOSTS:
+        return _mega_route(parsed.path, parsed.query, parsed.fragment)
+    if parsed.fragment:
         return None
     if host in YOUTUBE_HOSTS:
         return _youtube_route(host, parsed.path, parsed.query)
     if host in BILIBILI_HOSTS:
         return _bilibili_route(host, parsed.path)
     if host in FACEBOOK_HOSTS:
-        return _facebook_route(host, parsed.path)
+        return _facebook_route(host, parsed.path, parsed.query)
     if host in ANI_GAMER_HOSTS:
         return _ani_gamer_route(parsed.path, parsed.query)
     return None
