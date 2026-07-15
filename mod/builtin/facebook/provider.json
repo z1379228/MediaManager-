@@ -1,0 +1,7 @@
+{
+  "provider_id": "facebook",
+  "display_name": "Facebook",
+  "entry_point": "provider.py",
+  "url_hosts": ["facebook.com", "www.facebook.com", "m.facebook.com", "fb.watch"],
+  "permissions": ["network.facebook", "storage.downloads.write", "process.ffmpeg", "process.javascript"]
+}

@@ -22,6 +22,8 @@ SITE_MOD_CHILDREN = {
         "youtube-auto-split",
     ),
     "bilibili": ("bilibili-search",),
+    "facebook": (),
+    "mega": (),
 }
 SITE_MOD_PARENT = {
     child: parent
@@ -133,7 +135,7 @@ def load_builtin_mod_group(
     ):
         raise BuiltinModGroupError("built-in MOD group identity or locales are invalid")
     raw_children = manifest["children"]
-    if not isinstance(raw_children, list) or not 1 <= len(raw_children) <= 16:
+    if not isinstance(raw_children, list) or len(raw_children) > 16:
         raise BuiltinModGroupError("built-in MOD group children are invalid")
     child_by_provider: dict[str, str] = {}
     for child in raw_children:

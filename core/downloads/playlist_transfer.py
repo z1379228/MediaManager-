@@ -76,4 +76,5 @@ def _entry_payload(entry: PlaylistEntryV1) -> dict[str, object]:
         "position": entry.position,
         "available": entry.available,
         "unavailable_reason": entry.unavailable_reason,
+        "thumbnail_url": entry.thumbnail_url,
     }

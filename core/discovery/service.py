@@ -314,6 +314,14 @@ class DiscoveryService:
         )
         if len(set(selected)) != len(selected):
             raise ValueError("duplicate search MOD selection")
+        available = {
+            capability.provider_id for capability in self.search_capabilities()
+        }
+        unavailable = tuple(
+            provider_id for provider_id in selected if provider_id not in available
+        )
+        if unavailable:
+            raise RuntimeError(f"search MOD is unavailable: {unavailable[0]}")
         disabled = tuple(
             provider_id
             for provider_id in selected

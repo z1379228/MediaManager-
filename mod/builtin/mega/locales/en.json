@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "locale": "en",
+  "group_name": "MEGA",
+  "workspace": {
+    "title": "MEGA Downloads",
+    "subtitle": "Read public shares and send file downloads to official MEGAcmd without accounts or sessions.",
+    "enable": "Enable MEGA main MOD",
+    "url_label": "Public MEGA share URLs",
+    "placeholder": "One https://mega.nz/file/...#... URL per line",
+    "initial_preview": "Enter a public MEGA share to check its type and official tool status.",
+    "wrong_site": "This workspace accepts complete public MEGA share URLs only."
+  },
+  "modules": {
+    "mega": {
+      "name": "MEGA Download",
+      "purpose": "Route public file shares to official mega-get; folder downloads are not enabled in 9.2",
+      "control_location": "Enable in MOD Manager to show the MEGA download workspace"
+    }
+  }
+}

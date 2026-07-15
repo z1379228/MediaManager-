@@ -12,7 +12,7 @@ from core.version import CORE_VERSION
 
 def build_inventory(*, core_version: str = CORE_VERSION) -> dict[str, object]:
     components = []
-    for name in ("cryptography", "PySide6", "yt-dlp", "yt-dlp-ejs"):
+    for name in ("cryptography", "curl-cffi", "PySide6", "yt-dlp", "yt-dlp-ejs"):
         try:
             distribution = metadata.distribution(name)
         except metadata.PackageNotFoundError:

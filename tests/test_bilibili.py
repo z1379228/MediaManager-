@@ -138,9 +138,12 @@ def test_bilibili_playlist_normalizes_multipart_and_bangumi_urls(
         def extract_info(self, _url, *, download):
             assert not download
             return {
+                "title": "Parent title",
+                "uploader": "Parent uploader",
+                "thumbnail": "https://i0.hdslb.com/bfs/archive/parent.jpg",
                 "entries": [
-                    {"id": "BVpart", "url": "BVpart", "title": "P1"},
-                    {"id": "BVpart", "url": "BVpart", "title": "P2"},
+                    {"id": "BVpart", "url": "BVpart", "part": "Opening"},
+                    {"id": "BVpart", "url": "BVpart"},
                     {
                         "id": "ep123",
                         "url": "https://www.bilibili.com/bangumi/play/ep123",
@@ -164,6 +167,10 @@ def test_bilibili_playlist_normalizes_multipart_and_bangumi_urls(
     assert entries[1]["url"].endswith("/video/BVpart?p=2")
     assert "/bangumi/play/ep123" in entries[2]["url"]
     assert all(entry["available"] for entry in entries)
+    assert entries[0]["title"] == "Opening"
+    assert entries[1]["title"] == "Parent title · P2"
+    assert entries[1]["artist"] == "Parent uploader"
+    assert entries[1]["thumbnail_url"].endswith("/parent.jpg")
 
 
 def test_bilibili_support_matrix_is_explicit() -> None:

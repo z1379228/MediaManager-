@@ -19,6 +19,7 @@ from core.mod_groups import (
     BuiltinModGroupError,
     load_builtin_mod_groups,
 )
+from core.settings import normalized_language
 from trusted_ui.empty_state import create_empty_state
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.thumbnail_loader import create_thumbnail_loader
@@ -55,6 +56,37 @@ def localized_site_module_names(locale: object) -> dict[str, str]:
         }
     except BuiltinModGroupError:
         return {}
+
+
+def explicit_search_source_name(
+    provider_id: object, locale: object, fallback: str = ""
+) -> str:
+    """Keep shared-search source labels distinct across website MODs."""
+
+    labels = {
+        "youtube-search": {
+            "zh-TW": "YouTube 搜尋",
+            "zh-CN": "YouTube 搜索",
+            "ja": "YouTube 検索",
+            "en": "YouTube Search",
+        },
+        "bilibili-search": {
+            "zh-TW": "Bilibili 搜尋",
+            "zh-CN": "Bilibili 搜索",
+            "ja": "Bilibili 検索",
+            "en": "Bilibili Search",
+        },
+        "ani-gamer-search": {
+            "zh-TW": "動畫瘋官方搜尋",
+            "zh-CN": "动画疯官方搜索",
+            "ja": "AniGamer 公式検索",
+            "en": "AniGamer Official Search",
+        },
+    }
+    provider_labels = labels.get(str(provider_id))
+    if provider_labels is None:
+        return fallback or str(provider_id)
+    return provider_labels[normalized_language(locale)]
 
 
 def search_source_for_url(url: object) -> str:
@@ -216,6 +248,9 @@ def create_search_panel(context: object, parent: object = None) -> object:
             module_names = localized_site_module_names(
                 getattr(getattr(context, "settings", None), "language", "zh-TW")
             )
+            current_locale = getattr(
+                getattr(context, "settings", None), "language", "zh-TW"
+            )
             feature_button = QPushButton()
             feature_button.setObjectName("ghost")
             feature_button.setToolTip("個別啟用或停用各網站搜尋與選用功能 MOD")
@@ -240,15 +275,26 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 return action
 
             self.enabled = create_feature_action(
-                module_names.get("youtube-search", "YouTube 搜尋"),
+                explicit_search_source_name(
+                    "youtube-search",
+                    current_locale,
+                    module_names.get("youtube-search", "YouTube 搜尋"),
+                ),
                 "youtube-search",
             )
             self.bilibili_search_enabled = create_feature_action(
-                module_names.get("bilibili-search", "Bilibili 搜尋"),
+                explicit_search_source_name(
+                    "bilibili-search",
+                    current_locale,
+                    module_names.get("bilibili-search", "Bilibili 搜尋"),
+                ),
                 "bilibili-search",
             )
             self.ani_gamer_search_enabled = create_feature_action(
-                "動畫瘋官方搜尋", "ani-gamer-search"
+                explicit_search_source_name(
+                    "ani-gamer-search", current_locale, "動畫瘋官方搜尋"
+                ),
+                "ani-gamer-search",
             )
             self.history_enabled = create_feature_action(
                 "記錄搜尋偏好", "youtube-history"
@@ -372,6 +418,10 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 self.language_filter.addItem(label, value)
             self.search_source = QComboBox()
             self.search_source.setAccessibleName("搜尋來源")
+            self.search_source.setMinimumWidth(220)
+            self.search_source_summary = QLabel()
+            self.search_source_summary.setObjectName("searchSourceSummary")
+            self.search_source_summary.setWordWrap(True)
             try:
                 source_statuses = tuple(
                     status
@@ -385,7 +435,12 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 source_statuses = ()
                 self.search_provider_ids = ()
             self.search_source_labels = {
-                status.provider_id: status.display_name for status in source_statuses
+                status.provider_id: explicit_search_source_name(
+                    status.provider_id,
+                    current_locale,
+                    status.display_name,
+                )
+                for status in source_statuses
             }
 
             def refresh_search_sources() -> None:
@@ -394,12 +449,16 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 try:
                     self.search_source.clear()
                     try:
+                        all_statuses = tuple(
+                            context.discovery.search_source_statuses()
+                        )
                         statuses = tuple(
                             status
-                            for status in context.discovery.search_source_statuses()
+                            for status in all_statuses
                             if parent_is_enabled(status.provider_id)
                         )
                     except (AttributeError, RuntimeError, ValueError):
+                        all_statuses = ()
                         statuses = ()
                     self.search_provider_ids = tuple(
                         status.provider_id for status in statuses
@@ -412,8 +471,16 @@ def create_search_panel(context: object, parent: object = None) -> object:
                         )
                     )
                     for status in statuses:
-                        display_name = localized_names.get(
-                            status.provider_id, status.display_name
+                        display_name = explicit_search_source_name(
+                            status.provider_id,
+                            getattr(
+                                getattr(context, "settings", None),
+                                "language",
+                                "zh-TW",
+                            ),
+                            localized_names.get(
+                                status.provider_id, status.display_name
+                            ),
                         )
                         self.search_source_labels[status.provider_id] = (
                             display_name
@@ -431,6 +498,44 @@ def create_search_panel(context: object, parent: object = None) -> object:
                             self.search_source.setItemData(
                                 index, status.message, Qt.ItemDataRole.ToolTipRole
                             )
+                    source_names = [
+                        self.search_source_labels.get(
+                            status.provider_id, status.display_name
+                        )
+                        for status in statuses
+                    ]
+                    hidden_parent_sources = [
+                        status
+                        for status in all_statuses
+                        if not parent_is_enabled(status.provider_id)
+                    ]
+                    hidden_hint = ""
+                    if hidden_parent_sources:
+                        hidden_labels = []
+                        for status in hidden_parent_sources:
+                            source_label = explicit_search_source_name(
+                                status.provider_id,
+                                getattr(
+                                    getattr(context, "settings", None),
+                                    "language",
+                                    "zh-TW",
+                                ),
+                                status.display_name,
+                            )
+                            parent_id = SITE_MOD_PARENT.get(status.provider_id, "")
+                            parent_label = {
+                                "youtube": "YouTube",
+                                "bilibili": "Bilibili",
+                            }.get(parent_id, parent_id)
+                            hidden_labels.append(
+                                f"{source_label}需先啟用 {parent_label} 主 MOD"
+                            )
+                        hidden_hint = "；未列出：" + "、".join(hidden_labels)
+                    self.search_source_summary.setText(
+                        "可選搜尋來源（一次查一個網站）："
+                        + ("、".join(source_names) if source_names else "目前沒有可用來源")
+                        + hidden_hint
+                    )
                     index = self.search_source.findData(selected)
                     if index < 0:
                         index = self.search_source.findData("youtube-search")
@@ -477,6 +582,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
             filter_row.addWidget(self.next_page_button)
             search_layout.addLayout(query_row)
             search_layout.addLayout(filter_row)
+            search_layout.addWidget(self.search_source_summary)
             page.addWidget(search_card)
 
             self.status = QLabel("輸入關鍵字開始搜尋。")
@@ -612,12 +718,21 @@ def create_search_panel(context: object, parent: object = None) -> object:
             for provider_id in (
                 "youtube-search",
                 "bilibili-search",
+                "ani-gamer-search",
                 "youtube-player",
                 "youtube-history",
                 "youtube-recovery",
                 "youtube-similar",
             ):
                 name = names.get(provider_id)
+                if provider_id in {
+                    "youtube-search",
+                    "bilibili-search",
+                    "ani-gamer-search",
+                }:
+                    name = explicit_search_source_name(
+                        provider_id, locale, name or provider_id
+                    )
                 action = self.feature_actions_by_id.get(provider_id)
                 if name and action is not None:
                     action.setText(name)
@@ -1489,8 +1604,10 @@ def create_search_panel(context: object, parent: object = None) -> object:
                     "video_id": selected.video_id,
                     "title": selected.title,
                     "artist": selected.artist,
+                    "duration": selected.duration,
                     "language": selected.language,
                     "category": selected.category,
+                    "thumbnail_url": selected.thumbnail_url,
                 },
             )
             self.record_selected()

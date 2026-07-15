@@ -2,23 +2,13 @@
 
 from __future__ import annotations
 
+from core.builtin_mod_catalog import builtin_mod_ids
 from core.mod_groups import SITE_MOD_CHILDREN, SITE_MOD_PARENT
 
 
-DOWNLOAD_MOD_IDS = frozenset({"youtube", "generic-ytdlp", "bilibili"})
-DISCOVERY_MOD_IDS = frozenset(
-    {
-        "youtube-search",
-        "bilibili-search",
-        "ani-gamer-search",
-        "youtube-player",
-        "youtube-history",
-        "youtube-recovery",
-        "youtube-similar",
-        "youtube-auto-split",
-    }
-)
-FEATURE_MOD_IDS = frozenset({"automation", "media-convert", "speech-to-text"})
+DOWNLOAD_MOD_IDS = builtin_mod_ids("download")
+DISCOVERY_MOD_IDS = builtin_mod_ids("discovery")
+FEATURE_MOD_IDS = builtin_mod_ids("feature")
 
 
 def set_builtin_mod_enabled(

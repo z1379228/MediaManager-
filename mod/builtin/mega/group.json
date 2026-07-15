@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "group_id": "mega",
+  "site_family": "mega",
+  "parent_provider_id": "mega",
+  "locales": ["en", "ja", "zh-CN", "zh-TW"],
+  "children": []
+}

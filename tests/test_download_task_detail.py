@@ -47,6 +47,24 @@ def test_download_render_signature_changes_only_for_visible_task_state(
     assert download_render_signature((task,)) == first
     task.progress = 25.0
     assert download_render_signature((task,)) != first
+    second = download_render_signature((task,))
+    task.cancel_event.set()
+    assert download_render_signature((task,)) != second
+
+
+def test_download_task_detail_reports_pending_pause_and_stop(tmp_path: Path) -> None:
+    task = DownloadTask(
+        "running",
+        DownloadRequest("https://youtu.be/example", tmp_path),
+        state=DownloadState.RUNNING,
+        title="Example",
+    )
+    task.pause_requested.set()
+    task.cancel_event.set()
+    assert "正在暫停" in task_detail_summary(task)
+
+    task.pause_requested.clear()
+    assert "正在停止" in task_detail_summary(task)
 
 
 def test_download_refresh_interval_adapts_to_visibility_and_queue_state(

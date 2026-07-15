@@ -238,7 +238,7 @@ class DownloadQueue:
                 DownloadState.RUNNING,
             }:
                 return False
-            if task.pause_requested.is_set():
+            if task.pause_requested.is_set() or task.cancel_event.is_set():
                 return False
             if task.state is DownloadState.QUEUED:
                 task.state = DownloadState.PAUSED
@@ -250,6 +250,12 @@ class DownloadQueue:
             else:
                 task.pause_requested.set()
                 task.cancel_event.set()
+                try:
+                    self._persist_locked()
+                except Exception:
+                    task.pause_requested.clear()
+                    task.cancel_event.clear()
+                    raise
             task.speed = ""
             task.eta = ""
             snapshot = replace(task)
@@ -523,7 +529,7 @@ class DownloadQueue:
                 if task.task_id in self._tasks:
                     continue
                 if (
-                    task.state is DownloadState.QUEUED
+                    task.state in {DownloadState.QUEUED, DownloadState.PAUSED}
                     and self.archive.contains(task.request)
                 ):
                     task.state = DownloadState.COMPLETED
@@ -594,8 +600,20 @@ class DownloadQueue:
             container_preset=text_value("container_preset", "auto", 32),
         )
         state = DownloadState(item.get("state", "QUEUED"))
-        if state in {DownloadState.RUNNING, DownloadState.QUEUED}:
-            state = DownloadState.QUEUED
+        pause_requested = item.get("pause_requested", False)
+        cancel_requested = item.get("cancel_requested", False)
+        if not isinstance(pause_requested, bool) or not isinstance(
+            cancel_requested, bool
+        ):
+            raise ValueError("queue task requested action is invalid")
+        if pause_requested:
+            state = DownloadState.PAUSED
+        elif cancel_requested:
+            state = DownloadState.CANCELLED
+        elif state in {DownloadState.RUNNING, DownloadState.QUEUED}:
+            # A restored process no longer owns a live provider subprocess.
+            # Never restart network work merely because the application opened.
+            state = DownloadState.PAUSED
         progress = item.get("progress", 0.0)
         if (
             not isinstance(progress, (int, float))
@@ -654,6 +672,12 @@ class DownloadQueue:
                 "error": task.error,
                 "automatic_retries": task.automatic_retries,
                 "next_retry_seconds": task.next_retry_seconds,
+                "pause_requested": task.pause_requested.is_set(),
+                "cancel_requested": (
+                    task.cancel_event.is_set()
+                    and not task.pause_requested.is_set()
+                    and task.state is DownloadState.RUNNING
+                ),
             }
             for task in self._tasks.values()
         ]

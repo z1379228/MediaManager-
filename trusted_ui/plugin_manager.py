@@ -7,6 +7,7 @@ from trusted_ui.mod_pages import create_mod_pages_panel
 from trusted_ui.offline_update_panel import create_offline_update_panel
 from trusted_ui.plugin_panel import create_plugin_panel
 from trusted_ui.publisher_panel import create_publisher_panel
+from trusted_ui.self_check_panel import create_self_check_panel
 from trusted_ui.site_mod_catalog import create_site_mod_catalog_panel
 
 
@@ -56,6 +57,7 @@ def create_plugin_manager_dialog(
     tabs.addTab(create_publisher_panel(context, dialog), "發布者信任")
     tabs.addTab(create_mod_pages_panel(context, dialog), "外部 MOD 介面")
     tabs.addTab(create_offline_update_panel(context, dialog), "離線更新")
+    tabs.addTab(create_self_check_panel(context, dialog), "自我檢查")
     page.addWidget(tabs, 1)
     mod_pages = tabs.widget(4)
     tabs.currentChanged.connect(

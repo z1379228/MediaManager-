@@ -46,6 +46,9 @@ if "%FAILED%"=="0" (
 echo.
 echo NOTE: Speech to Text is optional and also needs whisper-cli plus a local model.
 echo It is not required to start MediaManager, so models are not installed here.
+echo NOTE: MEGA download is optional and needs the official MEGAcmd mega-get.
+echo MEGAcmd is not currently available from winget, so this script does not fetch
+echo an unpinned installer. MEGA URL recognition remains available without it.
 pause
 exit /b %FAILED%
 

@@ -10,6 +10,8 @@ from contracts.discovery_v1 import DiscoveryItemV1
 from contracts.search_v2 import SearchCapabilityV2, SearchPageV2, SearchQueryV2
 
 SearchCallable = Callable[[SearchQueryV2], SearchPageV2]
+_MAX_SEARCH_SOURCES = 16
+_MAX_RESULTS_PER_SOURCE = 20
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,11 +71,12 @@ class SearchAdapterRegistry:
     ) -> FederatedSearchResult:
         selected = tuple(provider_ids) if provider_ids is not None else tuple(self._entries)
         bounded_limit = max(1, min(int(limit), 50))
-        unique: dict[str, DiscoveryItemV1] = {}
-        sources: dict[str, str] = {}
+        if len(selected) > _MAX_SEARCH_SOURCES:
+            raise ValueError("too many search MODs selected")
+        collected: list[tuple[str, tuple[DiscoveryItemV1, ...]]] = []
         next_cursors: list[tuple[str, str]] = []
         failures: list[SearchAdapterFailure] = []
-        for provider_id in selected[:16]:
+        for provider_id in selected:
             entry = self._entries.get(provider_id)
             if entry is None:
                 failures.append(
@@ -82,19 +85,20 @@ class SearchAdapterRegistry:
                 continue
             capability, adapter = entry
             try:
-                normalized = query.normalized(capability)
+                normalized = SearchQueryV2(
+                    query.query,
+                    query.content_type,
+                    min(query.page_size, bounded_limit, _MAX_RESULTS_PER_SOURCE),
+                    query.cursor,
+                ).normalized(capability)
                 page = adapter(normalized)
                 if page.provider_id != provider_id:
                     raise ValueError("search page provider mismatch")
                 if page.next_cursor:
                     next_cursors.append((provider_id, page.next_cursor))
-                for item in page.items:
-                    key = canonical_result_key(item)
-                    if key not in unique:
-                        unique[key] = item
-                        sources[key] = provider_id
-                    if len(unique) >= bounded_limit:
-                        break
+                collected.append(
+                    (provider_id, tuple(page.items[:_MAX_RESULTS_PER_SOURCE]))
+                )
             except Exception as error:
                 category = (
                     "timeout"
@@ -112,6 +116,20 @@ class SearchAdapterRegistry:
                         category,
                     )
                 )
+        unique: dict[str, DiscoveryItemV1] = {}
+        sources: dict[str, str] = {}
+        largest_page = max((len(items) for _, items in collected), default=0)
+        for position in range(largest_page):
+            for provider_id, items in collected:
+                if position >= len(items):
+                    continue
+                item = items[position]
+                key = canonical_result_key(item)
+                if key not in unique:
+                    unique[key] = item
+                    sources[key] = provider_id
+                if len(unique) >= bounded_limit:
+                    break
             if len(unique) >= bounded_limit:
                 break
         return FederatedSearchResult(

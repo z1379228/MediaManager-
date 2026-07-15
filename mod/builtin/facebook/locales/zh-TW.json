@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "locale": "zh-TW",
+  "group_name": "Facebook",
+  "workspace": {
+    "title": "Facebook 下載工作區",
+    "subtitle": "只處理公開 Facebook 影片頁；不讀取 Cookie、私人貼文或登入內容。",
+    "enable": "啟用 Facebook 主 MOD",
+    "url_label": "Facebook 公開影片網址",
+    "placeholder": "每行貼上一個 watch、reel、videos 或 fb.watch 網址",
+    "initial_preview": "輸入公開 Facebook 影片網址後可讀取標題與縮圖。",
+    "wrong_site": "此頁只接受受支援的 Facebook 公開影片網址。"
+  },
+  "modules": {
+    "facebook": {
+      "name": "Facebook Download",
+      "purpose": "讀取公開影片資訊、縮圖並分流到 Facebook 下載 provider",
+      "control_location": "MOD 管理啟用後顯示 Facebook 下載工作區"
+    }
+  }
+}

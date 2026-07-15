@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "group_id": "facebook",
+  "site_family": "facebook",
+  "parent_provider_id": "facebook",
+  "locales": ["en", "ja", "zh-CN", "zh-TW"],
+  "children": []
+}

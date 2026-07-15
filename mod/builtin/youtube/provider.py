@@ -7,6 +7,7 @@ import re
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 
 class StderrLogger:
@@ -22,6 +23,34 @@ class StderrLogger:
 
 PROVIDER_ID = "youtube"
 DISPLAY_NAME = "YouTube"
+
+
+def _thumbnail_url(info: dict[str, Any]) -> str:
+    candidates: list[object] = [info.get("thumbnail")]
+    thumbnails = info.get("thumbnails")
+    if isinstance(thumbnails, list):
+        candidates.extend(
+            item.get("url")
+            for item in reversed(thumbnails[:30])
+            if isinstance(item, dict)
+        )
+    for candidate in candidates:
+        value = str(candidate or "")[:1000]
+        try:
+            parsed = urlsplit(value)
+            if (
+                parsed.scheme == "https"
+                and (parsed.hostname or "").casefold()
+                in {"i.ytimg.com", "img.youtube.com"}
+                and parsed.username is None
+                and parsed.password is None
+                and parsed.port is None
+                and not parsed.fragment
+            ):
+                return value
+        except ValueError:
+            continue
+    return ""
 
 
 def emit(message: dict[str, Any]) -> None:
@@ -197,6 +226,7 @@ def playlist(request: dict[str, Any]) -> list[dict[str, Any]]:
                     "artist": "",
                     "duration": None,
                     "position": position,
+                    "thumbnail_url": "",
                     "available": False,
                     "unavailable_reason": "影片已失效、移除或無權存取",
                 }
@@ -229,6 +259,7 @@ def playlist(request: dict[str, Any]) -> list[dict[str, Any]]:
                 "artist": artist,
                 "duration": duration,
                 "position": position,
+                "thumbnail_url": _thumbnail_url(raw),
                 "available": available,
                 "unavailable_reason": (
                     "" if available else availability or "影片已失效、移除或無權存取"

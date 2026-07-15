@@ -7,7 +7,9 @@ def test_release_inventory_is_bounded_and_reports_core_version() -> None:
     assert inventory["schema"] == "mediamanager-release-inventory-v1"
     assert inventory["core_version"] == CORE_VERSION
     names = [item["name"].lower() for item in inventory["components"]]
-    assert names == sorted(["cryptography", "pyside6", "yt-dlp", "yt-dlp-ejs"])
+    assert names == sorted(
+        ["cryptography", "curl_cffi", "pyside6", "yt-dlp", "yt-dlp-ejs"]
+    )
     sbom = build_cyclonedx_sbom(inventory)
     assert sbom["bomFormat"] == "CycloneDX"
     assert sbom["metadata"]["component"]["version"] == CORE_VERSION

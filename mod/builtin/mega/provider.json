@@ -1,0 +1,7 @@
+{
+  "provider_id": "mega",
+  "display_name": "MEGA",
+  "entry_point": "provider.py",
+  "url_hosts": ["mega.nz", "www.mega.nz"],
+  "permissions": ["network.mega", "storage.downloads.write", "process.megacmd"]
+}

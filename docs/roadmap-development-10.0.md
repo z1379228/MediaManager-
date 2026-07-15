@@ -1,16 +1,22 @@
-# MediaManager 開發版 10.0 規劃
+# MediaManager 開發版 10.0 規劃（已完成）
+
+本文件保留原始決策與範圍。9.3～9.9 的搜尋收尾、型別化 MOD 編目、依賴快照、
+選用工作區生命週期與 Self Check 已完成；10.0 的 schema 2 發行證據與來源綁定也已
+實作並完成封版驗證。最終狀態以
+[`release-9.0-10.0.md`](release-9.0-10.0.md) 的驗證結果為準。
 
 ## 進入 10.0 前：先封住 9.x 搜尋拆分
 
-Development 9.1 已把 YouTube 與 Bilibili 下載工作區、搜尋來源、父子 MOD 及語言資源
-拆分，並產生新的 9.1 成品。開始 10.0 前仍須完成：
+Development 9.2 已在 9.1 的 YouTube／Bilibili 分離架構上，加入預設停用且有獨立
+工作區、語言、權限、網址路由與 provider 的 Facebook 公開影片與 MEGA 公開檔案
+MOD。開始 10.0 前仍須完成：
 
 - 聯合搜尋不得讓第一個來源吃滿全部結果；採每來源有界收集與穩定 round-robin，
   讓所有已啟用來源都有機會回傳結果。
 - 明確指定但已停用或不存在的來源必須 fail closed，不得改查 YouTube 或其他網站。
-- 將 Development 9.1 提交並讓 CI 通過；由該最終 revision 重建後，再執行
+- 將 Development 9.2 提交並讓 CI 通過；由該最終 revision 重建後，再執行
   copied-folder、SHA-256、MOD 接線與來源隔離稽核。
-- 以上完成前，9.1 只能視為本機已驗證的 Development 成品，不能視為已公開或可升格
+- 以上完成前，9.2 只能視為本機已驗證的 Development 成品，不能視為已公開或可升格
   Stable 的 9.x 成品。
 
 ## 10.0 主題：發布門檻強化與低耗用診斷
@@ -28,7 +34,7 @@ Development 9.1 已把 YouTube 與 Bilibili 下載工作區、搜尋來源、父
 
 ### P1：內建 MOD 與依賴的單一診斷來源
 
-- 建立 typed `BuiltinModDescriptor`／catalog，集中 14 個內建 MOD 的類型、名稱、預設
+- 建立 typed `BuiltinModDescriptor`／catalog，集中 16 個內建 MOD 的類型、名稱、預設
   狀態、控制路由、選用頁面與依賴；安全權限 allowlist 與 release hash 仍保持獨立，
   再由診斷服務交叉比對。
 - 將 FFmpeg、Deno／EJS、whisper-cli、模型與 PATH 檢測收斂為共用唯讀 snapshot，

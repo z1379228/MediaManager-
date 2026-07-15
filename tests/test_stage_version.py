@@ -57,9 +57,17 @@ def test_stage_version_creates_complete_version_folder(tmp_path: Path) -> None:
     assert (target / "MediaManager.exe").read_bytes() == b"exe"
     info = json.loads((target / "release-info.json").read_text("utf-8"))
     assert info["core_version"] == "1.2.3"
+    assert info["schema_version"] == 2
+    assert info["tool_schema_version"] == 2
     assert info["build_channel"] == "development"
     assert info["release_track"] == "Development"
     assert info["version_folder"] == "1.2"
+    assert len(info["source_fingerprint"]) == 64
+    assert len(info["build_id"]) == 64
+    assert info["source_revision"] == "unavailable" or len(info["source_revision"]) in {
+        40,
+        64,
+    }
     assert info["portable_tools"] == [
         "DENO-LICENSE.md",
         "FFMPEG-LICENSE.txt",
@@ -99,15 +107,15 @@ def test_stage_version_rejects_unsafe_portable_tool_name(tmp_path: Path) -> None
         raise AssertionError("unsafe portable tool name was accepted")
 
 
-def test_stage_version_replaces_same_version_without_stale_files(tmp_path: Path) -> None:
+def test_stage_version_refuses_to_replace_existing_version(tmp_path: Path) -> None:
     _prepare_source(tmp_path)
     target = stage_version(tmp_path, version="1.2.3")
     (target / "stale.txt").write_text("old", encoding="utf-8")
     (tmp_path / "dist" / "MediaManager.exe").write_bytes(b"new")
-    updated = stage_version(tmp_path, version="1.2.3")
-    assert updated == target
-    assert (target / "MediaManager.exe").read_bytes() == b"new"
-    assert not (target / "stale.txt").exists()
+    with pytest.raises(FileExistsError, match="increment the development minor"):
+        stage_version(tmp_path, version="1.2.3")
+    assert (target / "MediaManager.exe").read_bytes() == b"exe"
+    assert (target / "stale.txt").read_text(encoding="utf-8") == "old"
 
 
 def test_stage_version_retries_short_permission_error(
@@ -134,39 +142,21 @@ def test_stage_version_retries_short_permission_error(
     assert attempts == 3
 
 
-def test_stage_version_recovers_committed_target_with_stale_backup(
-    tmp_path: Path, monkeypatch
+def test_stage_version_recovers_legacy_backup_without_overwriting_target(
+    tmp_path: Path,
 ) -> None:
     _prepare_source(tmp_path)
-    target = stage_version(tmp_path, version="1.2.3")
-    (tmp_path / "dist" / "MediaManager.exe").write_bytes(b"new")
-    real_rmtree = stage_module.shutil.rmtree
-    failed = False
+    track = tmp_path / "Version" / "Development"
+    track.mkdir(parents=True)
+    backup = track / ".1.2.backup"
+    backup.mkdir()
+    (backup / "MediaManager.exe").write_bytes(b"old")
 
-    def fail_backup_once(path, *args, **kwargs):
-        nonlocal failed
-        if Path(path).name == ".1.2.backup" and not failed:
-            failed = True
-            raise PermissionError("locked executable")
-        return real_rmtree(path, *args, **kwargs)
-
-    monkeypatch.setattr(stage_module.shutil, "rmtree", fail_backup_once)
-    with pytest.raises(PermissionError, match="locked executable"):
+    with pytest.raises(FileExistsError, match="increment the development minor"):
         stage_version(tmp_path, version="1.2.3")
-    assert (target / "MediaManager.exe").read_bytes() == b"new"
-    assert (
-        tmp_path / "Version" / "Development" / ".1.2.backup"
-    ).is_dir()
 
-    monkeypatch.setattr(stage_module.shutil, "rmtree", real_rmtree)
-    (tmp_path / "dist" / "MediaManager.exe").write_bytes(b"newer")
-    recovered = stage_version(tmp_path, version="1.2.3")
-
-    assert recovered == target
-    assert (target / "MediaManager.exe").read_bytes() == b"newer"
-    assert not (
-        tmp_path / "Version" / "Development" / ".1.2.backup"
-    ).exists()
+    assert (track / "1.2" / "MediaManager.exe").read_bytes() == b"old"
+    assert not backup.exists()
 
 
 def test_stage_version_refuses_stable_without_explicit_confirmation(

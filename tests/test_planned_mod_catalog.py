@@ -8,9 +8,6 @@ def test_planned_mod_catalog_is_ordered_and_separate_from_runtime_mods() -> None
     assert tuple(item.provider_id for item in PLANNED_MODS) == (
         "bilibili-danmaku",
         "ani-gamer-offline",
-        "facebook",
-        "mega",
-        "self-check",
         "direct-transfer",
         "gopeed-transfer",
         "p2p-transfer",
@@ -18,9 +15,6 @@ def test_planned_mod_catalog_is_ordered_and_separate_from_runtime_mods() -> None
     assert tuple(item.priority for item in PLANNED_MODS) == (
         "P1",
         "P1",
-        "P1",
-        "P1",
-        "P2",
         "P2",
         "P2",
         "P2",
@@ -37,13 +31,5 @@ def test_official_bridges_stay_separate_from_pending_download_mods() -> None:
         "instagram",
         "threads",
     }
-    assert {"facebook", "ani-gamer-offline", "bilibili-danmaku"} <= (
-        PLANNED_MOD_IDS
-    )
-
-
-def test_self_check_entry_preserves_its_non_provider_boundary() -> None:
-    self_check = next(item for item in PLANNED_MODS if item.provider_id == "self-check")
-
-    assert "非外部 provider" in self_check.kind
-    assert "不重跑完整流程" in self_check.planned_capabilities
+    assert {"ani-gamer-offline", "bilibili-danmaku"} <= PLANNED_MOD_IDS
+    assert not {"facebook", "mega"} & PLANNED_MOD_IDS

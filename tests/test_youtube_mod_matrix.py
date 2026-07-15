@@ -277,6 +277,8 @@ def test_all_youtube_mods_are_pinned_and_included_by_frozen_build() -> None:
     assert "collect_submodules('yt_dlp.postprocessor')" in spec
     assert "collect_submodules('yt_dlp_ejs')" in spec
     assert "copy_metadata('yt-dlp-ejs')" in spec
+    assert "collect_submodules('curl_cffi')" in spec
+    assert "copy_metadata('curl-cffi')" in spec
 
 
 def test_youtube_download_capability_covers_batch_media_options() -> None:

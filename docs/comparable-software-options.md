@@ -42,12 +42,12 @@ protocols.
 
 The useful, non-duplicated directions are:
 
-1. **MEGA stays an independent candidate MOD.** Public MEGA links require
+1. **MEGA stays an independent MOD.** Public MEGA links require
    client-side key handling and are not ordinary media-page extraction. The
-   first catalog entry only validates modern official `mega.nz` public-share
-   URLs and opens them in the system browser. A future downloader must use the
-   official MEGA SDK or MEGAcmd, disclose the dependency, avoid account/session
-   import, and respect transfer quotas and access controls.
+   Development 9.2 adapter validates modern official `mega.nz` public-share
+   URLs and routes public files to an explicitly detected official `mega-get`.
+   It discloses the dependency, avoids account/session import, respects transfer
+   quotas and access controls, and leaves folder download for later work.
 2. **Multi-file selection and priority are reusable queue concepts.**
    BitComet, µTorrent and qBittorrent show clear per-file selection, priority,
    bandwidth and scheduling controls. MediaManager should expose those only

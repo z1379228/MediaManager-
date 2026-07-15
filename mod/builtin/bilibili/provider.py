@@ -11,6 +11,7 @@ import sys
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 
 class StderrLogger:
@@ -28,6 +29,37 @@ PROVIDER_ID = "bilibili"
 DISPLAY_NAME = "Bilibili"
 _MEDIA_SUFFIXES = (".mp4", ".mkv", ".webm", ".m4a", ".mp3")
 _BILIBILI_VIDEO_ID = re.compile(r"^(?:BV[0-9A-Za-z]+|av\d+)$", re.IGNORECASE)
+
+
+def _thumbnail_url(*values: object) -> str:
+    for candidate in values:
+        value = str(candidate or "")[:1000]
+        if value.startswith("//"):
+            value = "https:" + value
+        try:
+            parsed = urlsplit(value)
+            if (
+                parsed.scheme == "https"
+                and (parsed.hostname or "").casefold().endswith(".hdslb.com")
+                and parsed.username is None
+                and parsed.password is None
+                and parsed.port is None
+                and not parsed.fragment
+            ):
+                return value
+        except ValueError:
+            continue
+    return ""
+
+
+def _entry_title(raw: dict[str, Any], parent_title: str, position: int) -> str:
+    for key in ("title", "part", "fulltitle", "episode", "alt_title"):
+        value = " ".join(str(raw.get(key) or "").split())
+        if value:
+            return value[:300]
+    if parent_title:
+        return f"{parent_title} · P{position}"[:300]
+    return f"Bilibili 分段 P{position}"
 
 
 def emit(message: dict[str, Any]) -> None:
@@ -241,6 +273,13 @@ def playlist(request: dict[str, Any]) -> list[dict[str, Any]]:
     if raw_entries is None:
         raise ValueError("URL does not contain a supported Bilibili list")
 
+    parent_title = str(
+        info.get("title") or info.get("playlist_title") or info.get("series") or ""
+    )[:300]
+    parent_artist = str(
+        info.get("uploader") or info.get("channel") or info.get("creator") or ""
+    )[:200]
+    parent_thumbnail = _thumbnail_url(info.get("thumbnail"))
     entries: list[dict[str, Any]] = []
     seen: set[str] = set()
     for position, raw in enumerate(raw_entries, start=1):
@@ -255,6 +294,7 @@ def playlist(request: dict[str, Any]) -> list[dict[str, Any]]:
                     "artist": "",
                     "duration": None,
                     "position": position,
+                    "thumbnail_url": parent_thumbnail,
                     "available": False,
                     "unavailable_reason": "分段失效、受限或無法解析",
                 }
@@ -278,15 +318,18 @@ def playlist(request: dict[str, Any]) -> list[dict[str, Any]]:
             {
                 "entry_id": entry_id,
                 "url": url if valid_url else "",
-                "title": str(raw.get("title") or f"未命名分段 #{position}")[:300],
+                "title": _entry_title(raw, parent_title, position),
                 "artist": str(
                     raw.get("uploader")
                     or raw.get("channel")
                     or raw.get("creator")
-                    or ""
+                    or parent_artist
                 )[:200],
                 "duration": _finite_duration(raw.get("duration")),
                 "position": position,
+                "thumbnail_url": _thumbnail_url(
+                    raw.get("thumbnail"), parent_thumbnail
+                ),
                 "available": available,
                 "unavailable_reason": reason[:200],
             }

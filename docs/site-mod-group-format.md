@@ -22,6 +22,9 @@ Development 9.1 起，完成度足以顯示在可信 UI 的網站功能必須遵
 - Bilibili 的主 MOD 是 `bilibili`，`bilibili-search` 是子 MOD。彈幕目前是主下載 MOD
   內可逐次關閉的整合能力；日後拆成獨立 `bilibili-danmaku` 前仍標示為製作中，不能
   偽裝成已有獨立啟用狀態。
+- Development 9.2 的 `facebook` 與 `mega` 是沒有子 MOD 的獨立主 MOD；兩者預設
+  停用，啟用後才建立各自下載工作區。Facebook 不與 Instagram／Threads 共用下載
+  provider；MEGA 也不經 `generic-ytdlp`。
 
 ## 網域隔離
 

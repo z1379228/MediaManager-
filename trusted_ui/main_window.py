@@ -31,6 +31,10 @@ from trusted_ui.conversion_panel import create_conversion_panel
 from trusted_ui.transcription_panel import create_transcription_panel
 from trusted_ui.automation_panel import create_automation_panel
 from trusted_ui.library_panel import create_library_panel
+from trusted_ui.optional_workspace_manager import (
+    OptionalWorkspaceManager,
+    OptionalWorkspaceSpec,
+)
 from trusted_ui.plugin_manager import show_plugin_manager
 from trusted_ui.search_panel import create_search_panel
 from trusted_ui.theme import (
@@ -138,6 +142,11 @@ def apply_download_prefill(
     )
     urls.setPlainText(url)
     update_site_options()
+    apply_search_result = getattr(
+        download_panel, "apply_search_result_metadata", None
+    )
+    if callable(apply_search_result):
+        apply_search_result(payload)
     preview.setText(
         f"已從「{source}」帶入；請確認格式、分段、字幕與網站專屬選項後再加入佇列。"
     )
@@ -227,7 +236,12 @@ def run_main_window(context: object) -> int:
             mode.setToolTip(mode_tip)
             header.addWidget(mode)
 
-            dependency_report = check_dependencies(Path(context.paths.application))
+            dependency_service = getattr(context, "dependencies", None)
+            dependency_report = (
+                dependency_service.snapshot().report
+                if dependency_service is not None
+                else check_dependencies(Path(context.paths.application))
+            )
             dependency_text, dependency_state, dependency_tip = dependency_presentation(
                 dependency_report
             )
@@ -239,6 +253,7 @@ def run_main_window(context: object) -> int:
                 lambda: show_dependency_dialog(
                     Path(context.paths.application),
                     self,
+                    snapshot_service=dependency_service,
                 )
             )
             header.addWidget(environment)
@@ -323,108 +338,104 @@ def run_main_window(context: object) -> int:
             tabs.setTabToolTip(2, "單一網站搜尋、替代候選與相似內容")
             tabs.setTabToolTip(3, "掃描、篩選與開啟本機媒體")
 
+            self.site_download_panels: dict[str, object] = {
+                "youtube": self.download_panel,
+                "bilibili": self.bilibili_download_panel,
+            }
+            registered_downloads = {
+                status.provider_id for status in context.download_providers.statuses()
+            }
+
+            def feature_enabled(provider_id: str) -> bool:
+                return any(
+                    status.provider_id == provider_id and status.enabled
+                    for status in context.features.statuses()
+                )
+
+            self.optional_workspace_manager = OptionalWorkspaceManager(
+                tabs,
+                (
+                    OptionalWorkspaceSpec(
+                        "facebook",
+                        lambda: context.download_providers.is_enabled("facebook"),
+                        lambda: "facebook" in registered_downloads,
+                        lambda: create_download_panel(
+                            context, self, site_family="facebook"
+                        ),
+                        lambda panel: panel.workspace_title.text(),
+                        "Facebook 公開影片頁、縮圖與獨立分流下載",
+                    ),
+                    OptionalWorkspaceSpec(
+                        "mega",
+                        lambda: context.download_providers.is_enabled("mega"),
+                        lambda: "mega" in registered_downloads,
+                        lambda: create_download_panel(
+                            context, self, site_family="mega"
+                        ),
+                        lambda panel: panel.workspace_title.text(),
+                        "MEGA 公開檔案分享與官方 MEGAcmd 分流下載",
+                    ),
+                    OptionalWorkspaceSpec(
+                        "media-convert",
+                        lambda: feature_enabled("media-convert"),
+                        lambda: context.conversion is not None,
+                        lambda: create_conversion_panel(context, self),
+                        lambda _panel: "Media Convert",
+                        "本機轉封裝、轉檔、壓縮、串接與切割",
+                    ),
+                    OptionalWorkspaceSpec(
+                        "speech-to-text",
+                        lambda: feature_enabled("speech-to-text"),
+                        lambda: context.transcription is not None,
+                        lambda: create_transcription_panel(context, self),
+                        lambda _panel: "Speech to Text",
+                        "本機語音轉文字與 TXT、SRT、VTT 輸出",
+                    ),
+                    OptionalWorkspaceSpec(
+                        "automation",
+                        lambda: feature_enabled("automation"),
+                        lambda: context.automation is not None,
+                        lambda: create_automation_panel(context, self),
+                        lambda _panel: "Automation",
+                        "選用排程、監看資料夾與剪貼簿網址候選",
+                    ),
+                ),
+            )
+
+            def sync_optional_workspaces(payload: object = None) -> None:
+                self.optional_workspace_manager.sync(payload)
+                for provider_id in ("facebook", "mega"):
+                    panel = self.optional_workspace_manager.panels.get(provider_id)
+                    if panel is None:
+                        self.site_download_panels.pop(provider_id, None)
+                    else:
+                        self.site_download_panels[provider_id] = panel
+
+            context.events.subscribe(
+                "builtin_mod.changed", sync_optional_workspaces
+            )
+            sync_optional_workspaces()
+
             def handle_download_prefill(payload: object) -> None:
                 url = payload.get("url") if isinstance(payload, dict) else None
                 route = classify_site_url(url)
-                panels = {
-                    "youtube": self.download_panel,
-                    "bilibili": self.bilibili_download_panel,
-                }
-                target = panels.get(route.site_family) if route else None
+                target = (
+                    self.site_download_panels.get(route.site_family)
+                    if route
+                    else None
+                )
                 if target is not None:
                     apply_download_prefill(target, tabs, payload)
 
             context.events.subscribe("download.prefill", handle_download_prefill)
 
             def refresh_site_tab_titles(_payload: object = None) -> None:
-                tabs.setTabText(0, self.download_panel.workspace_title.text())
-                tabs.setTabText(
-                    1, self.bilibili_download_panel.workspace_title.text()
-                )
+                for panel in self.site_download_panels.values():
+                    index = tabs.indexOf(panel)
+                    if index >= 0:
+                        tabs.setTabText(index, panel.workspace_title.text())
 
             context.events.subscribe("ui.language.changed", refresh_site_tab_titles)
-            self.optional_panels: dict[str, object] = {}
-
-            def sync_optional_panel(payload: object = None) -> None:
-                if isinstance(payload, dict) and payload.get("provider_id") != "media-convert":
-                    return
-                enabled = any(
-                    status.provider_id == "media-convert" and status.enabled
-                    for status in context.features.statuses()
-                )
-                existing = self.optional_panels.get("media-convert")
-                if enabled and existing is None and context.conversion is not None:
-                    conversion_panel = create_conversion_panel(context, self)
-                    self.optional_panels["media-convert"] = conversion_panel
-                    tabs.addTab(conversion_panel, "Media Convert")
-                    tabs.setTabToolTip(
-                        tabs.indexOf(conversion_panel),
-                        "本機轉封裝、轉檔、壓縮、串接與切割",
-                    )
-                elif not enabled and existing is not None:
-                    index = tabs.indexOf(existing)
-                    if index >= 0:
-                        tabs.removeTab(index)
-                    existing.shutdown()
-                    existing.deleteLater()
-                    self.optional_panels.pop("media-convert", None)
-
-            context.events.subscribe("builtin_mod.changed", sync_optional_panel)
-            sync_optional_panel()
-
-            def sync_transcription_panel(payload: object = None) -> None:
-                if isinstance(payload, dict) and payload.get("provider_id") != "speech-to-text":
-                    return
-                enabled = any(
-                    status.provider_id == "speech-to-text" and status.enabled
-                    for status in context.features.statuses()
-                )
-                existing = self.optional_panels.get("speech-to-text")
-                if enabled and existing is None and context.transcription is not None:
-                    transcription_panel = create_transcription_panel(context, self)
-                    self.optional_panels["speech-to-text"] = transcription_panel
-                    tabs.addTab(transcription_panel, "Speech to Text")
-                    tabs.setTabToolTip(
-                        tabs.indexOf(transcription_panel),
-                        "本機語音轉文字與 TXT、SRT、VTT 輸出",
-                    )
-                elif not enabled and existing is not None:
-                    index = tabs.indexOf(existing)
-                    if index >= 0:
-                        tabs.removeTab(index)
-                    existing.shutdown()
-                    existing.deleteLater()
-                    self.optional_panels.pop("speech-to-text", None)
-
-            context.events.subscribe("builtin_mod.changed", sync_transcription_panel)
-            sync_transcription_panel()
-
-            def sync_automation_panel(payload: object = None) -> None:
-                if isinstance(payload, dict) and payload.get("provider_id") != "automation":
-                    return
-                enabled = any(
-                    status.provider_id == "automation" and status.enabled
-                    for status in context.features.statuses()
-                )
-                existing = self.optional_panels.get("automation")
-                if enabled and existing is None and context.automation is not None:
-                    automation_panel = create_automation_panel(context, self)
-                    self.optional_panels["automation"] = automation_panel
-                    tabs.addTab(automation_panel, "Automation")
-                    tabs.setTabToolTip(
-                        tabs.indexOf(automation_panel),
-                        "選用排程、監看資料夾與剪貼簿網址候選",
-                    )
-                elif not enabled and existing is not None:
-                    index = tabs.indexOf(existing)
-                    if index >= 0:
-                        tabs.removeTab(index)
-                    existing.shutdown()
-                    existing.deleteLater()
-                    self.optional_panels.pop("automation", None)
-
-            context.events.subscribe("builtin_mod.changed", sync_automation_panel)
-            sync_automation_panel()
             page.addWidget(tabs, 1)
 
             self.download_notice = QFrame()
@@ -608,8 +619,7 @@ def run_main_window(context: object) -> int:
 
         def closeEvent(self, event: object) -> None:
             self.search_panel.shutdown()
-            for optional_panel in self.optional_panels.values():
-                optional_panel.shutdown()
+            self.optional_workspace_manager.close_all()
             self.remove_system_tray()
             super().closeEvent(event)
 

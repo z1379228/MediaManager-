@@ -16,8 +16,10 @@ from trusted_ui.youtube_workspace import (
     create_youtube_workspace,
     is_official_youtube_url,
     is_youtube_playlist_url,
+    is_youtube_video_url,
     merge_download_urls,
     youtube_host_label,
+    youtube_url_kind_label,
 )
 
 
@@ -110,6 +112,21 @@ def test_youtube_playlist_route_requires_exact_host_and_valid_list_id() -> None:
         assert not is_youtube_playlist_url(url)
 
 
+def test_youtube_url_kind_keeps_video_and_playlist_context_distinct() -> None:
+    single = "https://music.youtube.com/watch?v=one"
+    playlist = "https://music.youtube.com/playlist?list=PL_example"
+    context = "https://music.youtube.com/watch?v=one&list=PL_example"
+
+    assert is_youtube_video_url(single)
+    assert not is_youtube_playlist_url(single)
+    assert not is_youtube_video_url(playlist)
+    assert is_youtube_playlist_url(playlist)
+    assert is_youtube_video_url(context)
+    assert is_youtube_playlist_url(context)
+    assert "單一 YouTube 影片" in youtube_url_kind_label(single)
+    assert "播放清單中的單一" in youtube_url_kind_label(context)
+
+
 def test_download_workspace_routes_pure_youtube_playlist_before_analysis(
     monkeypatch,
 ) -> None:
@@ -175,6 +192,11 @@ def test_download_workspace_routes_pure_youtube_playlist_before_analysis(
             "https://music.youtube.com/playlist?"
             "list=PL2yqXecZHhEYKaKiTSsfUhEeqeAm89wcp"
         )
+        app.processEvents()
+        assert "YouTube 播放清單" in panel.url_classification.text()
+        assert panel.expand_playlist.isEnabled()
+        assert not panel.read_info.isEnabled()
+        assert not panel.media_preview_controls.audio_button.isEnabled()
         panel.analyze_first()
 
         prepare_playlist.assert_called_once_with()
@@ -185,6 +207,12 @@ def test_download_workspace_routes_pure_youtube_playlist_before_analysis(
             "trusted_ui.download_panel.threading.Thread", ImmediateThread
         )
         panel.urls.setPlainText("https://music.youtube.com/watch?v=single")
+        app.processEvents()
+        assert "單一 YouTube 影片" in panel.url_classification.text()
+        assert not panel.expand_playlist.isEnabled()
+        assert panel.read_info.isEnabled()
+        assert panel.media_preview_controls.audio_button.isEnabled()
+        assert not panel.media_preview_controls.video_button.isEnabled()
         panel.analyze_first()
 
         prepare_playlist.assert_called_once_with()
@@ -235,10 +263,21 @@ def test_youtube_workspace_uses_one_source_and_only_prefills_selected_urls(
         statuses=lambda: (
             ProviderStatus("youtube-search", "YouTube Search", True),
         ),
-        is_enabled=lambda provider_id: provider_id == "youtube-search",
+        is_enabled=lambda provider_id: provider_id
+        in {"youtube-search", "youtube-player"},
         federated_search=federated_search,
+        video_preview_provider=Mock,
     )
-    context = SimpleNamespace(discovery=discovery, events=None, audit=None)
+    download_providers = SimpleNamespace(
+        is_enabled=lambda provider_id: provider_id == "youtube",
+        provider_for=Mock,
+    )
+    context = SimpleNamespace(
+        discovery=discovery,
+        download_providers=download_providers,
+        events=None,
+        audit=None,
+    )
     workspace = create_youtube_workspace(context, added.append)
     try:
         assert workspace.body.isHidden()
@@ -262,6 +301,8 @@ def test_youtube_workspace_uses_one_source_and_only_prefills_selected_urls(
         assert workspace.table.item(1, 4).text() == "YouTube Music"
 
         workspace.table.selectRow(0)
+        assert workspace.preview_controls.audio_button.isEnabled()
+        assert workspace.preview_controls.video_button.isEnabled()
         workspace.table.selectionModel().select(
             workspace.table.model().index(1, 0),
             QItemSelectionModel.SelectionFlag.Select

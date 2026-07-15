@@ -25,6 +25,7 @@ class PlaylistEntryV1:
     position: int
     available: bool
     unavailable_reason: str = ""
+    thumbnail_url: str = ""
 
     def __post_init__(self) -> None:
         if not 1 <= len(self.entry_id) <= 100:
@@ -48,16 +49,22 @@ class PlaylistEntryV1:
             raise ValueError("playlist entry availability is invalid")
         if len(self.unavailable_reason) > 200:
             raise ValueError("playlist unavailable reason is invalid")
+        if len(self.thumbnail_url) > 1000:
+            raise ValueError("playlist thumbnail URL is invalid")
         parsed = urlparse(self.url)
         valid_url = parsed.scheme in {"http", "https"} and bool(parsed.hostname)
         if self.available and not valid_url:
             raise ValueError("available playlist entry URL is invalid")
         if not self.available and self.url and not valid_url:
             raise ValueError("playlist entry URL is invalid")
+        if self.thumbnail_url:
+            thumbnail = urlparse(self.thumbnail_url)
+            if thumbnail.scheme != "https" or not thumbnail.hostname:
+                raise ValueError("playlist thumbnail URL is invalid")
 
     @classmethod
     def from_dict(cls, raw: Any) -> PlaylistEntryV1:
-        if not isinstance(raw, dict) or set(raw) != {
+        required_fields = {
             "entry_id",
             "url",
             "title",
@@ -66,7 +73,11 @@ class PlaylistEntryV1:
             "position",
             "available",
             "unavailable_reason",
-        }:
+        }
+        if not isinstance(raw, dict) or not (
+            set(raw) == required_fields
+            or set(raw) == required_fields | {"thumbnail_url"}
+        ):
             raise PlaylistContractError("playlist entry fields are invalid")
         text_fields = {
             "entry_id",
@@ -77,6 +88,8 @@ class PlaylistEntryV1:
         }
         if not all(isinstance(raw[key], str) for key in text_fields):
             raise PlaylistContractError("playlist entry text fields are invalid")
+        if not isinstance(raw.get("thumbnail_url", ""), str):
+            raise PlaylistContractError("playlist thumbnail URL is invalid")
         if (
             not isinstance(raw["position"], int)
             or isinstance(raw["position"], bool)
@@ -97,4 +110,5 @@ class PlaylistEntryV1:
             position=raw["position"],
             available=raw["available"],
             unavailable_reason=raw["unavailable_reason"],
+            thumbnail_url=raw.get("thumbnail_url", ""),
         )

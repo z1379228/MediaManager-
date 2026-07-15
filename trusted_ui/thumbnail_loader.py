@@ -7,7 +7,7 @@ from collections.abc import Callable
 from urllib.parse import urlsplit
 
 _ALLOWED_HOSTS = {"i.ytimg.com", "img.youtube.com"}
-_ALLOWED_HOST_SUFFIXES = (".hdslb.com", ".bahamut.com.tw")
+_ALLOWED_HOST_SUFFIXES = (".hdslb.com", ".bahamut.com.tw", ".fbcdn.net")
 _MAX_BYTES = 1024 * 1024
 _MAX_IMAGE_PIXELS = 16_000_000
 _MAX_CACHE_ITEMS = 40

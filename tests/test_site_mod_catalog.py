@@ -25,10 +25,8 @@ from trusted_ui.site_mod_catalog import (
 def test_site_mod_catalog_registers_requested_candidates() -> None:
     assert tuple(item.provider_id for item in SITE_MOD_CANDIDATES) == (
         "ani-gamer",
-        "facebook",
         "instagram",
         "threads",
-        "mega",
     )
     assert all(
         "不擷取" in item.safety_boundary
@@ -315,14 +313,13 @@ def test_site_mod_catalog_panel_marks_candidates_as_not_installed(
         for label in panel.findChildren(QLabel)
         if label.objectName() == "dependencySummary"
     ]
-    assert table.rowCount() == 5
+    assert table.rowCount() == 3
     assert summaries == [
-        "已登記 5 個候選網站 MOD · 目前均未啟用下載"
+        "已登記 3 個候選網站 MOD · 目前均未啟用下載"
     ]
-    assert {table.item(row, 1).text() for row in range(5)} == {
+    assert {table.item(row, 1).text() for row in range(3)} == {
         "不可下載 · 官方播放",
         "不可下載 · 官方工具",
-        "尚未支援 · SDK 評估",
     }
     official_site = panel.findChild(QComboBox, "officialSiteBridgeSelect")
     official_url = panel.findChild(QLineEdit, "officialSiteBridgeUrl")
@@ -356,7 +353,7 @@ def test_site_mod_catalog_panel_marks_candidates_as_not_installed(
     official_site.setCurrentIndex(official_site.findData("facebook"))
     assert not open_help.isHidden()
     assert any(
-        label.text().startswith("Facebook：官方工具限定，不支援下載")
+        label.text().startswith("Facebook：下載由可停用的獨立網站 MOD 處理")
         for label in panel.findChildren(QLabel)
     )
     official_url.setText("https://m.facebook.com/watch/?v=123456")

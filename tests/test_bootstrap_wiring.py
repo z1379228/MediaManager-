@@ -39,12 +39,41 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     assert providers["youtube"].enabled
     assert not providers["generic-ytdlp"].enabled
     assert not providers["bilibili"].enabled
-    assert set(providers) == {"youtube", "generic-ytdlp", "bilibili"}
+    assert not providers["facebook"].enabled
+    assert not providers["mega"].enabled
+    assert set(providers) == {
+        "youtube",
+        "generic-ytdlp",
+        "bilibili",
+        "facebook",
+        "mega",
+    }
     assert (
         context.download_providers.matching_provider_id(
             "https://music.youtube.com/watch?v=zqMOLz9q7Ig&list=PLexample"
         )
         == "youtube"
+    )
+    assert (
+        context.download_providers.matching_provider_id(
+            "https://www.facebook.com/reel/123456"
+        )
+        == "facebook"
+    )
+    assert not context.download_providers.is_enabled("facebook")
+    context.download_providers.set_enabled("facebook", True)
+    context.download_providers.set_enabled("mega", True)
+    assert (
+        context.download_providers.matching_provider_id(
+            "https://www.facebook.com/reel/123456"
+        )
+        == "facebook"
+    )
+    assert (
+        context.download_providers.matching_provider_id(
+            "https://mega.nz/file/AbCdEf12#abcdefghijklmnop"
+        )
+        == "mega"
     )
     assert {status.provider_id for status in context.discovery.statuses()} == {
         "youtube-search",

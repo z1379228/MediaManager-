@@ -130,3 +130,44 @@ def test_federated_search_preserves_provider_next_cursor() -> None:
     result = registry.search(SearchQueryV2("music"), provider_ids=("paged",))
 
     assert result.next_cursors == (("paged", "next-token"),)
+
+
+def test_federated_search_round_robins_bounded_results_from_every_source() -> None:
+    registry = SearchAdapterRegistry()
+    received: dict[str, int] = {}
+
+    def adapter(provider_id: str, ids: tuple[str, ...]):
+        def search(query: SearchQueryV2) -> SearchPageV2:
+            received[provider_id] = query.page_size
+            return SearchPageV2(
+                provider_id,
+                tuple(_item(video_id) for video_id in ids),
+            )
+
+        return search
+
+    registry.register(
+        _capability("one"),
+        adapter("one", tuple(f"one-{index}" for index in range(20))),
+    )
+    registry.register(
+        _capability("two"),
+        adapter("two", ("two-1", "two-2")),
+    )
+    registry.register(
+        _capability("three"),
+        adapter("three", ("three-1", "three-2")),
+    )
+
+    result = registry.search(SearchQueryV2("music", page_size=50), limit=6)
+
+    assert [item.video_id for item in result.items] == [
+        "one-0",
+        "two-1",
+        "three-1",
+        "one-1",
+        "two-2",
+        "three-2",
+    ]
+    assert result.sources == ("one", "two", "three", "one", "two", "three")
+    assert received == {"one": 6, "two": 6, "three": 6}
