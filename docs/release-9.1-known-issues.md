@@ -32,9 +32,9 @@
 
 - 第一個 9.1 候選 EXE 的 windowed CLI 模式無法取得標準輸出，導致 `--version`、
   `--verify-only`、`--headless` 顯示視窗錯誤而無法結束。上傳已暫停；修正為只替 CLI
-  模式還原 Windows 輸出管線，沒有主控台時回退到 null device，並在 CLI 結束前主動
-  flush／close 捕捉管線；重新建置後以 ZIP 內 copied-folder 實測三種模式。未修正的
-  候選檔沒有上傳到 9.1 Release。
+  模式使用非擁有型 Windows handle writer，避免 DuplicateHandle 延長捕捉 pipe 壽命；
+  沒有主控台時回退到 null device，並在 CLI 結束前主動 flush／close writer。重新建置
+  後以 ZIP 內 copied-folder 實測三種模式。未修正的候選檔沒有上傳到 9.1 Release。
 
 ## Stable 發布阻擋
 
