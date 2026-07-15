@@ -30,11 +30,12 @@
 
 ## 上傳前已修正
 
-- 第一個 9.1 候選 EXE 的 windowed CLI 模式無法取得標準輸出，導致 `--version`、
-  `--verify-only`、`--headless` 顯示視窗錯誤而無法結束。上傳已暫停；修正為只替 CLI
-  模式使用非擁有型 Windows handle writer，避免 DuplicateHandle 延長捕捉 pipe 壽命；
-  沒有主控台時回退到 null device，並在 CLI 結束前主動 flush／close writer。重新建置
-  後以 ZIP 內 copied-folder 實測三種模式。未修正的候選檔沒有上傳到 9.1 Release。
+- 第一個 9.1 候選 EXE 的 windowed CLI 模式會因標準輸出 pipe ownership 而無法結束，
+  上傳已暫停。9.1 的凍結 windowed EXE 將 CLI stdout／stderr 固定送到 null device，
+  `--version`、`--verify-only`、`--headless` 以程序 exit code 回報成功或失敗；來源 Python
+  CLI 仍保留文字輸出。重新建置後以 ZIP 內 copied-folder 實測三種模式；未修正的候選
+  檔沒有上傳。日後若需要可捕捉的文字 CLI，應提供獨立 console launcher，不重新混入
+  GUI EXE。
 
 ## Stable 發布阻擋
 

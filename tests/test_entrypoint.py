@@ -1,5 +1,4 @@
 from pathlib import Path
-from io import StringIO
 import sys
 from types import SimpleNamespace
 
@@ -72,23 +71,20 @@ def test_source_host_stdio_restoration_is_a_noop() -> None:
     assert restore_frozen_cli_stdio()
 
 
-def test_frozen_cli_stdio_does_not_require_stdin(monkeypatch) -> None:
+def test_frozen_cli_stdio_uses_null_device_without_stdin(monkeypatch) -> None:
     import plugin_host.stdio as stdio
 
-    stdout = StringIO()
-    stderr = StringIO()
     original_streams = (sys.stdout, sys.__stdout__, sys.stderr, sys.__stderr__)
     monkeypatch.setattr(stdio.os, "name", "nt")
     monkeypatch.setattr(sys, "frozen", True, raising=False)
-    monkeypatch.setattr(
-        stdio,
-        "_windows_cli_writer",
-        lambda identifier: stdout if identifier == -11 else stderr,
-    )
     try:
-        assert stdio.restore_frozen_cli_stdio()
-        assert sys.stdout is stdout
-        assert sys.stderr is stderr
+        assert not stdio.restore_frozen_cli_stdio()
+        stdout = sys.stdout
+        stderr = sys.stderr
+        assert stdout is not None
+        assert stderr is not None
+        assert stdout.writable()
+        assert stderr.writable()
         stdio.close_frozen_cli_stdio()
         assert stdout.closed
         assert stderr.closed
