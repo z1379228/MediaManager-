@@ -14,6 +14,7 @@ from core.downloads.models import DownloadRequest, DownloadTask
 from core.downloads.provider_registry import ProviderStatus
 from core.storage.paths import AppPaths
 from trusted_ui.download_panel import create_download_panel
+from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.main_window import apply_download_prefill, configure_workspace_tabs
 from trusted_ui.mega_workspace import create_mega_workspace
 from trusted_ui.search_panel import create_search_panel, search_source_for_url
@@ -182,15 +183,15 @@ def test_empty_workspace_actions_are_disabled(tmp_path, monkeypatch) -> None:
         youtube_source = search_panel.search_source.findData("youtube-search")
         ani_gamer_source = search_panel.search_source.findData("ani-gamer-search")
         assert youtube_source >= 0
-        assert ani_gamer_source >= 0
+        assert ani_gamer_source < 0
         assert search_panel.search_source.itemText(youtube_source).startswith(
             "YouTube 搜尋"
         )
-        assert search_panel.search_source.itemText(ani_gamer_source).startswith(
-            "動畫瘋官方搜尋"
-        )
         assert search_panel.search_source.findData("bilibili-search") < 0
         assert "Bilibili 搜尋需先啟用 Bilibili 主 MOD" in (
+            search_panel.search_source_summary.text()
+        )
+        assert "動畫瘋官方搜尋需先啟用 動畫瘋 主 MOD" in (
             search_panel.search_source_summary.text()
         )
         search_buttons = {
@@ -237,6 +238,9 @@ def test_empty_workspace_actions_are_disabled(tmp_path, monkeypatch) -> None:
         assert search_panel.search_source.itemText(bilibili_source).startswith(
             "Bilibili 搜尋"
         )
+        bilibili_panel.bilibili_workspace.danmaku_enabled.setChecked(True)
+        app.processEvents()
+        assert context.features.is_enabled("bilibili-danmaku")
         bilibili_panel.urls.setPlainText(
             "https://www.bilibili.com/video/BVexample"
         )
@@ -592,6 +596,7 @@ def test_site_search_mods_toggle_independently_and_never_use_youtube_actions(
     monkeypatch.setattr(QMessageBox, "warning", warning)
     context = Bootstrap(portable=True).initialize()
     context.download_providers.set_enabled("bilibili", True)
+    set_builtin_mod_enabled(context, "ani-gamer", True)
     panel = None
     try:
         panel = create_search_panel(context)

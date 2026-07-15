@@ -8,7 +8,7 @@ from core.mod_groups import SITE_MOD_PARENT
 
 
 def test_builtin_mod_catalog_is_complete_unique_and_typed() -> None:
-    assert len(BUILTIN_MOD_CATALOG) == 16
+    assert len(BUILTIN_MOD_CATALOG) == 18
     assert len(BUILTIN_MOD_IDS) == len(BUILTIN_MOD_CATALOG)
     assert builtin_mod_ids("download") == {
         "youtube",
@@ -18,7 +18,7 @@ def test_builtin_mod_catalog_is_complete_unique_and_typed() -> None:
         "mega",
     }
     assert len(builtin_mod_ids("discovery")) == 8
-    assert len(builtin_mod_ids("feature")) == 3
+    assert len(builtin_mod_ids("feature")) == 5
     assert all(item.purpose and item.control_location for item in BUILTIN_MOD_CATALOG)
 
 
@@ -42,6 +42,7 @@ def test_optional_workspaces_are_declared_only_by_catalog() -> None:
         for item in BUILTIN_MOD_CATALOG
         if item.optional_workspace
     } == {
+        "ani-gamer": "ani-gamer",
         "facebook": "facebook",
         "mega": "mega",
         "media-convert": "media-convert",

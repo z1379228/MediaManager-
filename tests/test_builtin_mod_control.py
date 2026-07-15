@@ -60,8 +60,12 @@ def test_discovery_mod_toggle_uses_discovery_registry() -> None:
     discovery.statuses.return_value = (
         ProviderStatus("youtube-player", "YouTube Player", False),
     )
+    downloads = Mock()
+    downloads.statuses.return_value = (
+        ProviderStatus("youtube", "YouTube", True),
+    )
     context = SimpleNamespace(
-        download_providers=Mock(),
+        download_providers=downloads,
         download_queue=Mock(),
         discovery=discovery,
         audit=Mock(),
@@ -84,11 +88,22 @@ def test_site_child_requires_enabled_parent_and_parent_disable_cascades(
 
         set_builtin_mod_enabled(context, "bilibili", True)
         set_builtin_mod_enabled(context, "bilibili-search", True)
+        set_builtin_mod_enabled(context, "bilibili-danmaku", True)
         assert context.discovery.is_enabled("bilibili-search")
+        assert context.features.is_enabled("bilibili-danmaku")
 
         set_builtin_mod_enabled(context, "bilibili", False)
         assert not context.download_providers.is_enabled("bilibili")
         assert not context.discovery.is_enabled("bilibili-search")
+        assert not context.features.is_enabled("bilibili-danmaku")
+
+        with pytest.raises(RuntimeError, match="ani-gamer 主 MOD"):
+            set_builtin_mod_enabled(context, "ani-gamer-search", True)
+        set_builtin_mod_enabled(context, "ani-gamer", True)
+        set_builtin_mod_enabled(context, "ani-gamer-search", True)
+        assert context.discovery.is_enabled("ani-gamer-search")
+        set_builtin_mod_enabled(context, "ani-gamer", False)
+        assert not context.discovery.is_enabled("ani-gamer-search")
     finally:
         context.lifecycle.shutdown()
 

@@ -67,8 +67,10 @@ def test_bilibili_ui_builds_segmented_ass_mkv_request(
         app.processEvents()
         assert panel.bilibili_workspace.enabled.isEnabled()
         panel.bilibili_workspace.enabled.setChecked(True)
+        panel.bilibili_workspace.danmaku_enabled.setChecked(True)
         app.processEvents()
         assert context.discovery.is_enabled("bilibili-search")
+        assert context.features.is_enabled("bilibili-danmaku")
         panel.urls.setPlainText(
             "https://www.bilibili.com/video/BVexample"
         )

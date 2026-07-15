@@ -89,6 +89,8 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     assert not context.discovery.is_enabled("bilibili-search")
     assert not context.discovery.is_enabled("ani-gamer-search")
     assert {status.provider_id for status in context.features.statuses()} == {
+        "ani-gamer",
+        "bilibili-danmaku",
         "media-convert",
         "speech-to-text",
         "automation",
@@ -129,6 +131,8 @@ def test_clean_bootstrap_starts_no_optional_provider_process(
         )
         assert providers
         assert all(not provider._processes for provider in providers)
+        assert not context.features.is_enabled("ani-gamer")
+        assert not context.features.is_enabled("bilibili-danmaku")
         assert not context.features.is_enabled("media-convert")
         assert not context.features.is_enabled("speech-to-text")
         assert not context.features.is_enabled("automation")

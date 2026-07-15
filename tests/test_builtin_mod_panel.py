@@ -45,16 +45,18 @@ def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
             ProviderStatus("youtube-auto-split", "Split", True),
         ),
         (
+            FeatureStatus("ani-gamer", "AniGamer", False),
+            FeatureStatus("bilibili-danmaku", "Bilibili Danmaku", False),
             FeatureStatus("media-convert", "Media Convert", False),
             FeatureStatus("speech-to-text", "Speech to Text", False),
             FeatureStatus("automation", "Automation", False),
         ),
     )
-    assert len(rows) == 16
+    assert len(rows) == 18
     assert all(row.available for row in rows)
     assert sum(row.enabled for row in rows) == 5
-    assert rows[8].provider_id == "youtube-player"
-    assert not rows[8].enabled
+    player = next(row for row in rows if row.provider_id == "youtube-player")
+    assert not player.enabled
 
 
 def test_builtin_mod_rows_keep_missing_expected_mod_visible() -> None:
@@ -63,10 +65,12 @@ def test_builtin_mod_rows_keep_missing_expected_mod_visible() -> None:
         "youtube",
         "generic-ytdlp",
         "bilibili",
+        "ani-gamer",
         "facebook",
         "mega",
         "youtube-search",
         "bilibili-search",
+        "bilibili-danmaku",
         "ani-gamer-search",
         "youtube-player",
         "youtube-history",
@@ -147,6 +151,8 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
         ),
         features=StatusSource(
             (
+                FeatureStatus("ani-gamer", "AniGamer", False),
+                FeatureStatus("bilibili-danmaku", "Bilibili Danmaku", False),
                 FeatureStatus("media-convert", "Media Convert", False),
                 FeatureStatus("speech-to-text", "Speech to Text", False),
                 FeatureStatus("automation", "Automation", False),
@@ -160,11 +166,7 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
         for label in panel.findChildren(QLabel)
         if label.objectName() == "dependencySummary"
     )
-    visible_planned = tuple(
-        planned
-        for planned in PLANNED_MODS
-        if planned.provider_id != "bilibili-danmaku"
-    )
+    visible_planned = tuple(PLANNED_MODS)
     assert table.rowCount() == 15 + len(visible_planned)
     assert table.accessibleName() == "內建與製作中 MOD 狀態"
     toggles = [
@@ -175,7 +177,7 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
     assert len(toggles) == 15
     assert {button.text() for button in toggles} == {"啟用", "停用"}
     assert summary.text() == (
-        "內建 MOD 16/16 已註冊 · 9 個已啟用 · "
+        "內建 MOD 18/18 已註冊 · 9 個已啟用 · "
         f"目前顯示 15 個父／子 MOD · 製作中 {len(PLANNED_MODS)} 項"
     )
     planned_start = table.rowCount() - len(visible_planned)

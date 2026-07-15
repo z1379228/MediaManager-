@@ -1,6 +1,7 @@
 # 網站父 MOD／子 MOD 與語言契約
 
-Development 9.1 起，完成度足以顯示在可信 UI 的網站功能必須遵守下列規則。
+Development 9.1 起，完成度足以顯示在可信 UI 的網站功能必須遵守下列規則；
+Development 11.0 將規則套用到下載、搜尋與宣告式功能三種內建登錄表。
 
 ## 資料與語言
 
@@ -19,12 +20,22 @@ Development 9.1 起，完成度足以顯示在可信 UI 的網站功能必須遵
 - 舊設定若出現「主 MOD 關閉、子 MOD 開啟」，Bootstrap 在建立 UI 前自動改為關閉子 MOD。
 - YouTube 的主 MOD 是 `youtube`，子 MOD 為搜尋、影片試看、歷史、失效替代、相似內容
   與自動切割；YouTube Music 是同一網站家族，不另建重複主 MOD。
-- Bilibili 的主 MOD 是 `bilibili`，`bilibili-search` 是子 MOD。彈幕目前是主下載 MOD
-  內可逐次關閉的整合能力；日後拆成獨立 `bilibili-danmaku` 前仍標示為製作中，不能
-  偽裝成已有獨立啟用狀態。
+- Bilibili 的主 MOD 是 `bilibili`，子 MOD 是 `bilibili-search` 與
+  `bilibili-danmaku`。停用彈幕子 MOD 時，下載仍可使用，但 XML、ASS 與 MKV
+  控制會隱藏並清除，避免把額外能力誤當成主下載必要條件。
+- 動畫瘋的主 MOD 是 `ani-gamer`，`ani-gamer-search` 是子 MOD。主工作區只開啟
+  經允許的官方目錄、分類、作品及播放頁；搜尋子 MOD 關閉時仍可使用官方分類入口。
 - Development 9.2 的 `facebook` 與 `mega` 是沒有子 MOD 的獨立主 MOD；兩者預設
   停用，啟用後才建立各自下載工作區。Facebook 不與 Instagram／Threads 共用下載
   provider；MEGA 也不經 `generic-ytdlp`。
+
+## 各網域能力邊界
+
+- YouTube／YouTube Music：影片、播放清單、格式、字幕、試聽／預覽及選用子功能。
+- Bilibili：影片、番劇、分 P 與字幕；彈幕下載及轉換由獨立子 MOD 管理。
+- Facebook：只處理使用者提供的公開影片頁，無音訊格式、字幕、分段或播放清單控制。
+- MEGA：只處理公開檔案傳輸與檔案種類辨識，不顯示影音格式、字幕、試聽或播放清單。
+- 動畫瘋：官方目錄、分類、搜尋與官方播放入口；不提供下載、廣告處理或串流擷取。
 
 ## 網域隔離
 

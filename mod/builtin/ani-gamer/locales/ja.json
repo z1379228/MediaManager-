@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "locale": "ja",
+  "group_name": "アニメ瘋",
+  "workspace": {
+    "title": "アニメ瘋 公式カタログ",
+    "subtitle": "注目、新着、分類、キーワードは公式ページのみを開きます。配信や広告は回避しません。",
+    "enable": "アニメ瘋 メイン MOD を有効化",
+    "url_label": "アニメ瘋 作品／エピソード URL",
+    "placeholder": "アニメ瘋の公式作品またはエピソード URL を貼り付けます",
+    "initial_preview": "公式作品カタログを検索するか、分類入口から公式サイトを閲覧できます。",
+    "wrong_site": "このワークスペースでは ani.gamer.com.tw の公式 URL のみ使用できます。"
+  },
+  "modules": {
+    "ani-gamer": {"name": "公式カタログ", "purpose": "注目、新着、全作品、分類への入口", "control_location": "アニメ瘋 公式カタログワークスペース"},
+    "ani-gamer-search": {"name": "検索", "purpose": "公式公開作品を表紙付きで検索", "control_location": "アニメ瘋 カタログ → キーワード検索"}
+  }
+}

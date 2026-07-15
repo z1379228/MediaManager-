@@ -28,14 +28,6 @@ class PlannedMod:
 # its security/integrity tests exist.
 PLANNED_MODS = (
     PlannedMod(
-        "bilibili-danmaku",
-        "Bilibili Danmaku",
-        "P1",
-        "Bilibili 附加 MOD（不擁有網址路由）",
-        "依賴 bilibili，按需保存 XML、轉 ASS 或嵌入 MKV；停用時影片下載仍可用",
-        "addon／depends_on 契約、從 bilibili provider 拆分及分段時間位移回歸",
-    ),
-    PlannedMod(
         "ani-gamer-offline",
         "動畫瘋單集離線",
         "P1",

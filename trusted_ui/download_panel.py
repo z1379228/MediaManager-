@@ -823,10 +823,15 @@ def create_download_panel(
                 "youtube-player",
             } and self.youtube_workspace:
                 self.youtube_workspace.refresh_availability()
-            if changed_provider_id in {"bilibili", "bilibili-search"} and (
+            if changed_provider_id in {
+                "bilibili",
+                "bilibili-search",
+                "bilibili-danmaku",
+            } and (
                 self.bilibili_workspace
             ):
                 self.bilibili_workspace.refresh_availability()
+                self.update_site_options()
             if changed_provider_id in {"youtube", "youtube-player"}:
                 if self.media_preview_controls is not None:
                     self.media_preview_controls.refresh()
@@ -1134,7 +1139,10 @@ def create_download_panel(
                 provider_enabled and info_ready and not self.info_busy
             )
             is_bilibili_batch = (
-                self.site_family == "bilibili" and bool(urls) and not wrong_site
+                self.site_family == "bilibili"
+                and bool(urls)
+                and not wrong_site
+                and self.bilibili_danmaku_enabled()
             )
             self.danmaku_xml.setVisible(is_bilibili_batch)
             if not is_bilibili_batch:
@@ -1147,6 +1155,13 @@ def create_download_panel(
             self.update_danmaku_options()
             if self.media_preview_controls is not None:
                 self.media_preview_controls.refresh()
+
+        @staticmethod
+        def bilibili_danmaku_enabled() -> bool:
+            try:
+                return context.features.is_enabled("bilibili-danmaku")
+            except (AttributeError, KeyError, RuntimeError):
+                return False
 
         def open_official_bridge_catalog(self) -> None:
             if not self.official_bridge_id:

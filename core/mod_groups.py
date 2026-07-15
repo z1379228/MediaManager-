@@ -21,7 +21,8 @@ SITE_MOD_CHILDREN = {
         "youtube-similar",
         "youtube-auto-split",
     ),
-    "bilibili": ("bilibili-search",),
+    "bilibili": ("bilibili-search", "bilibili-danmaku"),
+    "ani-gamer": ("ani-gamer-search",),
     "facebook": (),
     "mega": (),
 }

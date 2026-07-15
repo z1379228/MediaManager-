@@ -3,6 +3,8 @@
 from contracts.download_capability_v2 import DownloadCapabilityV2
 from contracts.media_options_v1 import FORMAT_PRESET_IDS_V1, SUBTITLE_MODES_V1
 
+_VIDEO_ONLY_PRESETS = ("best", "video-1080", "video-720", "video-480")
+
 
 def builtin_download_capability(provider_id: str) -> DownloadCapabilityV2:
     sites = {
@@ -18,14 +20,15 @@ def builtin_download_capability(provider_id: str) -> DownloadCapabilityV2:
     if provider_id not in sites:
         raise KeyError(provider_id)
     timed_comments = ("none", "source", "ass") if provider_id == "bilibili" else ("none",)
-    format_presets = (
-        ("best",)
-        if provider_id == "mega"
-        else tuple(sorted(FORMAT_PRESET_IDS_V1))
-    )
+    if provider_id == "mega":
+        format_presets = ("best",)
+    elif provider_id == "facebook":
+        format_presets = _VIDEO_ONLY_PRESETS
+    else:
+        format_presets = tuple(sorted(FORMAT_PRESET_IDS_V1))
     subtitle_modes = (
         ("none",)
-        if provider_id == "mega"
+        if provider_id in {"facebook", "mega"}
         else tuple(sorted(SUBTITLE_MODES_V1))
     )
     return DownloadCapabilityV2(
@@ -35,7 +38,7 @@ def builtin_download_capability(provider_id: str) -> DownloadCapabilityV2:
         subtitle_modes=subtitle_modes,
         timed_comments=timed_comments,
         supports_playlist=provider_id in {"youtube", "generic-ytdlp", "bilibili"},
-        supports_segments=provider_id != "mega",
+        supports_segments=provider_id not in {"facebook", "mega"},
         supports_resume=True,
         max_batch_size=50 if provider_id == "mega" else 500,
     )

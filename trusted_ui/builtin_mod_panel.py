@@ -212,12 +212,7 @@ def create_builtin_mod_panel(context: object, parent: object = None) -> object:
             if not row.parent_provider_id
             or parent_enabled.get(row.parent_provider_id, False)
         )
-        planned_rows = tuple(
-            planned
-            for planned in PLANNED_MODS
-            if planned.provider_id != "bilibili-danmaku"
-            or parent_enabled.get("bilibili", False)
-        )
+        planned_rows = tuple(PLANNED_MODS)
         available_count = sum(row.available for row in all_rows)
         enabled_count = sum(row.enabled for row in all_rows)
         ready = available_count == len(all_rows)

@@ -27,6 +27,7 @@ from trusted_ui.dependency_dialog import (
     startup_dependency_prompt_required,
 )
 from trusted_ui.download_panel import create_download_panel
+from trusted_ui.ani_gamer_workspace import create_ani_gamer_workspace
 from trusted_ui.mega_workspace import create_mega_workspace
 from trusted_ui.conversion_panel import create_conversion_panel
 from trusted_ui.transcription_panel import create_transcription_panel
@@ -356,6 +357,17 @@ def run_main_window(context: object) -> int:
             self.optional_workspace_manager = OptionalWorkspaceManager(
                 tabs,
                 (
+                    OptionalWorkspaceSpec(
+                        "ani-gamer",
+                        lambda: feature_enabled("ani-gamer"),
+                        lambda: any(
+                            status.provider_id == "ani-gamer"
+                            for status in context.features.statuses()
+                        ),
+                        lambda: create_ani_gamer_workspace(context, self),
+                        lambda panel: panel.title.text(),
+                        "動畫瘋官方近期熱播、新上架、分類與作品搜尋",
+                    ),
                     OptionalWorkspaceSpec(
                         "facebook",
                         lambda: context.download_providers.is_enabled("facebook"),

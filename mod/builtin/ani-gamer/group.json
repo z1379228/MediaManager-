@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "group_id": "ani-gamer",
+  "site_family": "ani-gamer",
+  "parent_provider_id": "ani-gamer",
+  "locales": ["en", "ja", "zh-CN", "zh-TW"],
+  "children": [
+    {"module_id": "search", "provider_id": "ani-gamer-search"}
+  ]
+}

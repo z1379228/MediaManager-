@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "locale": "zh-TW",
+  "group_name": "動畫瘋",
+  "workspace": {
+    "title": "動畫瘋官方目錄",
+    "subtitle": "近期熱播、新上架、分類與關鍵字都只開啟動畫瘋官方頁；不下載串流或繞過廣告。",
+    "enable": "啟用動畫瘋主 MOD",
+    "url_label": "動畫瘋作品／單集網址",
+    "placeholder": "貼上動畫瘋官方作品或單集網址",
+    "initial_preview": "可搜尋官方作品目錄，或使用分類入口瀏覽官網。",
+    "wrong_site": "此工作區只接受 ani.gamer.com.tw 官方網址。"
+  },
+  "modules": {
+    "ani-gamer": {"name": "官方目錄", "purpose": "近期熱播、新上架、所有動畫與分類入口", "control_location": "動畫瘋官方目錄工作區"},
+    "ani-gamer-search": {"name": "搜尋器", "purpose": "搜尋官方公開作品並顯示封面", "control_location": "動畫瘋官方目錄 → 關鍵字搜尋"}
+  }
+}

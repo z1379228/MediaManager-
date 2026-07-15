@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from core.features import FeatureModRegistry
+import json
+
+import pytest
+
+from core.features import DeclarativeFeatureGate, FeatureModRegistry
 
 
 class SampleFeature:
@@ -37,3 +41,48 @@ def test_feature_mod_state_persists_and_disable_returns_cancel_count(tmp_path) -
     assert not restored.is_enabled
     second.close()
     assert restored.closed
+
+
+def test_declarative_feature_gate_validates_parent_and_addon_manifests(
+    tmp_path,
+) -> None:
+    path = tmp_path / "feature.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "provider_id": "site-addon",
+                "display_name": "Site Addon",
+                "kind": "site-addon",
+                "parent_provider_id": "site",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    feature = DeclarativeFeatureGate.from_file(path)
+
+    assert feature.provider_id == "site-addon"
+    assert feature.parent_provider_id == "site"
+    assert not feature.is_enabled
+    assert feature.set_enabled(True) == 0
+    assert feature.is_enabled
+
+
+def test_declarative_feature_gate_rejects_addon_without_parent(tmp_path) -> None:
+    path = tmp_path / "feature.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "provider_id": "site-addon",
+                "display_name": "Site Addon",
+                "kind": "site-addon",
+                "parent_provider_id": "",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="identity"):
+        DeclarativeFeatureGate.from_file(path)

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeVar
 
-from core.builtin_mod_catalog import builtin_default_enabled
+from core.builtin_mod_catalog import builtin_default_enabled, builtin_mod_descriptor
 from core.bootstrap.lifecycle import Lifecycle
 from core.bootstrap.startup_state import StartupPhase, StartupState
 from core.downloads.builtin import (
@@ -23,7 +23,7 @@ from core.downloads.provider_registry import DownloadProviderRegistry
 from core.downloads.queue import DownloadQueue
 from core.downloads.subprocess_provider import SubprocessDownloadProvider
 from core.events.event_bus import EventBus
-from core.features import FeatureModRegistry
+from core.features import DeclarativeFeatureGate, FeatureModRegistry
 from core.conversion import ConversionService
 from core.transcription import SpeechModelManager, TranscriptionService
 from core.automation import AutomationCandidate, AutomationDuplicate, AutomationRule, AutomationService
@@ -412,6 +412,30 @@ class Bootstrap:
                 enabled=builtin_default_enabled("ani-gamer-search"),
             )
 
+        ani_gamer = load_builtin(
+            "ani-gamer",
+            lambda provider_root: DeclarativeFeatureGate.from_file(
+                provider_root / "feature.json"
+            ),
+        )
+        if ani_gamer is not None:
+            features.register(
+                ani_gamer,
+                enabled=builtin_default_enabled("ani-gamer"),
+            )
+
+        bilibili_danmaku = load_builtin(
+            "bilibili-danmaku",
+            lambda provider_root: DeclarativeFeatureGate.from_file(
+                provider_root / "feature.json"
+            ),
+        )
+        if bilibili_danmaku is not None:
+            features.register(
+                bilibili_danmaku,
+                enabled=builtin_default_enabled("bilibili-danmaku"),
+            )
+
         youtube_player = load_builtin(
             "youtube-player",
             lambda provider_root: SubprocessDownloadProvider(
@@ -492,23 +516,6 @@ class Bootstrap:
                 youtube_auto_split,
                 enabled=builtin_default_enabled("youtube-auto-split"),
             )
-
-        # Flat-MOD builds allowed saved child states to outlive a disabled
-        # site parent. Reconcile that legacy state before any UI is created.
-        discovery_statuses = {
-            status.provider_id: status for status in discovery.statuses()
-        }
-        for parent_id, child_ids in SITE_MOD_CHILDREN.items():
-            try:
-                parent_enabled = download_providers.is_enabled(parent_id)
-            except KeyError:
-                parent_enabled = False
-            if parent_enabled:
-                continue
-            for child_id in child_ids:
-                status = discovery_statuses.get(child_id)
-                if status is not None and status.enabled:
-                    discovery.set_enabled(child_id, False)
 
         conversion = load_builtin(
             "media-convert",
@@ -650,6 +657,33 @@ class Bootstrap:
             except Exception as error:
                 record_builtin_failure("automation", error)
                 automation = None
+
+        # Flat-MOD builds allowed saved child states to outlive a disabled
+        # site parent. Reconcile every registry after all site feature gates
+        # are registered and before any trusted UI is created.
+        def builtin_registry(provider_id: str) -> object:
+            kind = builtin_mod_descriptor(provider_id).kind
+            return {
+                "download": download_providers,
+                "discovery": discovery,
+                "feature": features,
+            }[kind]
+
+        for parent_id, child_ids in SITE_MOD_CHILDREN.items():
+            try:
+                parent_enabled = builtin_registry(parent_id).is_enabled(parent_id)
+            except (AttributeError, KeyError, RuntimeError):
+                parent_enabled = False
+            if parent_enabled:
+                continue
+            for child_id in child_ids:
+                child_registry = builtin_registry(child_id)
+                try:
+                    child_enabled = child_registry.is_enabled(child_id)
+                except (AttributeError, KeyError, RuntimeError):
+                    child_enabled = False
+                if child_enabled:
+                    child_registry.set_enabled(child_id, False)
         plugin_cleanup = PluginCleanupManager(paths.mod, plugin_registry)
         plugin_recovery = PluginTransactionRecovery(
             paths.mod, plugin_registry, plugin_manager

@@ -4,7 +4,7 @@
   "group_name": "Bilibili",
   "workspace": {
     "title": "Bilibili Download Workspace",
-    "subtitle": "Bilibili videos, parts, and danmaku options are handled only in this workspace.",
+    "subtitle": "Bilibili video, series, and part downloads stay here; the danmaku child MOD is controlled separately.",
     "enable": "Enable Bilibili main MOD",
     "url_label": "Bilibili video / series / part URLs",
     "placeholder": "Paste one Bilibili URL per line, for example:\nhttps://www.bilibili.com/video/BV...",
@@ -12,7 +12,8 @@
     "wrong_site": "This workspace accepts only Bilibili URLs. Switch to the matching site workspace."
   },
   "modules": {
-    "bilibili": {"name": "Batch Download and Danmaku", "purpose": "Videos, series, parts, danmaku XML/ASS, and optional MKV", "control_location": "Bilibili Download Workspace"},
-    "bilibili-search": {"name": "Search", "purpose": "Search public videos through the official Bilibili endpoint", "control_location": "Site Search → Bilibili"}
+    "bilibili": {"name": "Batch Download", "purpose": "Videos, series, parts, and UP creator batch downloads", "control_location": "Bilibili Download Workspace"},
+    "bilibili-search": {"name": "Search", "purpose": "Search public videos through the official Bilibili endpoint", "control_location": "Bilibili Workspace → Search"},
+    "bilibili-danmaku": {"name": "Danmaku", "purpose": "Optionally retain XML, convert to ASS, or mux into MKV", "control_location": "Bilibili Workspace → Danmaku Options"}
   }
 }

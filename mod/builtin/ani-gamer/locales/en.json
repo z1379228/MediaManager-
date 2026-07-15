@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "locale": "en",
+  "group_name": "AniGamer",
+  "workspace": {
+    "title": "AniGamer Official Catalog",
+    "subtitle": "Trending, new, category, and keyword actions open official AniGamer pages only; streams and ads are never bypassed.",
+    "enable": "Enable AniGamer main MOD",
+    "url_label": "AniGamer title / episode URL",
+    "placeholder": "Paste an official AniGamer title or episode URL",
+    "initial_preview": "Search the public title catalog or browse official category entry points.",
+    "wrong_site": "This workspace accepts only official ani.gamer.com.tw URLs."
+  },
+  "modules": {
+    "ani-gamer": {"name": "Official Catalog", "purpose": "Trending, new, all-title, and category entry points", "control_location": "AniGamer Official Catalog Workspace"},
+    "ani-gamer-search": {"name": "Search", "purpose": "Search public official titles with cover art", "control_location": "AniGamer Catalog → Keyword Search"}
+  }
+}

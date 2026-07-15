@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from core.localization import SUPPORTED_LOCALE_CODES
+from core.builtin_mod_catalog import builtin_mod_descriptor
 from core.mod_groups import (
     SITE_MOD_CHILDREN,
     BuiltinModGroupError,
@@ -43,11 +44,16 @@ def audit_mod_groups(root: Path) -> tuple[str, ...]:
             )
         assigned.update(actual)
         for provider_id in expected:
-            manifest_path = builtin_root / provider_id / "provider.json"
+            manifest_name = (
+                "feature.json"
+                if builtin_mod_descriptor(provider_id).kind == "feature"
+                else "provider.json"
+            )
+            manifest_path = builtin_root / provider_id / manifest_name
             try:
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             except (OSError, UnicodeError, ValueError) as error:
-                errors.append(f"{provider_id}: cannot read provider.json: {error}")
+                errors.append(f"{provider_id}: cannot read {manifest_name}: {error}")
                 continue
             if not isinstance(manifest, dict) or manifest.get("provider_id") != provider_id:
                 errors.append(f"{provider_id}: provider identity mismatch")

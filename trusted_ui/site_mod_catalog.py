@@ -305,13 +305,6 @@ OFFICIAL_BRIDGES = (
 
 SITE_MOD_CANDIDATES = (
     SiteModCandidate(
-        "ani-gamer",
-        "巴哈姆特動畫瘋",
-        "不可下載 · 官方播放",
-        "驗證官方動畫頁網址並交由系統瀏覽器播放",
-        "不擷取影片或彈幕、不接收 Cookie；不規避廣告、地區、IP 或串流限制",
-    ),
-    SiteModCandidate(
         "instagram",
         "Instagram",
         "不可下載 · 官方工具",

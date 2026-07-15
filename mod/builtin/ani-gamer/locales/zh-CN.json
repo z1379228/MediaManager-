@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "locale": "zh-CN",
+  "group_name": "动画疯",
+  "workspace": {
+    "title": "动画疯官方目录",
+    "subtitle": "近期热播、新上架、分类与关键词都只开启动画疯官方页面；不下载串流或绕过广告。",
+    "enable": "启用动画疯主 MOD",
+    "url_label": "动画疯作品／单集网址",
+    "placeholder": "粘贴动画疯官方作品或单集网址",
+    "initial_preview": "可搜索官方作品目录，或使用分类入口浏览官网。",
+    "wrong_site": "此工作区只接受 ani.gamer.com.tw 官方网址。"
+  },
+  "modules": {
+    "ani-gamer": {"name": "官方目录", "purpose": "近期热播、新上架、所有动画与分类入口", "control_location": "动画疯官方目录工作区"},
+    "ani-gamer-search": {"name": "搜索器", "purpose": "搜索官方公开作品并显示封面", "control_location": "动画疯官方目录 → 关键词搜索"}
+  }
+}

@@ -17,6 +17,7 @@ from trusted_ui.thumbnail_loader import create_thumbnail_loader
 
 
 BILIBILI_SEARCH_PROVIDER_ID = "bilibili-search"
+BILIBILI_DANMAKU_PROVIDER_ID = "bilibili-danmaku"
 MAX_DOWNLOAD_URLS = 500
 
 
@@ -165,6 +166,13 @@ def create_bilibili_workspace(
             self.enabled = QCheckBox("啟用 Bilibili 搜尋子 MOD")
             self.enabled.toggled.connect(self.toggle_search_mod)
             search_row.addWidget(self.enabled)
+            self.danmaku_enabled = QCheckBox("啟用 Bilibili 彈幕子 MOD")
+            self.danmaku_enabled.setAccessibleName("Bilibili 彈幕子 MOD 啟用狀態")
+            self.danmaku_enabled.setToolTip(
+                "停用後仍可下載影片，但不顯示 XML、ASS 或 MKV 彈幕選項"
+            )
+            self.danmaku_enabled.toggled.connect(self.toggle_danmaku_mod)
+            search_row.addWidget(self.danmaku_enabled)
             self.query = QLineEdit()
             self.query.setAccessibleName("Bilibili 搜尋文字或網址")
             self.query.setMaxLength(4096)
@@ -268,6 +276,11 @@ def create_bilibili_workspace(
             module = next(
                 item for item in group.modules if item.provider_id == "bilibili-search"
             )
+            danmaku_module = next(
+                item
+                for item in group.modules
+                if item.provider_id == BILIBILI_DANMAKU_PROVIDER_ID
+            )
             suffix = {
                 "zh-TW": "與 UP 主批量",
                 "zh-CN": "与 UP 主批量",
@@ -276,6 +289,16 @@ def create_bilibili_workspace(
             }[selected]
             self.title.setText(f"{group.display_name} {module.display_name} {suffix}")
             self.subtitle.setText(module.purpose)
+            child_prefix = {
+                "zh-TW": "啟用",
+                "zh-CN": "启用",
+                "en": "Enable",
+                "ja": "有効化",
+            }[selected]
+            self.enabled.setText(f"{child_prefix} {module.display_name}")
+            self.danmaku_enabled.setText(
+                f"{child_prefix} {danmaku_module.display_name}"
+            )
 
         def toggle_body(self, expanded: bool) -> None:
             self.body.setVisible(expanded)
@@ -298,10 +321,26 @@ def create_bilibili_workspace(
                 available = False
                 parent_enabled = False
                 enabled = False
+            try:
+                danmaku_available = BILIBILI_DANMAKU_PROVIDER_ID in {
+                    status.provider_id for status in context.features.statuses()
+                }
+                danmaku_enabled = (
+                    danmaku_available
+                    and parent_enabled
+                    and context.features.is_enabled(BILIBILI_DANMAKU_PROVIDER_ID)
+                )
+            except (AttributeError, KeyError, RuntimeError, ValueError):
+                danmaku_available = False
+                danmaku_enabled = False
             previous = self.enabled.blockSignals(True)
             self.enabled.setEnabled(available and parent_enabled and not self.busy)
             self.enabled.setChecked(enabled)
             self.enabled.blockSignals(previous)
+            previous_danmaku = self.danmaku_enabled.blockSignals(True)
+            self.danmaku_enabled.setEnabled(danmaku_available and parent_enabled)
+            self.danmaku_enabled.setChecked(danmaku_enabled)
+            self.danmaku_enabled.blockSignals(previous_danmaku)
             if not available:
                 self.enabled.setText("Bilibili 搜尋子 MOD 不可用")
                 self.status.setText("Bilibili 搜尋子 MOD 未通過註冊或完整性檢查。")
@@ -312,6 +351,12 @@ def create_bilibili_workspace(
                 self.enabled.setText("啟用 Bilibili 搜尋子 MOD")
                 if not enabled and not self.busy:
                     self.status.setText("Bilibili 搜尋子 MOD 已停用；可在此直接啟用。")
+            if not danmaku_available:
+                self.danmaku_enabled.setText("Bilibili 彈幕子 MOD 不可用")
+            elif not parent_enabled:
+                self.danmaku_enabled.setText("先啟用 Bilibili 主 MOD")
+            elif not danmaku_enabled:
+                self.danmaku_enabled.setText("啟用 Bilibili 彈幕子 MOD")
             self.update_action_state()
 
         def toggle_search_mod(self, enabled: bool) -> None:
@@ -321,6 +366,15 @@ def create_bilibili_workspace(
                 )
             except (AttributeError, KeyError, OSError, RuntimeError, ValueError) as error:
                 self.status.setText(f"無法變更 Bilibili 搜尋 MOD：{str(error)[:240]}")
+            self.refresh_availability()
+
+        def toggle_danmaku_mod(self, enabled: bool) -> None:
+            try:
+                set_builtin_mod_enabled(
+                    context, BILIBILI_DANMAKU_PROVIDER_ID, enabled
+                )
+            except (AttributeError, KeyError, OSError, RuntimeError, ValueError) as error:
+                self.status.setText(f"無法變更 Bilibili 彈幕 MOD：{str(error)[:240]}")
             self.refresh_availability()
 
         def search(self) -> None:
@@ -558,7 +612,7 @@ def create_bilibili_workspace(
             qualifier = f"（UP 主：{uploader}）" if uploader else ""
             self.status.setText(
                 f"已帶入 {len(urls)} 筆 Bilibili 網址{qualifier}；"
-                "請確認格式、字幕、分 P 與彈幕選項。"
+                "請確認格式、字幕與分 P；彈幕選項只在彈幕子 MOD 啟用時顯示。"
             )
 
         def update_action_state(self) -> None:

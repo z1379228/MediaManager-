@@ -1,6 +1,14 @@
 """Pinned integrity metadata for MODs shipped with this core release."""
 
 BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
+    "ani-gamer": {
+        "feature.json": "8007aeb21bcb58e3e22bee8fbd25174c2b35c84aaa89bb89fb8625a0d38b32bb",
+        "group.json": "0bce6af4cf5a4ba24585362513a7433df3b722d90d3051a6bad76fbe803ff532",
+        "locales/en.json": "d05b12ac5250084103905bd04b57c40eb92f57a3b53ab0fdece1cc44b1f67368",
+        "locales/ja.json": "1044869e7e6a6d8fcaf3b6ee3550f81e70fceccec6dbe0bb4cd5528ee611fe0e",
+        "locales/zh-CN.json": "6d3f10b38e227f137e692869379a413c81d6cdd53a3552ae0013dc213d715f62",
+        "locales/zh-TW.json": "f341ec347c0d0b7cbce5e7e20d2d5c52545fa7968ca3ba80bfc1b97fe15cbb7d",
+    },
     "ani-gamer-search": {
         "provider.py": "16c49ab64198828754a762e65b86a1e22eb6be4293feb74d5dc5ea6168278884",
         "provider.json": "ea87fe49c16e3a273afe28f7f17e85e69160fd6500b63a72897f1fecca72babe",
@@ -19,11 +27,11 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
     },
     "bilibili": {
         "danmaku_ass.py": "3f3d7c51af875bb8ba0d093215a182712db513f4676a2ae5c688afc8bf595041",
-        "group.json": "46873f8ee7a28c6c8ab2caf650eed9c3461d4d44135c1eb1616f7bcb1852a6ca",
-        "locales/en.json": "3e008f89f56ee584c4a2edb25e689f60c8e51930cfbedc2c2a18ccaa49fd9806",
-        "locales/ja.json": "79a4a5b1c4c3c7a01c56e0ca3815e2e5a2934e9463a3b32455746c1a824a2af5",
-        "locales/zh-CN.json": "7c61cf1f204b6300577c3bc8ce5aba37aceff6fc0417db555ea7818147966e4b",
-        "locales/zh-TW.json": "afdb7b54974f8bf02e5316c65b3927f23bdfd09fd6257dcbcaae343bda4a2707",
+        "group.json": "a12066bee823d5a789719d62ba237f787a98a4e6752f469d10f39565473820eb",
+        "locales/en.json": "991160c7930ec31a4ed6a2848b8a6cca43af1ed337c0f5b3eb9875121204feca",
+        "locales/ja.json": "80dff59055ce21ee2dc1fe3102a9b90ee0836bb146bcf0990a3830e85ae8370e",
+        "locales/zh-CN.json": "d95a930210405fa1b9948c746d21b3d27ce29d8ec794aa41960c61f4c8501342",
+        "locales/zh-TW.json": "83d12ba5a053ca20daa8e10340ddabd92ba86a1c88584ac8ab67e3668d388428",
         "provider.py": "07de549d08c11fca0d14acf7a419cb9d9d34e30b449478eb280b353b5b012dca",
         "provider.json": "ebf0c166ce2e43479ab1f8f824b192ac9d36c40d519213b2cf336a1102a0800b",
         "site-matrix.json": "409b77fe1ee921eab417064399ea57e7bc2555a63ea6f9fa9603459b5c3fb802",
@@ -31,6 +39,9 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
     "bilibili-search": {
         "provider.py": "f6af795067fca4306ec0030c7031b2e191eada3745851b7e41559b849da27115",
         "provider.json": "767a4be4d858c5843c44b52c20c1781ccb0f3e5e5b5ff9654a1565bff987ff34",
+    },
+    "bilibili-danmaku": {
+        "feature.json": "341085b84f205fb247fee7e1987aab0bb39116b31ceae62840995b8626d00198",
     },
     "generic-ytdlp": {
         "provider.py": "b7a87e87a88cd2fd35122d9f3a71381c9b77a1f1260cf62e6caaf6d0ef8b735b",
