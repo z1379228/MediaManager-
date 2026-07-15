@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -102,8 +103,30 @@ def main(argv: list[str] | None = None) -> int:
         close_frozen_cli_stdio()
 
 
+def _script_entry(argv: list[str] | None = None) -> None:
+    """Exit the frozen windowed CLI path without interpreter shutdown stalls."""
+
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    frozen_cli = bool(
+        getattr(sys, "frozen", False)
+        and _FROZEN_CLI_OUTPUT_FLAGS.intersection(raw_argv)
+    )
+    try:
+        exit_code = main(raw_argv)
+    except SystemExit as exc:
+        if not frozen_cli:
+            raise
+        exit_code = exc.code
+    if not isinstance(exit_code, int):
+        exit_code = 1 if exit_code else 0
+    if frozen_cli:
+        os._exit(exit_code)
+        return
+    raise SystemExit(exit_code)
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    _script_entry()
 
 
 
