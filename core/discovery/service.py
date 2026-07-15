@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 import secrets
 from typing import Protocol
+from urllib.parse import urlsplit
 
 from contracts.discovery_v1 import DiscoveryItemV1
 from contracts.history_v1 import HistoryEventV1, HistoryPreferencesV1
@@ -23,6 +24,38 @@ from core.downloads.provider_registry import (
     DownloadProviderRegistry,
     ProviderStatus,
 )
+
+
+_SIMILAR_SEARCH_BINDINGS = {"youtube-similar": "youtube-search"}
+_RECOVERY_SEARCH_BINDINGS = {"youtube-recovery": "youtube-search"}
+_YOUTUBE_RESULT_HOSTS = {
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "music.youtube.com",
+    "youtu.be",
+}
+
+
+def _require_bound_original_source(
+    original: DiscoveryItemV1,
+    search_provider_id: str,
+) -> None:
+    if search_provider_id != "youtube-search":
+        raise RuntimeError("bound search source has no result-host policy")
+    try:
+        parsed = urlsplit(original.url)
+        port = parsed.port
+    except ValueError as error:
+        raise ValueError("original result source is invalid") from error
+    if (
+        parsed.scheme != "https"
+        or (parsed.hostname or "").casefold() not in _YOUTUBE_RESULT_HOSTS
+        or parsed.username is not None
+        or parsed.password is not None
+        or port is not None
+    ):
+        raise ValueError("original result does not match the bound search source")
 
 
 class SearchProvider(Protocol):
@@ -193,7 +226,7 @@ class DiscoveryService:
             if isinstance(declared, SearchCapabilityV2)
             else SearchCapabilityV2(
                 provider.provider_id,
-                ("youtube",),
+                (provider.provider_id,),
                 ("all", "music", "video"),
                 50,
                 "none",
@@ -270,11 +303,24 @@ class DiscoveryService:
         content_type: str = "all",
         cursor: str = "",
     ) -> FederatedSearchResult:
-        selected = provider_ids or tuple(
-            capability.provider_id
-            for capability in self.search_capabilities()
-            if self._registry.is_enabled(capability.provider_id)
+        selected = (
+            tuple(
+                capability.provider_id
+                for capability in self.search_capabilities()
+                if self._registry.is_enabled(capability.provider_id)
+            )
+            if provider_ids is None
+            else tuple(provider_ids)
         )
+        if len(set(selected)) != len(selected):
+            raise ValueError("duplicate search MOD selection")
+        disabled = tuple(
+            provider_id
+            for provider_id in selected
+            if not self._registry.is_enabled(provider_id)
+        )
+        if disabled:
+            raise RuntimeError(f"search MOD is disabled: {disabled[0]}")
         if cursor and len(selected) != 1:
             raise ValueError("pagination requires one selected search MOD")
         provider_cursor = ""
@@ -534,6 +580,10 @@ class DiscoveryService:
         provider = self._similar_providers.get(provider_id)
         if provider is None:
             raise RuntimeError("similar MOD is unavailable")
+        search_provider_id = _SIMILAR_SEARCH_BINDINGS.get(provider_id)
+        if search_provider_id is None:
+            raise RuntimeError("similar MOD has no bound search source")
+        _require_bound_original_source(original, search_provider_id)
         preferences = HistoryPreferencesV1(0, 0, {}, {}, {}, {})
         if self._registry.is_enabled("youtube-history"):
             try:
@@ -544,7 +594,11 @@ class DiscoveryService:
         bounded_limit = max(1, min(int(limit), 50))
         unique: dict[str, DiscoveryItemV1] = {}
         for query in plan.queries:
-            for item in self.search(query, limit=bounded_limit):
+            for item in self.search(
+                query,
+                provider_id=search_provider_id,
+                limit=bounded_limit,
+            ):
                 if item.video_id != original.video_id:
                     unique.setdefault(item.video_id, item)
         return provider.select_similar(
@@ -563,6 +617,10 @@ class DiscoveryService:
         provider = self._similar_providers.get(provider_id)
         if provider is None:
             raise RuntimeError("similar MOD is unavailable")
+        search_provider_id = _SIMILAR_SEARCH_BINDINGS.get(provider_id)
+        if search_provider_id is None:
+            raise RuntimeError("similar MOD has no bound search source")
+        _require_bound_original_source(original, search_provider_id)
         preferences = HistoryPreferencesV1(0, 0, {}, {}, {}, {})
         if self._registry.is_enabled("youtube-history"):
             try:
@@ -573,7 +631,11 @@ class DiscoveryService:
         bounded_limit = max(1, min(int(limit), 50))
         unique: dict[str, DiscoveryItemV1] = {}
         for query in plan.queries:
-            for item in self.search(query, limit=bounded_limit):
+            for item in self.search(
+                query,
+                provider_id=search_provider_id,
+                limit=bounded_limit,
+            ):
                 if item.video_id != original.video_id:
                     unique.setdefault(item.video_id, item)
         return provider.rank_similar(
@@ -601,10 +663,18 @@ class DiscoveryService:
         provider = self._recovery_providers.get(provider_id)
         if provider is None:
             raise RuntimeError("recovery MOD is unavailable")
+        search_provider_id = _RECOVERY_SEARCH_BINDINGS.get(provider_id)
+        if search_provider_id is None:
+            raise RuntimeError("recovery MOD has no bound search source")
+        _require_bound_original_source(original, search_provider_id)
         bounded_limit = max(1, min(int(limit), 50))
         plan = provider.recovery_plan(original)
         for query in (plan.primary_query, *plan.fallback_queries):
-            results = self.search(query, limit=bounded_limit)
+            results = self.search(
+                query,
+                provider_id=search_provider_id,
+                limit=bounded_limit,
+            )
             ranked = provider.rank_recovery(original, results)
             if ranked:
                 return ranked[:bounded_limit]

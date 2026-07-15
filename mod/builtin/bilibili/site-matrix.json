@@ -20,6 +20,10 @@
       "support_status": "offline-contract"
     },
     {
+      "feature_id": "segment-download",
+      "support_status": "offline-contract"
+    },
+    {
       "feature_id": "danmaku-xml-ass-mkv",
       "support_status": "verified-local-ffmpeg"
     }

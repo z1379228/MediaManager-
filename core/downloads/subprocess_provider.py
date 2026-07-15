@@ -63,6 +63,7 @@ class SubprocessDownloadProvider:
         history_state_path: Path | None = None,
         analysis_root: Path | None = None,
         preview_root: Path | None = None,
+        runtime_home: Path | None = None,
     ) -> None:
         self.root = root.resolve()
         self.application_root = application_root.resolve()
@@ -76,6 +77,7 @@ class SubprocessDownloadProvider:
         )
         self.analysis_root = analysis_root.resolve() if analysis_root else None
         self.preview_root = preview_root.resolve() if preview_root else None
+        self.runtime_home = runtime_home.resolve() if runtime_home else None
         self._processes: set[subprocess.Popen[str]] = set()
         self._lock = threading.RLock()
         (
@@ -178,6 +180,8 @@ class SubprocessDownloadProvider:
                 "process.javascript",
             },
             "youtube-search": {"network.youtube", "process.javascript"},
+            "bilibili-search": {"network.bilibili"},
+            "ani-gamer-search": {"network.ani-gamer"},
             "youtube-player": {
                 "network.youtube",
                 "storage.temp.write",
@@ -254,10 +258,21 @@ class SubprocessDownloadProvider:
                 raise ProviderProtocolError(f"provider integrity mismatch: {relative}")
 
     @staticmethod
-    def _minimal_environment() -> dict[str, str]:
+    def _minimal_environment(runtime_home: Path | None = None) -> dict[str, str]:
         allowed = ("PATH", "SYSTEMROOT", "TEMP", "TMP")
         environment = {key: os.environ[key] for key in allowed if key in os.environ}
         environment["PYTHONNOUSERSITE"] = "1"
+        if runtime_home is not None:
+            runtime_home.mkdir(parents=True, exist_ok=True)
+            cache_home = runtime_home / "cache"
+            cache_home.mkdir(parents=True, exist_ok=True)
+            environment.update(
+                {
+                    "HOME": str(runtime_home),
+                    "USERPROFILE": str(runtime_home),
+                    "XDG_CACHE_HOME": str(cache_home),
+                }
+            )
         return environment
 
     def supports(self, url: str) -> bool:
@@ -270,6 +285,7 @@ class SubprocessDownloadProvider:
             parsed.scheme.casefold() in {"http", "https"}
             and parsed.username is None
             and parsed.password is None
+            and parsed.port is None
             and (parsed.hostname or "").casefold() in self.hosts
         )
 
@@ -285,6 +301,19 @@ class SubprocessDownloadProvider:
             "generic-ytdlp": "network.generic",
             "bilibili": "network.bilibili",
         }.get(self.provider_id, "network.youtube")
+        self._require_permissions(permission)
+
+    def _require_search_network(self) -> None:
+        permission = {
+            "youtube-search": "network.youtube",
+            "bilibili-search": "network.bilibili",
+            "ani-gamer-search": "network.ani-gamer",
+            "test": "network.youtube",
+        }.get(self.provider_id)
+        if permission is None:
+            raise ProviderProtocolError(
+                "search provider has no explicit network permission mapping"
+            )
         self._require_permissions(permission)
 
     def analyze(self, url: str) -> dict[str, Any]:
@@ -340,7 +369,7 @@ class SubprocessDownloadProvider:
     ) -> tuple[DiscoveryItemV1, ...]:
         capability = self.search_capability or SearchCapabilityV2(
             self.provider_id,
-            ("youtube",),
+            (self.provider_id,),
             ("all", "music", "video"),
             20,
             "none",
@@ -351,10 +380,10 @@ class SubprocessDownloadProvider:
         return self.search_page(normalized).items
 
     def search_page(self, query: SearchQueryV2) -> SearchPageV2:
-        self._require_permissions("network.youtube")
+        self._require_search_network()
         capability = self.search_capability or SearchCapabilityV2(
             self.provider_id,
-            ("youtube",),
+            (self.provider_id,),
             ("all", "music", "video"),
             20,
             "none",
@@ -835,7 +864,13 @@ class SubprocessDownloadProvider:
 
     def _command(self) -> list[str]:
         if getattr(sys, "frozen", False):
-            return [sys.executable, "--provider-host", str(self.entry_point)]
+            return [
+                sys.executable,
+                "--provider-host",
+                str(self.entry_point),
+                "--provider-root",
+                str(self.root.parent),
+            ]
         return [sys.executable, "-I", str(self.entry_point)]
 
     def _execute(
@@ -867,7 +902,7 @@ class SubprocessDownloadProvider:
                 errors="replace",
                 shell=False,
                 cwd=self.root,
-                env=self._minimal_environment(),
+                env=self._minimal_environment(self.runtime_home),
                 creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
             )
             job.assign(int(getattr(process, "_handle", 0)))

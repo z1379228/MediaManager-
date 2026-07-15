@@ -1,0 +1,336 @@
+from __future__ import annotations
+
+import threading
+import time
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+import pytest
+
+from contracts.discovery_v1 import DiscoveryItemV1
+from core.discovery.adapters import FederatedSearchResult
+from core.downloads.provider_registry import ProviderStatus
+from trusted_ui.download_panel import create_download_panel
+from trusted_ui.youtube_workspace import (
+    create_youtube_workspace,
+    is_official_youtube_url,
+    is_youtube_playlist_url,
+    merge_download_urls,
+    youtube_host_label,
+)
+
+
+def _item(
+    video_id: str,
+    url: str,
+    title: str,
+    *,
+    duration: int | None = 120,
+) -> DiscoveryItemV1:
+    return DiscoveryItemV1(
+        video_id,
+        url,
+        title,
+        "頻道",
+        duration,
+        "",
+        "video",
+        "",
+    )
+
+
+def _wait_until(app: object, predicate: object, timeout: float = 2.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        app.processEvents()
+        if predicate():
+            return
+        time.sleep(0.005)
+    raise AssertionError("timed out waiting for YouTube workspace")
+
+
+def test_youtube_workspace_accepts_only_exact_official_https_hosts() -> None:
+    accepted = {
+        "https://youtube.com/watch?v=one": "YouTube",
+        "https://www.youtube.com/watch?v=two": "YouTube",
+        "https://m.youtube.com/watch?v=three": "YouTube 行動版",
+        "https://music.youtube.com/watch?v=four": "YouTube Music",
+        "https://youtu.be/five": "youtu.be",
+    }
+    for url, label in accepted.items():
+        assert is_official_youtube_url(url)
+        assert youtube_host_label(url) == label
+
+    for url in (
+        "http://www.youtube.com/watch?v=one",
+        "https://www.youtube.com.evil.test/watch?v=one",
+        "https://user@music.youtube.com/watch?v=one",
+        "https://youtu.be:443/one",
+        "https://youtube.com",
+        "https://www.youtube.com/watch?v=one\nhttps://evil.test",
+    ):
+        assert not is_official_youtube_url(url)
+
+
+def test_merge_download_urls_preserves_order_and_removes_duplicates() -> None:
+    assert merge_download_urls(
+        "https://example.test/one\nhttps://www.youtube.com/watch?v=two\n",
+        (
+            "https://www.youtube.com/watch?v=two",
+            "https://music.youtube.com/watch?v=three",
+        ),
+    ) == (
+        "https://example.test/one",
+        "https://www.youtube.com/watch?v=two",
+        "https://music.youtube.com/watch?v=three",
+    )
+    assert merge_download_urls("one\ntwo", ("three",), limit=2) == (
+        "one",
+        "two",
+    )
+
+
+def test_youtube_playlist_route_requires_exact_host_and_valid_list_id() -> None:
+    assert is_youtube_playlist_url(
+        "https://music.youtube.com/playlist?list=PL2yqXecZHhEYKaKiTSsfUhEeqeAm89wcp"
+    )
+    assert is_youtube_playlist_url(
+        "https://www.youtube.com/watch?v=one&list=PL_example-123"
+    )
+    for url in (
+        "https://music.youtube.com/playlist",
+        "https://music.youtube.com/playlist?list=",
+        "https://music.youtube.com/playlist?list=bad%20value",
+        "https://music.youtube.com.evil.test/playlist?list=PL_example",
+        "https://user@music.youtube.com/playlist?list=PL_example",
+        "https://music.youtube.com:443/playlist?list=PL_example",
+        "https://www.youtube.com/watch?v=one",
+    ):
+        assert not is_youtube_playlist_url(url)
+
+
+def test_download_workspace_routes_pure_youtube_playlist_before_analysis(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    class ImmediateThread:
+        def __init__(self, *, target: object, **_options: object) -> None:
+            self.target = target
+
+        def start(self) -> None:
+            self.target()
+
+    app = QApplication.instance() or QApplication([])
+    download_providers = Mock()
+    download_providers.statuses.return_value = (
+        ProviderStatus("youtube", "YouTube", True),
+    )
+    download_providers.is_enabled.side_effect = lambda provider_id: (
+        provider_id == "youtube"
+    )
+    download_providers.provider_for.return_value = SimpleNamespace(
+        provider_id="youtube"
+    )
+    download_providers.analyze.return_value = {
+        "title": "單片",
+        "uploader": "頻道",
+        "duration": 10,
+        "formats": [],
+        "audio_languages": [],
+        "subtitle_languages": [],
+    }
+    download_queue = Mock()
+    download_queue.snapshots.return_value = ()
+    discovery = Mock()
+    discovery.statuses.return_value = (
+        ProviderStatus("youtube-search", "YouTube Search", True),
+    )
+    discovery.is_enabled.side_effect = lambda provider_id: (
+        provider_id == "youtube-search"
+    )
+    context = SimpleNamespace(
+        download_providers=download_providers,
+        download_queue=download_queue,
+        discovery=discovery,
+        settings=SimpleNamespace(download_workers=1),
+        paths=SimpleNamespace(
+            downloads=Path("Downloads"),
+            settings=Path("settings"),
+        ),
+        events=None,
+        audit=None,
+    )
+    panel = create_download_panel(context)
+    try:
+        panel.timer.stop()
+        assert panel.workspace_title.text() == "YouTube 下載工作區"
+        prepare_playlist = Mock()
+        panel.prepare_playlist = prepare_playlist
+        panel.urls.setPlainText(
+            "https://music.youtube.com/playlist?"
+            "list=PL2yqXecZHhEYKaKiTSsfUhEeqeAm89wcp"
+        )
+        panel.analyze_first()
+
+        prepare_playlist.assert_called_once_with()
+        download_providers.analyze.assert_not_called()
+        assert "播放清單" in panel.preview.text()
+
+        monkeypatch.setattr(
+            "trusted_ui.download_panel.threading.Thread", ImmediateThread
+        )
+        panel.urls.setPlainText("https://music.youtube.com/watch?v=single")
+        panel.analyze_first()
+
+        prepare_playlist.assert_called_once_with()
+        download_providers.analyze.assert_called_once_with(
+            "https://music.youtube.com/watch?v=single"
+        )
+    finally:
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+
+
+def test_youtube_workspace_uses_one_source_and_only_prefills_selected_urls(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtCore import QItemSelectionModel
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    calls: list[dict[str, object]] = []
+    added: list[tuple[str, ...]] = []
+    items = (
+        _item(
+            "one",
+            "https://www.youtube.com/watch?v=one",
+            "第一首",
+        ),
+        _item(
+            "two",
+            "https://music.youtube.com/watch?v=two",
+            "第二首",
+            duration=3661,
+        ),
+    )
+
+    def federated_search(query: str, **options: object) -> FederatedSearchResult:
+        calls.append({"query": query, **options})
+        return FederatedSearchResult(
+            items,
+            (),
+            ("youtube-search", "youtube-search"),
+        )
+
+    discovery = SimpleNamespace(
+        statuses=lambda: (
+            ProviderStatus("youtube-search", "YouTube Search", True),
+        ),
+        is_enabled=lambda provider_id: provider_id == "youtube-search",
+        federated_search=federated_search,
+    )
+    context = SimpleNamespace(discovery=discovery, events=None, audit=None)
+    workspace = create_youtube_workspace(context, added.append)
+    try:
+        assert workspace.body.isHidden()
+        assert workspace.table.selectionMode().name == "ExtendedSelection"
+        workspace.toggle_button.setChecked(True)
+        workspace.query.setText("幻月環")
+        workspace.search()
+        _wait_until(app, lambda: not workspace.busy)
+
+        assert calls == [
+            {
+                "query": "幻月環",
+                "provider_ids": ("youtube-search",),
+                "limit": 24,
+                "content_type": "all",
+            }
+        ]
+        assert workspace.table.rowCount() == 2
+        assert workspace.table.item(0, 4).text() == "YouTube"
+        assert workspace.table.item(1, 3).text() == "1:01:01"
+        assert workspace.table.item(1, 4).text() == "YouTube Music"
+
+        workspace.table.selectRow(0)
+        workspace.table.selectionModel().select(
+            workspace.table.model().index(1, 0),
+            QItemSelectionModel.SelectionFlag.Select
+            | QItemSelectionModel.SelectionFlag.Rows,
+        )
+        workspace.add_selected()
+
+        assert added == [tuple(item.url for item in items)]
+        assert "確認格式" in workspace.status.text()
+
+        workspace.query.setText("https://youtu.be/direct")
+        workspace.search()
+        assert added[-1] == ("https://youtu.be/direct",)
+        assert len(calls) == 1
+    finally:
+        workspace.shutdown()
+        workspace.close()
+        workspace.deleteLater()
+        app.processEvents()
+
+
+def test_youtube_workspace_cancel_discards_late_results(monkeypatch) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    started = threading.Event()
+    release = threading.Event()
+
+    def federated_search(*_args: object, **_kwargs: object) -> FederatedSearchResult:
+        started.set()
+        release.wait(1.0)
+        return FederatedSearchResult(
+            (
+                _item(
+                    "late",
+                    "https://www.youtube.com/watch?v=late",
+                    "不應顯示",
+                ),
+            ),
+            (),
+            ("youtube-search",),
+        )
+
+    discovery = SimpleNamespace(
+        statuses=lambda: (
+            ProviderStatus("youtube-search", "YouTube Search", True),
+        ),
+        is_enabled=lambda provider_id: provider_id == "youtube-search",
+        federated_search=federated_search,
+    )
+    context = SimpleNamespace(discovery=discovery, events=None, audit=None)
+    workspace = create_youtube_workspace(context, lambda _urls: None)
+    try:
+        workspace.query.setText("取消測試")
+        workspace.search()
+        assert started.wait(1.0)
+        workspace.cancel_search()
+        assert "取消" in workspace.status.text()
+        release.set()
+        _wait_until(app, lambda: not workspace.busy)
+        assert workspace.table.rowCount() == 0
+        assert workspace.results == ()
+        assert workspace.status.text() == "YouTube 搜尋已取消。"
+    finally:
+        release.set()
+        workspace.shutdown()
+        workspace.close()
+        workspace.deleteLater()
+        app.processEvents()

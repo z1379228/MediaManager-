@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import threading
 from pathlib import Path
 
@@ -334,6 +335,35 @@ def test_minimal_environment_does_not_forward_secrets(monkeypatch) -> None:
     environment = SubprocessDownloadProvider._minimal_environment()
     assert "MEDIA_MANAGER_TEST_SECRET" not in environment
     assert environment["PYTHONNOUSERSITE"] == "1"
+
+
+def test_minimal_environment_isolates_provider_home_and_cache(tmp_path: Path) -> None:
+    runtime_home = tmp_path / "provider-runtime" / "generic-ytdlp"
+
+    environment = SubprocessDownloadProvider._minimal_environment(runtime_home)
+
+    assert environment["HOME"] == str(runtime_home.resolve())
+    assert environment["USERPROFILE"] == str(runtime_home.resolve())
+    assert environment["XDG_CACHE_HOME"] == str((runtime_home / "cache").resolve())
+    assert runtime_home.is_dir()
+    assert (runtime_home / "cache").is_dir()
+
+
+def test_frozen_provider_command_passes_verified_builtin_root(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root = make_provider(tmp_path, "print('unused')")
+    provider = SubprocessDownloadProvider(root, application_root=tmp_path)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "MediaManager.exe"))
+
+    assert provider._command() == [
+        str(tmp_path / "MediaManager.exe"),
+        "--provider-host",
+        str((root / "provider.py").resolve()),
+        "--provider-root",
+        str(root.parent.resolve()),
+    ]
 
 
 def test_youtube_provider_receives_validated_javascript_runtime(

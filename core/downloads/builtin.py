@@ -41,27 +41,51 @@ def _verify_provider_root(root: Path) -> None:
         verify_builtin_provider(root / provider_id, provider_id)
 
 
+def ensure_builtin_provider(
+    preferred_root: Path,
+    provider_id: str,
+    cache_root: Path | None = None,
+) -> Path:
+    """Provision one bundled MOD without coupling it to sibling MODs."""
+
+    if provider_id not in BUILTIN_PROVIDER_HASHES:
+        raise BuiltinProviderIntegrityError(
+            f"unknown built-in provider: {provider_id}"
+        )
+    preferred_root = preferred_root.resolve()
+    provider_root = preferred_root / provider_id
+    if provider_root.exists():
+        verify_builtin_provider(provider_root, provider_id)
+        return provider_root
+
+    bundle_root = Path(
+        getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2])
+    )
+    source_root = (bundle_root / "mod" / "builtin").resolve()
+    if not source_root.is_dir():
+        raise BuiltinProviderIntegrityError("bundled provider directory is missing")
+    source = source_root / provider_id
+    verify_builtin_provider(source, provider_id)
+
+    destination_root = (cache_root or preferred_root).resolve()
+    destination_root.mkdir(parents=True, exist_ok=True)
+    destination = destination_root / provider_id
+    if not destination.exists():
+        shutil.copytree(source, destination)
+    verify_builtin_provider(destination, provider_id)
+    return destination
+
+
 def ensure_builtin_providers(
     preferred_root: Path,
     cache_root: Path | None = None,
 ) -> Path:
     preferred_root = preferred_root.resolve()
     if preferred_root.is_dir():
-        _verify_provider_root(preferred_root)
+        for provider_id in sorted(BUILTIN_PROVIDER_HASHES):
+            ensure_builtin_provider(preferred_root, provider_id, cache_root)
         return preferred_root
-
-    bundle_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
-    source_root = (bundle_root / "mod" / "builtin").resolve()
-    if not source_root.is_dir():
-        raise BuiltinProviderIntegrityError("bundled provider directory is missing")
-    _verify_provider_root(source_root)
-
     destination_root = (cache_root or preferred_root).resolve()
-    destination_root.mkdir(parents=True, exist_ok=True)
     for provider_id in sorted(BUILTIN_PROVIDER_HASHES):
-        source = source_root / provider_id
-        destination = destination_root / provider_id
-        if not destination.exists():
-            shutil.copytree(source, destination)
-        verify_builtin_provider(destination, provider_id)
+        ensure_builtin_provider(preferred_root, provider_id, destination_root)
     return destination_root

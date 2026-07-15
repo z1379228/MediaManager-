@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from core.dependency_health import check_dependencies
+from core.localization import CORE_LOCALES
 from core.downloads.notifications import (
     DownloadCompletionTracker,
     completion_message,
 )
-from core.settings import SettingsService
+from core.settings import SettingsService, normalized_language
+from core.site_routing import classify_site_url
 from core.version import display_version
 from trusted_ui.app_icon import app_icon_path
 from trusted_ui.background import (
@@ -58,6 +61,89 @@ def configure_workspace_tabs(tabs: object) -> None:
     # pane border is removed by QSS. Against the dark background that base
     # becomes a bright horizontal artifact beside the selected workspace tab.
     tabs.tabBar().setDrawBase(False)
+
+
+CORE_LANGUAGE_LABELS = tuple(
+    (locale.display_name, locale.code) for locale in CORE_LOCALES
+)
+
+
+def populate_core_language_menu(
+    menu: object, action_group: object, selected_language: object
+) -> tuple[object, ...]:
+    """Add the four locales owned by the trusted core to a menu."""
+
+    selected = normalized_language(selected_language)
+    menu.addSection("核心介面語言")
+    actions = []
+    for label, locale in CORE_LANGUAGE_LABELS:
+        action = menu.addAction(label)
+        action_group.addAction(action)
+        action.setCheckable(True)
+        action.setData(locale)
+        action.setChecked(locale == selected)
+        action.setToolTip("由可信核心保存並傳給 MOD；尚未翻譯的文字保留繁體中文")
+        actions.append(action)
+    return tuple(actions)
+
+
+def apply_download_prefill(
+    download_panel: object, tabs: object, payload: object
+) -> bool:
+    """Move a bounded trusted search result into the full download setup UI."""
+
+    if not isinstance(payload, dict):
+        return False
+    raw_url = payload.get("url")
+    if not isinstance(raw_url, str) or len(raw_url) > 4096:
+        return False
+    url = raw_url.strip()
+    if not url or "\r" in url or "\n" in url:
+        return False
+    try:
+        parsed = urlsplit(url)
+        parsed.port
+    except ValueError:
+        return False
+    if (
+        parsed.scheme.casefold() not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        return False
+    route = classify_site_url(url)
+    panel_family = getattr(download_panel, "site_family", None)
+    if route is None or (
+        isinstance(panel_family, str)
+        and panel_family
+        and route.site_family != panel_family
+    ):
+        return False
+
+    urls = getattr(download_panel, "urls", None)
+    preview = getattr(download_panel, "preview", None)
+    update_site_options = getattr(download_panel, "update_site_options", None)
+    if urls is None or preview is None or not callable(update_site_options):
+        return False
+
+    title = payload.get("title")
+    provider_id = payload.get("provider_id")
+    source = (
+        title.strip()[:120]
+        if isinstance(title, str) and title.strip()
+        else provider_id.strip()[:80]
+        if isinstance(provider_id, str) and provider_id.strip()
+        else "搜尋結果"
+    )
+    urls.setPlainText(url)
+    update_site_options()
+    preview.setText(
+        f"已從「{source}」帶入；請確認格式、分段、字幕與網站專屬選項後再加入佇列。"
+    )
+    tabs.setCurrentWidget(download_panel)
+    urls.setFocus()
+    return True
 
 
 def run_main_window(context: object) -> int:
@@ -159,12 +245,20 @@ def run_main_window(context: object) -> int:
 
             appearance = QPushButton("外觀")
             appearance.setObjectName("ghost")
-            appearance.setToolTip("選擇或恢復背景圖片")
+            appearance.setToolTip("設定背景、大小、核心介面語言與通知")
             appearance_menu = QMenu(appearance)
             choose_background = QAction("選擇背景圖片…", appearance_menu)
             reset_background = QAction("恢復預設背景", appearance_menu)
             appearance_menu.addAction(choose_background)
             appearance_menu.addAction(reset_background)
+            appearance_menu.addSeparator()
+            self.language_group = QActionGroup(appearance_menu)
+            self.language_group.setExclusive(True)
+            populate_core_language_menu(
+                appearance_menu,
+                self.language_group,
+                context.settings.language,
+            )
             appearance_menu.addSeparator()
             appearance_menu.addSection("介面大小")
             self.ui_scale_group = QActionGroup(appearance_menu)
@@ -209,15 +303,46 @@ def run_main_window(context: object) -> int:
 
             tabs = QTabWidget()
             configure_workspace_tabs(tabs)
-            self.download_panel = create_download_panel(context, self)
+            self.download_panel = create_download_panel(
+                context, self, site_family="youtube"
+            )
+            self.bilibili_download_panel = create_download_panel(
+                context, self, site_family="bilibili"
+            )
             self.search_panel = create_search_panel(context, self)
-            tabs.addTab(self.download_panel, "下載工作區")
-            tabs.addTab(self.search_panel, "YouTube 搜尋")
+            tabs.addTab(self.download_panel, self.download_panel.workspace_title.text())
+            tabs.addTab(
+                self.bilibili_download_panel,
+                self.bilibili_download_panel.workspace_title.text(),
+            )
+            tabs.addTab(self.search_panel, "網站搜尋")
             self.library_panel = create_library_panel(context, self)
             tabs.addTab(self.library_panel, "本機媒體庫")
-            tabs.setTabToolTip(0, "批量下載、分段下載與下載佇列")
-            tabs.setTabToolTip(1, "搜尋、替代候選與相似內容")
-            tabs.setTabToolTip(2, "掃描、篩選與開啟本機媒體")
+            tabs.setTabToolTip(0, "YouTube 搜尋、播放清單、批量與分段下載")
+            tabs.setTabToolTip(1, "Bilibili 影片、番劇、分段與彈幕下載")
+            tabs.setTabToolTip(2, "單一網站搜尋、替代候選與相似內容")
+            tabs.setTabToolTip(3, "掃描、篩選與開啟本機媒體")
+
+            def handle_download_prefill(payload: object) -> None:
+                url = payload.get("url") if isinstance(payload, dict) else None
+                route = classify_site_url(url)
+                panels = {
+                    "youtube": self.download_panel,
+                    "bilibili": self.bilibili_download_panel,
+                }
+                target = panels.get(route.site_family) if route else None
+                if target is not None:
+                    apply_download_prefill(target, tabs, payload)
+
+            context.events.subscribe("download.prefill", handle_download_prefill)
+
+            def refresh_site_tab_titles(_payload: object = None) -> None:
+                tabs.setTabText(0, self.download_panel.workspace_title.text())
+                tabs.setTabText(
+                    1, self.bilibili_download_panel.workspace_title.text()
+                )
+
+            context.events.subscribe("ui.language.changed", refresh_site_tab_titles)
             self.optional_panels: dict[str, object] = {}
 
             def sync_optional_panel(payload: object = None) -> None:
@@ -391,6 +516,14 @@ def run_main_window(context: object) -> int:
                     apply_application_theme(application, scale)
                 save_settings()
 
+            def change_core_language(action: object) -> None:
+                locale = normalized_language(action.data())
+                context.settings.language = locale
+                context.plugin_ui.locale = locale
+                save_settings()
+                context.events.publish("ui.language.changed", {"locale": locale})
+
+            self.language_group.triggered.connect(change_core_language)
             self.ui_scale_group.triggered.connect(change_ui_scale)
             self.in_app_notifications.toggled.connect(save_settings)
             self.system_notifications.toggled.connect(save_settings)

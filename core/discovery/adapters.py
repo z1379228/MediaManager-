@@ -30,9 +30,10 @@ class FederatedSearchResult:
 def canonical_result_key(item: DiscoveryItemV1) -> str:
     """Remove common tracking parameters while preserving media identity."""
 
-    if item.video_id:
-        return f"id:{item.video_id.casefold()}"
     parts = urlsplit(item.url)
+    host = (parts.hostname or parts.netloc).casefold()
+    if item.video_id:
+        return f"{host}|id:{item.video_id.casefold()}"
     tracking_keys = {"fbclid", "si"}
     query = urlencode(
         sorted(

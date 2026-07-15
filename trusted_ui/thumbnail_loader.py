@@ -7,6 +7,7 @@ from collections.abc import Callable
 from urllib.parse import urlsplit
 
 _ALLOWED_HOSTS = {"i.ytimg.com", "img.youtube.com"}
+_ALLOWED_HOST_SUFFIXES = (".hdslb.com", ".bahamut.com.tw")
 _MAX_BYTES = 1024 * 1024
 _MAX_IMAGE_PIXELS = 16_000_000
 _MAX_CACHE_ITEMS = 40
@@ -41,11 +42,17 @@ def thumbnail_resource_limits() -> dict[str, int]:
 def valid_thumbnail_url(url: str) -> bool:
     try:
         parsed = urlsplit(url)
+        host = (parsed.hostname or "").casefold()
         return (
             parsed.scheme == "https"
-            and (parsed.hostname or "").casefold() in _ALLOWED_HOSTS
+            and (
+                host in _ALLOWED_HOSTS
+                or any(host.endswith(suffix) for suffix in _ALLOWED_HOST_SUFFIXES)
+            )
             and not parsed.username
             and not parsed.password
+            and parsed.port is None
+            and not parsed.fragment
             and len(url) <= 1000
         )
     except ValueError:
@@ -160,7 +167,7 @@ def create_thumbnail_loader(parent: object = None) -> object:
             request = QNetworkRequest(QUrl(url))
             request.setAttribute(
                 QNetworkRequest.Attribute.RedirectPolicyAttribute,
-                QNetworkRequest.RedirectPolicy.NoLessSafeRedirectPolicy,
+                QNetworkRequest.RedirectPolicy.SameOriginRedirectPolicy,
             )
             request.setRawHeader(b"Accept", b"image/webp,image/png,image/jpeg")
             request.setTransferTimeout(_TRANSFER_TIMEOUT_MS)

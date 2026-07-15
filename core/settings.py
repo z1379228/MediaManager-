@@ -6,8 +6,9 @@ import json
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
+from core.localization import SUPPORTED_LOCALE_CODES, normalized_core_locale
 
-SUPPORTED_UI_LANGUAGES = frozenset({"en", "ja", "zh-CN", "zh-TW"})
+SUPPORTED_UI_LANGUAGES = SUPPORTED_LOCALE_CODES
 
 
 @dataclass(slots=True)
@@ -29,9 +30,7 @@ def normalized_download_workers(value: object) -> int:
 
 
 def normalized_language(value: object) -> str:
-    if isinstance(value, str) and value in SUPPORTED_UI_LANGUAGES:
-        return value
-    return "zh-TW"
+    return normalized_core_locale(value)
 
 
 class SettingsService:

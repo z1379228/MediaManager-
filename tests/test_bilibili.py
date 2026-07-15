@@ -172,9 +172,12 @@ def test_bilibili_support_matrix_is_explicit() -> None:
     )
     feature_ids = {feature["feature_id"] for feature in matrix["features"]}
     assert matrix["provider_id"] == "bilibili"
-    assert {"multipart-playlist", "bangumi-public-episode", "subtitles"}.issubset(
-        feature_ids
-    )
+    assert {
+        "multipart-playlist",
+        "bangumi-public-episode",
+        "subtitles",
+        "segment-download",
+    }.issubset(feature_ids)
 
 
 def test_bilibili_download_keeps_danmaku_as_xml_sidecar(
@@ -284,6 +287,78 @@ def test_bilibili_download_converts_danmaku_to_ass_and_retains_xml(
     ass = tmp_path / "clip.danmaku.ass"
     assert ass.is_file()
     assert "測試彈幕" in ass.read_text(encoding="utf-8-sig")
+
+
+def test_bilibili_segmented_ass_is_retimed_before_mkv_mux(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import yt_dlp
+
+    captured: list[dict[str, object]] = []
+
+    class FakeYoutubeDL:
+        def __init__(self, options):
+            self.options = options
+            captured.append(options)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, _url, *, download):
+            assert download
+            (tmp_path / "clip.mp4").write_bytes(b"video")
+            (tmp_path / "clip.danmaku.xml").write_text(
+                "<i>"
+                '<d p="9,1,25,16777215,0,0,user,1">before</d>'
+                '<d p="12,1,25,16777215,0,0,user,2">inside</d>'
+                '<d p="20,1,25,16777215,0,0,user,3">at-end</d>'
+                "</i>",
+                encoding="utf-8",
+            )
+            return {"id": "BVexample", "title": "Example"}
+
+        def prepare_filename(self, _info):
+            return str(tmp_path / "clip.webm")
+
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYoutubeDL)
+    namespace = runpy.run_path(str(PROVIDER_ROOT / "provider.py"))
+    muxed_ass: list[str] = []
+
+    def fake_mux(media: Path, ass_path: Path, _ffmpeg: object) -> Path:
+        muxed_ass.append(ass_path.read_text(encoding="utf-8-sig"))
+        return media
+
+    namespace["download"].__globals__["_mux_ass_into_mkv"] = fake_mux
+
+    result = namespace["download"](
+        {
+            "url": "https://www.bilibili.com/video/BVexample",
+            "output_dir": str(tmp_path),
+            "output_filename": "clip.mp4",
+            "format_preset": "best",
+            "subtitle_mode": "none",
+            "subtitle_languages": [],
+            "timed_comment_mode": "ass",
+            "container_preset": "mkv",
+            "start_time": 10.0,
+            "end_time": 20.0,
+        }
+    )
+
+    assert Path(result) == tmp_path / "clip.mp4"
+    assert "download_ranges" in captured[0]
+    assert captured[0]["force_keyframes_at_cuts"] is True
+    ass = (tmp_path / "clip.danmaku.ass").read_text(encoding="utf-8-sig")
+    assert "before" not in ass
+    assert "at-end" not in ass
+    assert "0:00:02.00" in ass
+    assert "inside" in ass
+    assert muxed_ass == [ass]
+    assert (tmp_path / "clip.danmaku.xml").is_file()
 
 
 def test_mkv_mux_is_atomic_and_removes_intermediate_media(

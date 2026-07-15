@@ -5,9 +5,8 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from core.downloads.archive import DuplicateDownloadError
-from core.downloads.models import DownloadRequest
 from core.discovery.adapters import FederatedSearchResult
 from core.discovery.query_ranking import (
     matching_search_indices,
@@ -15,6 +14,11 @@ from core.discovery.query_ranking import (
     rank_search_results,
 )
 from core.discovery.suggestions import preference_search_queries
+from core.mod_groups import (
+    SITE_MOD_PARENT,
+    BuiltinModGroupError,
+    load_builtin_mod_groups,
+)
 from trusted_ui.empty_state import create_empty_state
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.thumbnail_loader import create_thumbnail_loader
@@ -31,6 +35,59 @@ class _PreviewResponse:
     generation: int
     provider: object | None
     path: Path | None
+
+
+def download_workspace_name(provider_id: object) -> str:
+    """Return the trusted workspace that owns a download provider."""
+
+    return {
+        "youtube": "YouTube 下載工作區",
+        "bilibili": "Bilibili 下載工作區",
+    }.get(provider_id, "對應網站下載工作區")
+
+
+def localized_site_module_names(locale: object) -> dict[str, str]:
+    try:
+        return {
+            module.provider_id: module.display_name
+            for group in load_builtin_mod_groups(locale)
+            for module in group.modules
+        }
+    except BuiltinModGroupError:
+        return {}
+
+
+def search_source_for_url(url: object) -> str:
+    """Infer display provenance only from an exact supported result host."""
+
+    if not isinstance(url, str):
+        return ""
+    try:
+        parsed = urlsplit(url)
+        host = (parsed.hostname or "").lower()
+        port = parsed.port
+    except ValueError:
+        return ""
+    if (
+        parsed.scheme != "https"
+        or parsed.username is not None
+        or parsed.password is not None
+        or port is not None
+    ):
+        return ""
+    if host in {
+        "youtube.com",
+        "www.youtube.com",
+        "m.youtube.com",
+        "music.youtube.com",
+        "youtu.be",
+    }:
+        return "youtube-search"
+    if host in {"bilibili.com", "www.bilibili.com", "m.bilibili.com", "b23.tv"}:
+        return "bilibili-search"
+    if host == "ani.gamer.com.tw":
+        return "ani-gamer-search"
+    return ""
 
 
 def recent_history_queries(
@@ -116,6 +173,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.recovery_meta = {}
             self.search_rank_meta = {}
             self.next_search_cursor = ""
+            self.last_search_failures: tuple[object, ...] = ()
             self.busy_action = ""
             self.generation = 0
             self.results_generation = 0
@@ -146,7 +204,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
             heading = QHBoxLayout()
             titles = QVBoxLayout()
             titles.setSpacing(2)
-            title = QLabel("跨 MOD 搜尋")
+            title = QLabel("網站搜尋")
             title.setObjectName("sectionTitle")
             subtitle = QLabel("輕量搜尋影片與音樂；顯示小縮圖協助辨識結果。")
             subtitle.setObjectName("sectionSubtitle")
@@ -155,9 +213,12 @@ def create_search_panel(context: object, parent: object = None) -> object:
             heading.addLayout(titles)
             heading.addStretch()
             statuses = {status.provider_id for status in context.discovery.statuses()}
+            module_names = localized_site_module_names(
+                getattr(getattr(context, "settings", None), "language", "zh-TW")
+            )
             feature_button = QPushButton()
             feature_button.setObjectName("ghost")
-            feature_button.setToolTip("個別啟用或停用 YouTube 搜尋功能 MOD")
+            feature_button.setToolTip("個別啟用或停用各網站搜尋與選用功能 MOD")
             feature_menu = QMenu(feature_button)
 
             def create_feature_action(label: str, provider_id: str) -> QAction:
@@ -178,7 +239,17 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 feature_menu.addAction(action)
                 return action
 
-            self.enabled = create_feature_action("影片與音樂搜尋", "youtube-search")
+            self.enabled = create_feature_action(
+                module_names.get("youtube-search", "YouTube 搜尋"),
+                "youtube-search",
+            )
+            self.bilibili_search_enabled = create_feature_action(
+                module_names.get("bilibili-search", "Bilibili 搜尋"),
+                "bilibili-search",
+            )
+            self.ani_gamer_search_enabled = create_feature_action(
+                "動畫瘋官方搜尋", "ani-gamer-search"
+            )
             self.history_enabled = create_feature_action(
                 "記錄搜尋偏好", "youtube-history"
             )
@@ -191,6 +262,8 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.video_enabled = create_feature_action("播放影片預覽", "youtube-player")
             feature_actions = (
                 self.enabled,
+                self.bilibili_search_enabled,
+                self.ani_gamer_search_enabled,
                 self.history_enabled,
                 self.recovery_enabled,
                 self.similar_enabled,
@@ -200,6 +273,8 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 zip(
                     (
                         "youtube-search",
+                        "bilibili-search",
+                        "ani-gamer-search",
                         "youtube-history",
                         "youtube-recovery",
                         "youtube-similar",
@@ -210,9 +285,42 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 )
             )
 
+            def parent_is_enabled(provider_id: str) -> bool:
+                parent_id = SITE_MOD_PARENT.get(provider_id)
+                if parent_id is None:
+                    return True
+                try:
+                    return context.download_providers.is_enabled(parent_id)
+                except (AttributeError, KeyError, RuntimeError):
+                    if not hasattr(context, "download_providers"):
+                        return True
+                    return False
+
+            def refresh_parent_visibility() -> None:
+                for child_id, parent_id in SITE_MOD_PARENT.items():
+                    action = self.feature_actions_by_id.get(child_id)
+                    if action is None:
+                        continue
+                    parent_enabled = parent_is_enabled(child_id)
+                    action.setVisible(parent_enabled)
+                    action.setEnabled(parent_enabled and child_id in statuses)
+                    action.setToolTip(
+                        "" if parent_enabled else f"請先啟用 {parent_id} 主 MOD"
+                    )
+
+            self.parent_is_enabled = parent_is_enabled
+            self.refresh_parent_visibility = refresh_parent_visibility
+            refresh_parent_visibility()
+
             def refresh_feature_button() -> None:
-                available = sum(action.isEnabled() for action in feature_actions)
-                active = sum(action.isChecked() for action in feature_actions)
+                available = sum(
+                    action.isVisible() and action.isEnabled()
+                    for action in feature_actions
+                )
+                active = sum(
+                    action.isVisible() and action.isChecked()
+                    for action in feature_actions
+                )
                 feature_button.setText(f"搜尋 MOD  {active}/{available}")
 
             for action in feature_actions:
@@ -231,7 +339,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
             query_row = QHBoxLayout()
             filter_row = QHBoxLayout()
             self.query = QLineEdit()
-            self.query.setAccessibleName("跨 MOD 搜尋文字")
+            self.query.setAccessibleName("單一網站搜尋文字")
             self.query.setPlaceholderText("搜尋歌曲、歌手、影片名稱或語言…")
             self.query.setClearButtonEnabled(True)
             self.query.returnPressed.connect(self.search)
@@ -265,7 +373,11 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.search_source = QComboBox()
             self.search_source.setAccessibleName("搜尋來源")
             try:
-                source_statuses = context.discovery.search_source_statuses()
+                source_statuses = tuple(
+                    status
+                    for status in context.discovery.search_source_statuses()
+                    if parent_is_enabled(status.provider_id)
+                )
                 self.search_provider_ids = tuple(
                     status.provider_id for status in source_statuses
                 )
@@ -278,29 +390,62 @@ def create_search_panel(context: object, parent: object = None) -> object:
 
             def refresh_search_sources() -> None:
                 selected = self.search_source.currentData()
-                self.search_source.clear()
-                self.search_source.addItem("所有已啟用來源", "")
+                previous_block = self.search_source.blockSignals(True)
                 try:
-                    statuses = context.discovery.search_source_statuses()
-                except (AttributeError, RuntimeError, ValueError):
-                    statuses = ()
-                for status in statuses:
-                    self.search_source_labels[status.provider_id] = status.display_name
-                    suffix = {
-                        "ready": "正常",
-                        "error": "錯誤",
-                        "disabled": "停用",
-                    }.get(status.health, status.health)
-                    self.search_source.addItem(
-                        f"{status.display_name}（{suffix}）", status.provider_id
-                    )
-                    index = self.search_source.count() - 1
-                    if status.message:
-                        self.search_source.setItemData(
-                            index, status.message, Qt.ItemDataRole.ToolTipRole
+                    self.search_source.clear()
+                    try:
+                        statuses = tuple(
+                            status
+                            for status in context.discovery.search_source_statuses()
+                            if parent_is_enabled(status.provider_id)
                         )
-                index = self.search_source.findData(selected)
-                self.search_source.setCurrentIndex(max(0, index))
+                    except (AttributeError, RuntimeError, ValueError):
+                        statuses = ()
+                    self.search_provider_ids = tuple(
+                        status.provider_id for status in statuses
+                    )
+                    localized_names = localized_site_module_names(
+                        getattr(
+                            getattr(context, "settings", None),
+                            "language",
+                            "zh-TW",
+                        )
+                    )
+                    for status in statuses:
+                        display_name = localized_names.get(
+                            status.provider_id, status.display_name
+                        )
+                        self.search_source_labels[status.provider_id] = (
+                            display_name
+                        )
+                        suffix = {
+                            "ready": "正常",
+                            "error": "錯誤",
+                            "disabled": "停用",
+                        }.get(status.health, status.health)
+                        self.search_source.addItem(
+                            f"{display_name}（{suffix}）", status.provider_id
+                        )
+                        index = self.search_source.count() - 1
+                        if status.message:
+                            self.search_source.setItemData(
+                                index, status.message, Qt.ItemDataRole.ToolTipRole
+                            )
+                    index = self.search_source.findData(selected)
+                    if index < 0:
+                        index = self.search_source.findData("youtube-search")
+                    if index < 0:
+                        index = next(
+                            (
+                                item_index
+                                for item_index, status in enumerate(statuses)
+                                if status.enabled
+                            ),
+                            0 if statuses else -1,
+                        )
+                    self.search_source.setCurrentIndex(index)
+                finally:
+                    self.search_source.blockSignals(previous_block)
 
             self.refresh_search_sources = refresh_search_sources
             refresh_search_sources()
@@ -311,7 +456,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.history_menu.aboutToShow.connect(self.populate_history_menu)
             self.history_button.setMenu(self.history_menu)
             self.search_button = QPushButton("搜尋")
-            self.search_button.setAccessibleName("執行跨 MOD 搜尋")
+            self.search_button.setAccessibleName("執行單一網站搜尋")
             self.search_button.setObjectName("primary")
             self.search_button.clicked.connect(self.search)
             self.next_page_button = QPushButton("下一頁")
@@ -336,10 +481,18 @@ def create_search_panel(context: object, parent: object = None) -> object:
 
             self.status = QLabel("輸入關鍵字開始搜尋。")
             self.status.setObjectName("muted")
-            page.addWidget(self.status)
+            status_row = QHBoxLayout()
+            status_row.addWidget(self.status, 1)
+            self.failure_button = QPushButton("查看來源錯誤")
+            self.failure_button.setObjectName("ghost")
+            self.failure_button.setAccessibleName("查看搜尋來源錯誤明細")
+            self.failure_button.clicked.connect(self.show_search_failures)
+            self.failure_button.hide()
+            status_row.addWidget(self.failure_button)
+            page.addLayout(status_row)
 
             self.table = QTableWidget(0, 7)
-            self.table.setAccessibleName("跨 MOD 搜尋結果")
+            self.table.setAccessibleName("單一網站搜尋結果")
             self.table.setAccessibleDescription(
                 "顯示縮圖、標題、作者、長度、類型與來源"
             )
@@ -381,7 +534,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.similar_button = QPushButton("隨機相似")
             self.similar_button.clicked.connect(self.find_similar)
             actions.addWidget(self.similar_button)
-            self.download_button = QPushButton("加入下載佇列")
+            self.download_button = QPushButton("前往下載設定")
             self.download_button.setObjectName("primary")
             self.download_button.clicked.connect(self.download_selected)
             self.open_button = QPushButton("在瀏覽器開啟")
@@ -405,7 +558,25 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.recovery_enabled.toggled.connect(self.update_action_state)
             self.similar_enabled.toggled.connect(self.update_action_state)
             self.history_enabled.toggled.connect(self.update_action_state)
-            self.enabled.toggled.connect(self.refresh_search_sources)
+            for search_action in (
+                self.enabled,
+                self.bilibili_search_enabled,
+                self.ani_gamer_search_enabled,
+            ):
+                search_action.toggled.connect(self.refresh_search_sources)
+
+            def invalidate_search_cursor() -> None:
+                self.next_search_cursor = ""
+                self.next_page_button.setToolTip(
+                    "搜尋條件已變更；請先重新搜尋第一頁"
+                )
+                self.update_action_state()
+
+            self.invalidate_search_cursor = invalidate_search_cursor
+            self.search_source.currentIndexChanged.connect(invalidate_search_cursor)
+            self.search_scope.currentIndexChanged.connect(invalidate_search_cursor)
+            self.limit.currentIndexChanged.connect(invalidate_search_cursor)
+            self.query.textEdited.connect(invalidate_search_cursor)
             self.video_enabled.toggled.connect(self.handle_video_toggle)
             self.update_action_state()
             events = getattr(context, "events", None)
@@ -413,22 +584,79 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 events.subscribe(
                     "builtin_mod.changed", self.handle_builtin_mod_changed
                 )
+                events.subscribe("ui.language.changed", self.handle_language_changed)
 
         def handle_builtin_mod_changed(self, payload: object) -> None:
             if not isinstance(payload, dict):
                 return
             provider_id = payload.get("provider_id")
             action = self.feature_actions_by_id.get(provider_id)
-            if action is None:
-                return
-            action.blockSignals(True)
-            action.setChecked(context.discovery.is_enabled(str(provider_id)))
-            action.blockSignals(False)
+            if action is not None:
+                action.blockSignals(True)
+                action.setChecked(context.discovery.is_enabled(str(provider_id)))
+                action.blockSignals(False)
+            self.refresh_parent_visibility()
+            if provider_id in self.search_provider_ids or provider_id in {
+                "youtube",
+                "bilibili",
+                "youtube-search",
+                "bilibili-search",
+            }:
+                self.refresh_search_sources()
             self.refresh_feature_button()
             self.update_action_state()
 
+        def handle_language_changed(self, payload: object) -> None:
+            locale = payload.get("locale") if isinstance(payload, dict) else "zh-TW"
+            names = localized_site_module_names(locale)
+            for provider_id in (
+                "youtube-search",
+                "bilibili-search",
+                "youtube-player",
+                "youtube-history",
+                "youtube-recovery",
+                "youtube-similar",
+            ):
+                name = names.get(provider_id)
+                action = self.feature_actions_by_id.get(provider_id)
+                if name and action is not None:
+                    action.setText(name)
+            self.refresh_search_sources()
+            self.refresh_feature_button()
+
         def update_action_state(self) -> None:
-            selected = self.selected_result() is not None
+            selected_item = self.selected_result()
+            selected = selected_item is not None
+            selected_source = self.selected_result_source()
+            download_provider = ""
+            download_ready = False
+            audio_preview_ready = False
+            if selected_item is not None:
+                try:
+                    download_provider = context.download_providers.matching_provider_id(
+                        selected_item.url
+                    )
+                    download_ready = bool(
+                        download_provider
+                        and context.download_providers.is_enabled(download_provider)
+                    )
+                except (AttributeError, KeyError, RuntimeError, ValueError):
+                    download_ready = False
+                if download_ready:
+                    try:
+                        capability = next(
+                            (
+                                item
+                                for item in context.discovery.search_capabilities()
+                                if item.provider_id == selected_source
+                            ),
+                            None,
+                        )
+                        audio_preview_ready = bool(
+                            capability is not None and capability.audio_preview
+                        )
+                    except (AttributeError, RuntimeError, ValueError):
+                        audio_preview_ready = selected_source == "youtube-search"
             busy = bool(self.busy_action)
             self.query.setEnabled(not busy)
             self.search_scope.setEnabled(not busy)
@@ -437,28 +665,48 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.search_source.setEnabled(not busy)
             self.limit.setEnabled(not busy)
             self.history_button.setEnabled(
-                not busy and self.history_enabled.isChecked()
+                not busy
+                and self.history_enabled.isChecked()
+                and self.search_uses_youtube_only()
             )
             self.search_button.setEnabled(not busy)
             self.next_page_button.setEnabled(
                 not busy and bool(self.next_search_cursor)
             )
-            self.download_button.setEnabled(selected)
+            self.download_button.setEnabled(selected and download_ready)
+            self.download_button.setToolTip(
+                f"前往 {download_workspace_name(download_provider)}"
+                "確認格式、分段、字幕與網站專屬選項"
+                if download_ready
+                else "此結果只允許開啟官方頁，或對應下載 MOD 尚未啟用"
+            )
             self.open_button.setEnabled(selected)
-            self.preview_button.setEnabled(selected and not busy)
+            self.preview_button.setEnabled(selected and audio_preview_ready and not busy)
             self.stop_preview_button.setEnabled(
                 self.busy_action == "preview" or self.preview_path is not None
             )
             self.video_button.setVisible(self.video_enabled.isChecked())
             self.video_button.setEnabled(
-                selected and not busy and self.video_enabled.isChecked()
+                selected
+                and selected_source == "youtube-search"
+                and not busy
+                and self.video_enabled.isChecked()
             )
             self.recovery_button.setEnabled(
-                selected and self.recovery_enabled.isChecked() and not busy
+                selected
+                and selected_source == "youtube-search"
+                and self.recovery_enabled.isChecked()
+                and not busy
             )
             self.similar_button.setEnabled(
-                selected and self.similar_enabled.isChecked() and not busy
+                selected
+                and selected_source == "youtube-search"
+                and self.similar_enabled.isChecked()
+                and not busy
             )
+
+        def search_uses_youtube_only(self) -> bool:
+            return self.search_source.currentData() == "youtube-search"
 
         def populate_history_menu(self) -> None:
             self.history_menu.clear()
@@ -535,27 +783,19 @@ def create_search_panel(context: object, parent: object = None) -> object:
         def run_search(self, cursor: str) -> None:
             query = " ".join(self.query.text().split())
             if not query:
-                QMessageBox.information(self, "YouTube 搜尋", "請輸入搜尋文字。")
+                QMessageBox.information(self, "網站搜尋", "請輸入搜尋文字。")
                 return
             prepared = prepare_search_query(query)
             query = prepared.query
             selected_source = str(self.search_source.currentData() or "")
-            if cursor and not selected_source:
+            if not selected_source:
                 QMessageBox.information(
-                    self, "搜尋分頁", "請先指定單一搜尋來源再切換頁面。"
+                    self, "搜尋來源", "目前沒有可選擇的網站搜尋 MOD。"
                 )
                 return
-            if selected_source and not context.discovery.is_enabled(selected_source):
+            if not context.discovery.is_enabled(selected_source):
                 QMessageBox.information(
                     self, "搜尋來源", f"請先啟用 {selected_source} MOD。"
-                )
-                return
-            if not selected_source and not any(
-                context.discovery.is_enabled(provider_id)
-                for provider_id in self.search_provider_ids
-            ):
-                QMessageBox.information(
-                    self, "搜尋來源", "目前沒有已啟用的搜尋 MOD。"
                 )
                 return
             generation = self.begin_action("search")
@@ -564,14 +804,17 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.last_query = query
             content_type = str(self.search_scope.currentData())
             content_label = self.search_scope.currentText()
-            history_enabled = self.history_enabled.isChecked()
-            provider_ids = (selected_source,) if selected_source else None
+            history_enabled = (
+                self.history_enabled.isChecked() and self.search_uses_youtube_only()
+            )
+            provider_ids = (selected_source,)
             correction_label = (
                 f"（已在本機修正：{'、'.join(prepared.corrections)}）"
                 if prepared.corrections
                 else ""
             )
             self.status.setText(f"正在搜尋{content_label}內容…{correction_label}")
+            self.set_search_failures(())
 
             def worker() -> None:
                 try:
@@ -609,6 +852,14 @@ def create_search_panel(context: object, parent: object = None) -> object:
                     self, "尋找替代影片", "請先啟用 youtube-recovery MOD。"
                 )
                 return
+            source = self.selected_result_source()
+            if source != "youtube-search":
+                QMessageBox.information(
+                    self,
+                    "尋找替代影片",
+                    "替代搜尋目前只屬於 YouTube MOD，不會把其他網站結果轉送到 YouTube。",
+                )
+                return
             original = self.results[row]
             limit = int(self.limit.currentData())
             generation = self.begin_action("recovery")
@@ -620,7 +871,8 @@ def create_search_panel(context: object, parent: object = None) -> object:
             def worker() -> None:
                 try:
                     candidates = context.discovery.replacement_candidates(
-                        original, limit=limit
+                        original,
+                        limit=limit,
                     )
                     if not self.closing:
                         self.bridge.finished.emit(
@@ -632,6 +884,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
                                     ),
                                     "candidates": candidates,
                                     "mode": "recovery",
+                                    "source": source,
                                 },
                             ),
                             "",
@@ -654,6 +907,14 @@ def create_search_panel(context: object, parent: object = None) -> object:
                     self, "隨機相似", "請先啟用 youtube-similar MOD。"
                 )
                 return
+            source = self.selected_result_source()
+            if source != "youtube-search":
+                QMessageBox.information(
+                    self,
+                    "隨機相似",
+                    "相似搜尋目前只屬於 YouTube MOD，不會把其他網站結果轉送到 YouTube。",
+                )
+                return
             original = self.results[row]
             limit = int(self.limit.currentData())
             generation = self.begin_action("similar")
@@ -665,7 +926,8 @@ def create_search_panel(context: object, parent: object = None) -> object:
             def worker() -> None:
                 try:
                     selections = context.discovery.similar_candidates(
-                        original, limit=limit
+                        original,
+                        limit=limit,
                     )
                     candidates = tuple(selections)
                     if not self.closing:
@@ -678,6 +940,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
                                     ),
                                     "candidates": candidates,
                                     "mode": "similar",
+                                    "source": source,
                                 },
                             ),
                             "",
@@ -690,6 +953,39 @@ def create_search_panel(context: object, parent: object = None) -> object:
 
             threading.Thread(target=worker, daemon=True).start()
 
+        def set_search_failures(self, failures: object) -> None:
+            self.last_search_failures = (
+                tuple(failures)[:16] if isinstance(failures, (list, tuple)) else ()
+            )
+            self.failure_button.setVisible(bool(self.last_search_failures))
+            self.status.setToolTip(
+                "\n".join(
+                    f"{getattr(failure, 'provider_id', 'unknown')}: "
+                    f"{getattr(failure, 'message', '未知錯誤')} "
+                    f"[{getattr(failure, 'category', 'error')}]"
+                    for failure in self.last_search_failures
+                )
+            )
+
+        def show_search_failures(self) -> None:
+            if not self.last_search_failures:
+                return
+            category_labels = {
+                "timeout": "逾時",
+                "invalid-response": "回應格式錯誤",
+                "unavailable": "來源無法連線",
+                "error": "執行錯誤",
+            }
+            lines = []
+            for failure in self.last_search_failures:
+                provider_id = str(getattr(failure, "provider_id", "unknown"))
+                source = self.search_source_labels.get(provider_id, provider_id)
+                category = str(getattr(failure, "category", "error"))
+                label = category_labels.get(category, category)
+                message = str(getattr(failure, "message", "未知錯誤"))[:300]
+                lines.append(f"{source}（{label}）\n{message}")
+            QMessageBox.warning(self, "搜尋來源錯誤", "\n\n".join(lines))
+
         def show_results(self, results: object, error: str) -> None:
             if self.closing:
                 return
@@ -700,6 +996,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.thumbnail_loader.cancel_pending()
             self.busy_action = ""
             if error:
+                self.set_search_failures(())
                 self.results = ()
                 self.result_sources = ()
                 self.last_query = ""
@@ -713,10 +1010,16 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.recovery_meta = {}
             self.search_rank_meta = {}
             if isinstance(results, dict):
-                self.result_sources = ()
+                self.set_search_failures(())
                 items = results.get("items")
                 candidates = results.get("candidates")
                 self.results = tuple(items) if isinstance(items, tuple) else ()
+                source = results.get("source")
+                self.result_sources = (
+                    tuple(str(source) for _ in self.results)
+                    if isinstance(source, str) and source
+                    else ()
+                )
                 if isinstance(candidates, tuple):
                     self.recovery_meta = {
                         candidate.item.video_id: candidate for candidate in candidates
@@ -725,6 +1028,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 label = "隨機相似結果" if mode == "similar" else "替代候選"
                 self.status.setText(f"找到 {len(self.results)} 筆{label}")
             elif isinstance(results, FederatedSearchResult):
+                self.set_search_failures(results.failures)
                 minimum_duration, maximum_duration = self.duration_filter.currentData()
                 matched = matching_search_indices(
                     results.items,
@@ -742,7 +1046,10 @@ def create_search_panel(context: object, parent: object = None) -> object:
                     filtered_sources[item.index] for item in rankings
                 )
                 self.search_rank_meta = {
-                    self.results[index].video_id: ranking
+                    (
+                        self.result_sources[index],
+                        self.results[index].video_id,
+                    ): ranking
                     for index, ranking in enumerate(rankings)
                 }
                 cursors = dict(results.next_cursors)
@@ -774,17 +1081,10 @@ def create_search_panel(context: object, parent: object = None) -> object:
                         f"找到 {len(self.results)} 筆結果；"
                         f"{len(results.failures)} 個來源失敗"
                     )
-                    self.status.setToolTip(
-                        "\n".join(
-                            f"{failure.provider_id}: {failure.message} "
-                            f"[{failure.category}]"
-                            for failure in results.failures
-                        )
-                    )
                 else:
                     self.status.setText(f"找到 {len(self.results)} 筆結果")
-                    self.status.setToolTip("")
             else:
+                self.set_search_failures(())
                 self.result_sources = ()
                 self.results = tuple(results) if isinstance(results, tuple) else ()
                 self.status.setText(f"找到 {len(self.results)} 筆結果")
@@ -835,7 +1135,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 source_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(row, 5, source_item)
                 candidate = self.recovery_meta.get(item.video_id)
-                ranking = self.search_rank_meta.get(item.video_id)
+                ranking = self.search_rank_meta.get((source, item.video_id))
                 score = QTableWidgetItem(
                     f"{candidate.score}%"
                     if candidate is not None
@@ -885,6 +1185,15 @@ def create_search_panel(context: object, parent: object = None) -> object:
         def selected_result(self) -> object | None:
             row = self.table.currentRow()
             return self.results[row] if 0 <= row < len(self.results) else None
+
+        def selected_result_source(self) -> str:
+            row = self.table.currentRow()
+            if 0 <= row < len(self.result_sources):
+                return self.result_sources[row]
+            selected = self.selected_result()
+            return search_source_for_url(
+                selected.url if selected is not None else ""
+            )
 
         def selected_url(self) -> str | None:
             selected = self.selected_result()
@@ -979,6 +1288,13 @@ def create_search_panel(context: object, parent: object = None) -> object:
         def prepare_video_preview(self) -> None:
             selected = self.selected_result()
             if selected is None or not self.video_enabled.isChecked():
+                return
+            if self.selected_result_source() != "youtube-search":
+                QMessageBox.information(
+                    self,
+                    "影片預覽",
+                    "YouTube Player MOD 不會開啟其他網站的搜尋結果。",
+                )
                 return
             self.cleanup_video_preview()
             generation = self.begin_action("video_preview")
@@ -1132,6 +1448,8 @@ def create_search_panel(context: object, parent: object = None) -> object:
             if (
                 self.history_enabled.isChecked()
                 and 0 <= row < len(self.results)
+                and row < len(self.result_sources)
+                and self.result_sources[row] == "youtube-search"
                 and self.last_query
             ):
                 try:
@@ -1144,29 +1462,39 @@ def create_search_panel(context: object, parent: object = None) -> object:
         def download_selected(self) -> None:
             selected = self.selected_result()
             if selected is None:
-                QMessageBox.information(self, "加入下載", "請先選擇一個結果。")
+                QMessageBox.information(self, "下載設定", "請先選擇一個結果。")
                 return
-            try:
-                context.download_queue.add(
-                    DownloadRequest(
-                        selected.url,
-                        context.paths.downloads,
-                        source_video_id=selected.video_id,
-                        source_title=selected.title,
-                        source_artist=selected.artist,
-                        source_language=selected.language,
-                        source_category=selected.category,
-                    )
-                )
-            except DuplicateDownloadError:
+            provider_id = context.download_providers.matching_provider_id(selected.url)
+            if not provider_id or not context.download_providers.is_enabled(provider_id):
                 QMessageBox.information(
                     self,
-                    "重複下載",
-                    "相同影片已在佇列或成功下載封存中。",
+                    "下載設定",
+                    "此結果只允許開啟官方頁，或對應網站的下載 MOD 尚未啟用。",
                 )
                 return
+            events = getattr(context, "events", None)
+            workspace_name = download_workspace_name(provider_id)
+            if events is None:
+                QMessageBox.information(
+                    self,
+                    "下載設定",
+                    f"目前無法開啟 {workspace_name}，請稍後再試。",
+                )
+                return
+            events.publish(
+                "download.prefill",
+                {
+                    "url": selected.url,
+                    "provider_id": provider_id,
+                    "video_id": selected.video_id,
+                    "title": selected.title,
+                    "artist": selected.artist,
+                    "language": selected.language,
+                    "category": selected.category,
+                },
+            )
             self.record_selected()
-            self.status.setText("已加入下載佇列。")
+            self.status.setText(f"已帶入 {workspace_name}；請確認網站專屬選項。")
 
         def open_selected(self, *_: object) -> None:
             url = self.selected_url()

@@ -40,14 +40,25 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     assert not providers["generic-ytdlp"].enabled
     assert not providers["bilibili"].enabled
     assert set(providers) == {"youtube", "generic-ytdlp", "bilibili"}
+    assert (
+        context.download_providers.matching_provider_id(
+            "https://music.youtube.com/watch?v=zqMOLz9q7Ig&list=PLexample"
+        )
+        == "youtube"
+    )
     assert {status.provider_id for status in context.discovery.statuses()} == {
         "youtube-search",
+        "bilibili-search",
+        "ani-gamer-search",
         "youtube-player",
         "youtube-history",
         "youtube-recovery",
         "youtube-similar",
         "youtube-auto-split",
     }
+    assert context.discovery.is_enabled("youtube-search")
+    assert not context.discovery.is_enabled("bilibili-search")
+    assert not context.discovery.is_enabled("ani-gamer-search")
     assert {status.provider_id for status in context.features.statuses()} == {
         "media-convert",
         "speech-to-text",

@@ -8,12 +8,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from core.localization import SUPPORTED_LOCALE_CODES
 from core.plugins.manager import PluginManager
 from core.plugins.registry import PendingAction, PluginRegistry
 
 _ID = re.compile(r"^[a-z][a-z0-9.-]{1,63}$")
 _BLOCK_TYPES = frozenset({"heading", "text", "status"})
-SUPPORTED_UI_LOCALES = frozenset({"en", "ja", "zh-CN", "zh-TW"})
+SUPPORTED_UI_LOCALES = SUPPORTED_LOCALE_CODES
 
 
 class PluginUIError(ValueError):

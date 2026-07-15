@@ -20,12 +20,16 @@ def test_thumbnail_memory_and_network_limits_are_explicit() -> None:
     }
 
 
-def test_thumbnail_url_accepts_only_bounded_youtube_https_hosts() -> None:
+def test_thumbnail_url_accepts_only_bounded_search_cdn_https_hosts() -> None:
     assert valid_thumbnail_url("https://i.ytimg.com/vi/example/mqdefault.jpg")
     assert valid_thumbnail_url("https://img.youtube.com/vi/example/0.jpg")
+    assert valid_thumbnail_url("https://i0.hdslb.com/bfs/archive/example.jpg")
+    assert valid_thumbnail_url("https://p2.bahamut.com.tw/B/2KU/example.jpg")
     assert not valid_thumbnail_url("http://i.ytimg.com/vi/example/0.jpg")
     assert not valid_thumbnail_url("https://example.com/thumbnail.jpg")
     assert not valid_thumbnail_url("https://user@i.ytimg.com/thumbnail.jpg")
+    assert not valid_thumbnail_url("https://i0.hdslb.com.evil.test/example.jpg")
+    assert not valid_thumbnail_url("https://p2.bahamut.com.tw:443/example.jpg")
 
 
 def test_thumbnail_response_rejects_failed_or_non_image_replies() -> None:

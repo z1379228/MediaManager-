@@ -6,6 +6,7 @@ from core.downloads.preflight import DownloadPreflight
 from core.downloads.preparation import (
     available_preset_ids,
     build_batch_preview,
+    download_option_lines,
     estimate_preset_bytes,
     format_detail_lines,
     human_bytes,
@@ -67,3 +68,23 @@ def test_filename_and_batch_preview_are_safe_and_explicit(tmp_path: Path) -> Non
     assert preview.item_count == 1
     assert preview.filename == filename
     assert preview.estimated_bytes == 1024
+
+
+def test_confirmation_options_include_bilibili_segment_and_danmaku() -> None:
+    request = DownloadRequest(
+        "https://www.bilibili.com/video/BV1example123",
+        Path("Downloads"),
+        start_time=10,
+        end_time=20,
+        subtitle_mode="selected",
+        subtitle_languages=("zh-TW", "en"),
+        timed_comment_mode="ass",
+        container_preset="mkv",
+    )
+
+    assert download_option_lines(request) == (
+        "區段：10 秒 → 20 秒",
+        "字幕：指定語言：zh-TW、en",
+        "彈幕：保留 XML 並轉為 ASS",
+        "封裝：MKV（嵌入 ASS）",
+    )

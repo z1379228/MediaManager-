@@ -24,7 +24,10 @@ def test_registry_routes_only_to_enabled_provider(tmp_path) -> None:
     registry = DownloadProviderRegistry()
     youtube = provider()
     registry.register(youtube)
-    with pytest.raises(ProviderUnavailableError):
+    with pytest.raises(
+        ProviderUnavailableError,
+        match="YouTube MOD 尚未啟用",
+    ):
         registry.analyze("https://youtube.com/watch?v=x")
     registry.set_enabled("youtube", True)
     assert registry.analyze("https://youtube.com/watch?v=x")["title"] == "Example"
@@ -45,8 +48,44 @@ def test_registry_identifies_disabled_provider_owner() -> None:
     assert registry.matching_provider_id("https://example.com/video") is None
 
 
+def test_registry_exposes_failed_provider_reason_for_owned_hosts() -> None:
+    registry = DownloadProviderRegistry()
+    registry.register_unavailable(
+        "youtube",
+        "YouTube",
+        "integrity mismatch: provider.py",
+        hosts=("youtube.com", "music.youtube.com"),
+    )
+
+    status = registry.statuses()[0]
+    assert status.provider_id == "youtube"
+    assert not status.available
+    assert not status.enabled
+    assert status.reason == "integrity mismatch: provider.py"
+    assert (
+        registry.matching_provider_id(
+            "https://music.youtube.com/playlist?list=example"
+        )
+        == "youtube"
+    )
+    with pytest.raises(
+        ProviderUnavailableError,
+        match="YouTube MOD 初始化失敗.*integrity mismatch",
+    ):
+        registry.provider_for(
+            "https://music.youtube.com/playlist?list=example"
+        )
+    with pytest.raises(ProviderUnavailableError, match="初始化失敗"):
+        registry.set_enabled("youtube", True)
+
+
 def test_registry_rejects_duplicate_and_unknown_provider() -> None:
     registry = DownloadProviderRegistry()
+    with pytest.raises(
+        ProviderUnavailableError,
+        match="沒有已啟用的下載 MOD 支援此網址",
+    ):
+        registry.provider_for("https://example.com/video")
     registry.register(provider())
     with pytest.raises(ValueError):
         registry.register(provider())

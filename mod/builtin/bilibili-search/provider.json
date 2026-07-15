@@ -1,0 +1,16 @@
+{
+  "provider_id": "bilibili-search",
+  "display_name": "Bilibili Search",
+  "entry_point": "provider.py",
+  "url_hosts": ["api.bilibili.com", "bilibili.com", "www.bilibili.com"],
+  "permissions": ["network.bilibili"],
+  "search_capability": {
+    "provider_id": "bilibili-search",
+    "sites": ["bilibili"],
+    "content_types": ["all", "music", "video"],
+    "max_page_size": 50,
+    "pagination": "cursor",
+    "audio_preview": false,
+    "video_preview": false
+  }
+}

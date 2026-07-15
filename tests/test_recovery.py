@@ -122,3 +122,37 @@ def test_discovery_service_uses_fallback_only_after_empty_primary(
         "Artist Example Song",
     ]
     service.close()
+
+
+def test_youtube_recovery_rejects_non_youtube_original_before_search(
+    tmp_path: Path,
+) -> None:
+    original = DiscoveryItemV1.from_dict(
+        {
+            "video_id": "BV1example123",
+            "url": "https://www.bilibili.com/video/BV1example123",
+            "title": "Bilibili result",
+            "artist": "Uploader",
+            "duration": 180,
+            "language": "",
+            "category": "video",
+            "thumbnail_url": "",
+        }
+    )
+    search = Mock()
+    search.provider_id = "youtube-search"
+    search.display_name = "YouTube Search"
+    recovery = Mock()
+    recovery.provider_id = "youtube-recovery"
+    recovery.display_name = "YouTube Recovery"
+
+    service = DiscoveryService(tmp_path / "state.json")
+    service.register(search, enabled=True)
+    service.register_recovery(recovery, enabled=True)
+
+    with pytest.raises(ValueError, match="bound search source"):
+        service.replacement_candidates(original)
+
+    search.search.assert_not_called()
+    recovery.recovery_plan.assert_not_called()
+    service.close()

@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from threading import Event, RLock
 from typing import Any
+from urllib.parse import urlsplit
 
 from contracts.playlist_v1 import PlaylistEntryV1
 from contracts.download_provider import DownloadProvider
@@ -28,12 +29,15 @@ class ProviderStatus:
     provider_id: str
     display_name: str
     enabled: bool
+    available: bool = True
+    reason: str = ""
 
 
 class DownloadProviderRegistry:
     def __init__(self, state_path: Path | None = None) -> None:
         self._providers: dict[str, DownloadProvider] = {}
         self._capabilities: dict[str, DownloadCapabilityV2] = {}
+        self._unavailable: dict[str, tuple[str, str, frozenset[str]]] = {}
         self._enabled: set[str] = set()
         self._lock = RLock()
         self._state_path = state_path
@@ -44,14 +48,56 @@ class DownloadProviderRegistry:
             raise ValueError("download provider id is empty or already registered")
         with self._lock:
             self._providers[provider.provider_id] = provider
+            self._unavailable.pop(provider.provider_id, None)
             if self._saved.get(provider.provider_id, enabled):
                 self._enabled.add(provider.provider_id)
 
+    def register_unavailable(
+        self,
+        provider_id: str,
+        display_name: str,
+        reason: str,
+        *,
+        hosts: Iterable[str] = (),
+    ) -> None:
+        """Expose a failed built-in MOD without making it routable."""
+
+        normalized_reason = " ".join(str(reason).split())[:240]
+        normalized_hosts = frozenset(str(host).strip().casefold() for host in hosts)
+        if (
+            not provider_id
+            or not display_name
+            or not normalized_reason
+            or any(not host or "/" in host or "\\" in host for host in normalized_hosts)
+        ):
+            raise ValueError("unavailable provider metadata is invalid")
+        with self._lock:
+            if provider_id in self._providers:
+                raise ValueError("download provider is already registered")
+            self._unavailable[provider_id] = (
+                display_name,
+                normalized_reason,
+                normalized_hosts,
+            )
+            self._enabled.discard(provider_id)
+
     def statuses(self) -> tuple[ProviderStatus, ...]:
         with self._lock:
+            available = {
+                key: ProviderStatus(
+                    key,
+                    provider.display_name,
+                    key in self._enabled,
+                )
+                for key, provider in self._providers.items()
+            }
+            unavailable = {
+                key: ProviderStatus(key, values[0], False, False, values[1])
+                for key, values in self._unavailable.items()
+            }
             return tuple(
-                ProviderStatus(key, provider.display_name, key in self._enabled)
-                for key, provider in sorted(self._providers.items())
+                {**unavailable, **available}[key]
+                for key in sorted(set(unavailable) | set(available))
             )
 
     def register_capability(self, capability: DownloadCapabilityV2) -> None:
@@ -76,6 +122,11 @@ class DownloadProviderRegistry:
     def set_enabled(self, provider_id: str, enabled: bool) -> None:
         with self._lock:
             if provider_id not in self._providers:
+                unavailable = self._unavailable.get(provider_id)
+                if unavailable is not None:
+                    raise ProviderUnavailableError(
+                        f"{unavailable[0]} MOD 初始化失敗：{unavailable[1]}"
+                    )
                 raise KeyError(provider_id)
             if enabled:
                 self._enabled.add(provider_id)
@@ -96,17 +147,45 @@ class DownloadProviderRegistry:
         for provider_id, provider in providers:
             if provider.supports(url):
                 return provider_id
+        unavailable = self._unavailable_for_url(url)
+        if unavailable is not None:
+            return unavailable[0]
         return None
 
     def provider_for(self, url: str) -> DownloadProvider:
         with self._lock:
-            providers = tuple(
-                provider for key, provider in self._providers.items() if key in self._enabled
-            )
-        for provider in providers:
+            providers = tuple(self._providers.items())
+            enabled = frozenset(self._enabled)
+        for provider_id, provider in providers:
             if provider.supports(url):
-                return provider
-        raise ProviderUnavailableError("no enabled MOD supports this URL")
+                if provider_id in enabled:
+                    return provider
+                raise ProviderUnavailableError(
+                    f"{provider.display_name} MOD 尚未啟用"
+                )
+        unavailable = self._unavailable_for_url(url)
+        if unavailable is not None:
+            _provider_id, display_name, reason = unavailable
+            raise ProviderUnavailableError(
+                f"{display_name} MOD 初始化失敗：{reason}"
+            )
+        raise ProviderUnavailableError("沒有已啟用的下載 MOD 支援此網址")
+
+    def _unavailable_for_url(self, url: str) -> tuple[str, str, str] | None:
+        try:
+            parsed = urlsplit(url)
+            parsed.port
+        except (TypeError, ValueError):
+            return None
+        host = (parsed.hostname or "").casefold()
+        if parsed.scheme.casefold() not in {"http", "https"} or not host:
+            return None
+        with self._lock:
+            unavailable = tuple(self._unavailable.items())
+        for provider_id, (display_name, reason, hosts) in unavailable:
+            if host in hosts:
+                return provider_id, display_name, reason
+        return None
 
     def analyze(self, url: str) -> dict[str, Any]:
         return self.provider_for(url).analyze(url)

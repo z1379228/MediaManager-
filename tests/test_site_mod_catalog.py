@@ -13,6 +13,7 @@ from trusted_ui.site_mod_catalog import (
     SITE_MOD_CANDIDATES,
     THREADS_EXPORT_HELP,
     THREADS_HOME,
+    official_meta_bridge_id_for_url,
     validated_ani_gamer_url,
     validated_facebook_url,
     validated_instagram_url,
@@ -44,6 +45,24 @@ def test_site_mod_catalog_registers_requested_candidates() -> None:
         "threads",
         "mega",
     )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    (
+        ("https://www.facebook.com/watch/?v=123", "facebook"),
+        ("https://instagram.com/reel/Cexample456?utm_source=share", "instagram"),
+        ("https://www.threads.net/@openai/post/Cexample789", "threads"),
+        ("https://www.facebook.com.evil.example/watch/?v=123", ""),
+        ("https://user:secret@www.instagram.com/reel/Cexample456", ""),
+        ("http://www.threads.com/@openai/post/Cexample789", ""),
+    ),
+)
+def test_meta_official_bridge_detection_never_claims_download_support(
+    value: str,
+    expected: str,
+) -> None:
+    assert official_meta_bridge_id_for_url(value) == expected
 
 
 @pytest.mark.parametrize(
@@ -297,11 +316,13 @@ def test_site_mod_catalog_panel_marks_candidates_as_not_installed(
         if label.objectName() == "dependencySummary"
     ]
     assert table.rowCount() == 5
-    assert summaries == ["已登記 5 個候選網站 MOD"]
+    assert summaries == [
+        "已登記 5 個候選網站 MOD · 目前均未啟用下載"
+    ]
     assert {table.item(row, 1).text() for row in range(5)} == {
-        "官方播放限定",
-        "官方工具限定",
-        "官方 SDK 評估",
+        "不可下載 · 官方播放",
+        "不可下載 · 官方工具",
+        "尚未支援 · SDK 評估",
     }
     official_site = panel.findChild(QComboBox, "officialSiteBridgeSelect")
     official_url = panel.findChild(QLineEdit, "officialSiteBridgeUrl")
@@ -311,6 +332,11 @@ def test_site_mod_catalog_panel_marks_candidates_as_not_installed(
     assert official_url is not None
     assert open_official is not None
     assert open_help is not None
+    assert table.accessibleName() == "候選網站 MOD 狀態"
+    assert official_site.accessibleName() == "官方工具網站"
+    assert official_url.accessibleName() == "官方媒體頁網址"
+    assert open_official.accessibleName() == "開啟選取網站的官方頁面"
+    assert open_help.accessibleName() == "開啟選取網站的官方資料匯出說明"
     assert official_site.currentData() == "ani-gamer"
     assert open_help.isHidden()
     official_url.setText("https://example.com/")
@@ -329,6 +355,10 @@ def test_site_mod_catalog_panel_marks_candidates_as_not_installed(
     )
     official_site.setCurrentIndex(official_site.findData("facebook"))
     assert not open_help.isHidden()
+    assert any(
+        label.text().startswith("Facebook：官方工具限定，不支援下載")
+        for label in panel.findChildren(QLabel)
+    )
     official_url.setText("https://m.facebook.com/watch/?v=123456")
     open_official.click()
     open_help.click()

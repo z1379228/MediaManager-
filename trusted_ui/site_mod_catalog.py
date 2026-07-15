@@ -20,6 +20,36 @@ THREADS_HOME = "https://www.threads.com/"
 THREADS_EXPORT_HELP = (
     "https://www.facebook.com/help/instagram/259803026523198"
 )
+META_OFFICIAL_BRIDGE_NAMES = {
+    "facebook": "Facebook",
+    "instagram": "Instagram",
+    "threads": "Threads",
+}
+
+
+def official_meta_bridge_id_for_url(value: str) -> str:
+    """Identify an exact Meta host without treating it as download support."""
+
+    try:
+        parsed = urlsplit(value.strip())
+        port = parsed.port
+    except ValueError:
+        return ""
+    if (
+        parsed.scheme.casefold() != "https"
+        or parsed.username is not None
+        or parsed.password is not None
+        or port is not None
+    ):
+        return ""
+    host = (parsed.hostname or "").casefold()
+    if host in {"facebook.com", "www.facebook.com", "m.facebook.com"}:
+        return "facebook"
+    if host in {"instagram.com", "www.instagram.com"}:
+        return "instagram"
+    if host in {"threads.com", "www.threads.com", "threads.net", "www.threads.net"}:
+        return "threads"
+    return ""
 
 
 def _official_https_parts(
@@ -277,42 +307,46 @@ SITE_MOD_CANDIDATES = (
     SiteModCandidate(
         "ani-gamer",
         "巴哈姆特動畫瘋",
-        "官方播放限定",
+        "不可下載 · 官方播放",
         "驗證官方動畫頁網址並交由系統瀏覽器播放",
         "不擷取影片或彈幕、不接收 Cookie；不規避廣告、地區、IP 或串流限制",
     ),
     SiteModCandidate(
         "facebook",
         "Facebook",
-        "官方工具限定",
+        "不可下載 · 官方工具",
         "驗證官方影片頁並提供官方資料匯出說明",
         "不啟用自動擷取器、不接收帳密或 Cookie；不繞過私人內容限制",
     ),
     SiteModCandidate(
         "instagram",
         "Instagram",
-        "官方工具限定",
+        "不可下載 · 官方工具",
         "驗證官方貼文或 Reel 並提供官方資料匯出說明",
         "不啟用自動擷取器、不匯入登入工作階段；限時與私人內容不處理",
     ),
     SiteModCandidate(
         "threads",
         "Threads",
-        "官方工具限定",
+        "不可下載 · 官方工具",
         "驗證官方貼文頁並提供官方 Threads 資料匯出說明",
         "沒有專用擷取器；不自動收集貼文、不匯入登入資料或處理私人內容",
     ),
     SiteModCandidate(
         "mega",
         "MEGA",
-        "官方 SDK 評估",
+        "尚未支援 · SDK 評估",
         "驗證官方公開分享連結；規劃以 MEGA SDK 或 MEGAcmd 建立獨立下載 MOD",
         "不接收帳密或工作階段、不繞過傳輸配額或權限；驗證完成前不宣稱下載支援",
     ),
 )
 
 
-def create_site_mod_catalog_panel(parent: object = None) -> object:
+def create_site_mod_catalog_panel(
+    parent: object = None,
+    *,
+    initial_bridge_id: str = "",
+) -> object:
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QColor, QDesktopServices
     from PySide6.QtWidgets import (
@@ -332,6 +366,8 @@ def create_site_mod_catalog_panel(parent: object = None) -> object:
     from trusted_ui.theme import COLORS
 
     panel = QWidget(parent)
+    panel.setObjectName("siteModCatalogPanel")
+    panel.setAccessibleName("網站 MOD 備選與官方工具")
     page = QVBoxLayout(panel)
     page.setContentsMargins(4, 8, 4, 4)
     page.setSpacing(10)
@@ -344,21 +380,28 @@ def create_site_mod_catalog_panel(parent: object = None) -> object:
     intro.setWordWrap(True)
     page.addWidget(intro)
 
-    summary = QLabel(f"已登記 {len(SITE_MOD_CANDIDATES)} 個候選網站 MOD")
+    summary = QLabel(
+        f"已登記 {len(SITE_MOD_CANDIDATES)} 個候選網站 MOD · 目前均未啟用下載"
+    )
     summary.setObjectName("dependencySummary")
-    summary.setProperty("dependencyState", "ready")
+    summary.setProperty("dependencyState", "warning")
+    summary.setAccessibleName("候選網站 MOD 狀態摘要")
     page.addWidget(summary)
 
     table = QTableWidget(len(SITE_MOD_CANDIDATES), 4)
+    table.setAccessibleName("候選網站 MOD 狀態")
+    table.setAccessibleDescription(
+        "列出候選網站、目前階段、預定能力與不可跨越的安全邊界"
+    )
     table.setHorizontalHeaderLabels(("候選 MOD", "階段", "預定能力", "安全邊界"))
     table.verticalHeader().hide()
     table.setAlternatingRowColors(True)
     table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
     table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-    table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     table.horizontalHeader().setStretchLastSection(True)
     table.setColumnWidth(0, 150)
-    table.setColumnWidth(1, 105)
+    table.setColumnWidth(1, 155)
     table.setColumnWidth(2, 230)
 
     for row, candidate in enumerate(SITE_MOD_CANDIDATES):
@@ -396,14 +439,21 @@ def create_site_mod_catalog_panel(parent: object = None) -> object:
     official_controls = QHBoxLayout()
     official_site = QComboBox()
     official_site.setObjectName("officialSiteBridgeSelect")
+    official_site.setAccessibleName("官方工具網站")
+    official_site.setAccessibleDescription(
+        "選擇只在系統瀏覽器開啟的官方網站，不代表 MediaManager 支援下載"
+    )
     for bridge in OFFICIAL_BRIDGES:
         official_site.addItem(bridge.display_name, bridge.bridge_id)
     official_url = QLineEdit()
     official_url.setObjectName("officialSiteBridgeUrl")
+    official_url.setAccessibleName("官方媒體頁網址")
     open_official = QPushButton("開啟官方頁面")
     open_official.setObjectName("officialSiteBridgeOpen")
+    open_official.setAccessibleName("開啟選取網站的官方頁面")
     open_help = QPushButton("官方資料匯出說明")
     open_help.setObjectName("officialSiteBridgeHelp")
+    open_help.setAccessibleName("開啟選取網站的官方資料匯出說明")
     official_controls.addWidget(official_site)
     official_controls.addWidget(official_url, 1)
     official_controls.addWidget(open_official)
@@ -411,6 +461,8 @@ def create_site_mod_catalog_panel(parent: object = None) -> object:
     official_layout.addLayout(official_controls)
     official_status = QLabel()
     official_status.setObjectName("officialSiteBridgeStatus")
+    official_status.setAccessibleName("官方工具操作狀態")
+    official_status.setWordWrap(True)
     official_layout.addWidget(official_status)
     page.addWidget(official)
 
@@ -422,9 +474,16 @@ def create_site_mod_catalog_panel(parent: object = None) -> object:
         official_url.clear()
         official_url.setPlaceholderText(bridge.placeholder)
         open_help.setVisible(bool(bridge.help_url))
-        official_status.setText(
-            f"{bridge.display_name}：等待使用者操作；不會在背景連線。"
-        )
+        if bridge.bridge_id in META_OFFICIAL_BRIDGE_NAMES:
+            official_status.setText(
+                f"{bridge.display_name}：官方工具限定，不支援下載；"
+                "等待使用者操作，不會在背景連線。"
+            )
+        else:
+            official_status.setText(
+                f"{bridge.display_name}：目前不支援下載；"
+                "等待使用者操作，不會在背景連線。"
+            )
 
     def open_official_site() -> None:
         from PySide6.QtCore import QUrl
@@ -459,5 +518,8 @@ def create_site_mod_catalog_panel(parent: object = None) -> object:
     official_site.currentIndexChanged.connect(update_bridge)
     open_official.clicked.connect(open_official_site)
     open_help.clicked.connect(open_official_help)
+    initial_index = official_site.findData(initial_bridge_id)
+    if initial_index >= 0:
+        official_site.setCurrentIndex(initial_index)
     update_bridge(official_site.currentIndex())
     return panel

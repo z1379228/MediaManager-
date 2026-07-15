@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import main
@@ -62,3 +63,38 @@ def test_source_host_stdio_restoration_is_a_noop() -> None:
     from plugin_host.stdio import restore_frozen_host_stdio
 
     assert restore_frozen_host_stdio()
+
+
+def test_provider_host_routes_with_explicit_builtin_root(
+    tmp_path, monkeypatch
+) -> None:
+    import plugin_host.external_provider as external_provider
+
+    provider_root = tmp_path / "builtin-mod"
+    provider = provider_root / "youtube" / "provider.py"
+    captured = []
+
+    def run_provider(path, application_root, *, provider_root):
+        captured.append((path, application_root, provider_root))
+        return 9
+
+    monkeypatch.setattr(external_provider, "run_provider", run_provider)
+
+    assert (
+        main.main(
+            [
+                "--provider-host",
+                str(provider),
+                "--provider-root",
+                str(provider_root),
+            ]
+        )
+        == 9
+    )
+    assert captured == [
+        (provider, Path(main.__file__).resolve().parent, provider_root)
+    ]
+
+
+def test_provider_host_rejects_missing_builtin_root(tmp_path) -> None:
+    assert main.main(["--provider-host", str(tmp_path / "provider.py")]) == 2

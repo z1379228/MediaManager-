@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "group_id": "youtube",
+  "site_family": "youtube",
+  "parent_provider_id": "youtube",
+  "locales": ["en", "ja", "zh-CN", "zh-TW"],
+  "children": [
+    {"module_id": "search", "provider_id": "youtube-search"},
+    {"module_id": "video-preview", "provider_id": "youtube-player"},
+    {"module_id": "history", "provider_id": "youtube-history"},
+    {"module_id": "recovery", "provider_id": "youtube-recovery"},
+    {"module_id": "similar", "provider_id": "youtube-similar"},
+    {"module_id": "auto-split", "provider_id": "youtube-auto-split"}
+  ]
+}

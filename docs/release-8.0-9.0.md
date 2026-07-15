@@ -28,7 +28,8 @@
   不會為了讓畫面全綠而繞過外部可執行 MOD 的簽章限制。
 - 外部 MOD 啟用後切換到介面頁會自動重新載入，另提供手動重新整理；SAFE_MODE
   阻擋外部可執行 MOD 時顯示明確原因，不再只呈現空白頁。
-- 3 個下載 MOD、6 個探索 MOD、3 個選用功能 MOD 全部納入唯一啟用路由稽核；
+- 3 個下載 MOD、8 個探索 MOD、3 個選用功能 MOD（共 14 個）全部納入唯一啟用
+  路由稽核；
   搜尋頁、下載頁與 MOD 管理器統一透過相同控制器發布跨頁同步事件。
 - Media Convert、Speech to Text、Automation 在 MOD 管理頁與各自分頁補上中文
   使用順序、入口與 FFmpeg／whisper-cli／模型依賴說明。
@@ -37,12 +38,30 @@
 - 一鍵安裝不夾帶 Git、GitHub CLI 或 Python 等開發工具，也不含任意網址下載、靜默安裝
   或繞過系統政策。
 - MOD 接線稽核加入正式版候選必要證據；未通過不得封裝 Stable。
-- Ruff 與 549 項測試通過，另有 2 項 Windows symlink 測試因帳戶權限跳過。
+- 將原本實際綁定 YouTube 的跨站搜尋拆開：YouTube Search、Bilibili Search 與
+  動畫瘋官方搜尋使用三個獨立 provider、權限與啟用開關，停用其中一個不會回退到
+  YouTube。
+- Bilibili Search 只查詢 Bilibili 官方公開搜尋端點；動畫瘋搜尋只解析官方搜尋頁並
+  開啟官方作品頁，不提供下載、試聽或內嵌影片預覽。
+- Bilibili 官方端點若回覆驗證或節流狀態，會明確提示稍後重試／使用官方瀏覽器搜尋，
+  不會改查 YouTube，也不嘗試繞過驗證碼。
+- 搜尋結果來源會一路保留到 UI，跨網站相同影片 ID 不再誤判為重複；YouTube 專用的
+  歷史、失效替代、相似搜尋與影片預覽不會套用到其他網站。
+- Ruff 與 566 項測試通過，另有 2 項 Windows symlink 測試因帳戶權限跳過。
+
+上述搜尋拆分目前是 `codex/separate-site-search` 工作樹候選，尚未提交、合併、重建或
+上傳為公開 9.x 成品。合併前仍須補上聯合搜尋的每來源公平收集，避免第一個來源吃滿
+結果上限，並重新執行 CI、copied-folder、SHA-256 與 MOD 接線稽核。
 
 ## 正式版 1.0 候選
 
-開發版 9.x 的功能與 MOD 自檢已完成，但 production Ed25519 release identity
-尚未設定，`MediaManager.exe` 的 Authenticode 狀態仍是 `NotSigned`。因此目前只
-能發布開發版與正式版候選資訊，不能建立或上傳 Stable 1.0 二進位檔。
+開發版 9.x 的既有功能與 MOD 接線稽核已通過，但搜尋拆分工作樹尚未成為已驗證成品；
+production Ed25519 release identity 也尚未設定，`MediaManager.exe` 的 Authenticode
+狀態仍是 `NotSigned`。因此目前只能保留開發版與正式版候選資訊，不能建立或上傳
+Stable 1.0 二進位檔。
 
 候選細節見 [`release-stable-1.0-candidate.md`](release-stable-1.0-candidate.md)。
+
+> 後續註記：網站父／子 MOD、四語言資源與 YouTube／Bilibili 工作區完全隔離在
+> Development 9.1 完成，驗證結果請以 [`release-9.0-10.0.md`](release-9.0-10.0.md)
+> 為準；本檔保留 8.0～9.0 的歷史紀錄，不回寫成 9.1。

@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeVar
 
 from core.bootstrap.lifecycle import Lifecycle
 from core.bootstrap.startup_state import StartupPhase, StartupState
 from core.downloads.builtin import (
     BuiltinProviderIntegrityError,
-    ensure_builtin_providers,
+    ensure_builtin_provider,
 )
 from core.dependency_health import find_executable, find_javascript_runtime
 from core.discovery.service import DiscoveryService
@@ -17,10 +19,7 @@ from core.downloads.capabilities import builtin_download_capability
 from core.downloads.builtin_integrity import BUILTIN_PROVIDER_HASHES
 from core.downloads.provider_registry import DownloadProviderRegistry
 from core.downloads.queue import DownloadQueue
-from core.downloads.subprocess_provider import (
-    ProviderProtocolError,
-    SubprocessDownloadProvider,
-)
+from core.downloads.subprocess_provider import SubprocessDownloadProvider
 from core.events.event_bus import EventBus
 from core.features import FeatureModRegistry
 from core.conversion import ConversionService
@@ -31,6 +30,7 @@ from core.downloads.models import DownloadRequest
 from core.logging.audit_log import AuditLog
 from core.logging.logger import configure_logging
 from core.library import LibraryService
+from core.mod_groups import SITE_MOD_CHILDREN
 from core.plugins.cleanup import PluginCleanupManager
 from core.plugins.installer import PluginInstaller
 from core.plugins.manager import PluginManager
@@ -54,6 +54,52 @@ from core.settings import (
 )
 from core.storage.paths import AppPaths
 from core.updates.offline_bundle import OfflineUpdateInstaller
+
+
+_BUILTIN_DOWNLOAD_DETAILS = {
+    "youtube": (
+        "YouTube",
+        ("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"),
+    ),
+    "generic-ytdlp": (
+        "其他網站 Beta",
+        (
+            "vimeo.com",
+            "www.vimeo.com",
+            "player.vimeo.com",
+            "dailymotion.com",
+            "www.dailymotion.com",
+            "dai.ly",
+            "soundcloud.com",
+            "www.soundcloud.com",
+            "on.soundcloud.com",
+            "tiktok.com",
+            "www.tiktok.com",
+            "m.tiktok.com",
+            "vm.tiktok.com",
+            "twitch.tv",
+            "www.twitch.tv",
+            "m.twitch.tv",
+            "clips.twitch.tv",
+            "x.com",
+            "www.x.com",
+            "twitter.com",
+            "www.twitter.com",
+            "mobile.twitter.com",
+        ),
+    ),
+    "bilibili": (
+        "Bilibili",
+        (
+            "bilibili.com",
+            "www.bilibili.com",
+            "m.bilibili.com",
+            "space.bilibili.com",
+            "b23.tv",
+        ),
+    ),
+}
+_BuiltinT = TypeVar("_BuiltinT")
 
 
 @dataclass(slots=True)
@@ -83,6 +129,7 @@ class AppContext:
     offline_updates: OfflineUpdateInstaller
     library: LibraryService
     features: FeatureModRegistry
+    builtin_mod_errors: dict[str, str]
     conversion: ConversionService | None
     transcription: TranscriptionService | None
     automation: AutomationService | None
@@ -118,10 +165,13 @@ class Bootstrap:
         """Verify security inputs without starting or mutating runtime services."""
         paths = AppPaths.discover(portable=self.portable)
         security, _ = self._security_state(paths)
-        try:
-            ensure_builtin_providers(paths.builtin_mod)
-        except BuiltinProviderIntegrityError as error:
-            security.block(f"built-in download MOD invalid: {error}")
+        for provider_id in sorted(BUILTIN_PROVIDER_HASHES):
+            try:
+                ensure_builtin_provider(paths.builtin_mod, provider_id)
+            except BuiltinProviderIntegrityError as error:
+                security.block(
+                    f"built-in MOD invalid ({provider_id}): {error}"
+                )
         return security
 
     def initialize(self, *, start_background: bool = True) -> AppContext:
@@ -156,105 +206,240 @@ class Bootstrap:
         conversion: ConversionService | None = None
         transcription: TranscriptionService | None = None
         automation: AutomationService | None = None
-        builtin_root = None
+        builtin_mod_errors: dict[str, str] = {}
         discovery = DiscoveryService(paths.mod / "discovery-state.json")
         javascript_runtime = find_javascript_runtime(paths.application)
-        try:
-            builtin_root = ensure_builtin_providers(
-                paths.builtin_mod, paths.cache / "builtin-mod"
+
+        def record_builtin_failure(provider_id: str, error: Exception) -> None:
+            reason = " ".join(str(error).split())[:240]
+            if not reason:
+                reason = error.__class__.__name__
+            builtin_mod_errors[provider_id] = reason
+            security.block(f"built-in MOD invalid ({provider_id}): {reason}")
+            audit.write(
+                "downloads.builtin_provider_invalid",
+                provider_id=provider_id,
+                error=reason,
             )
-            youtube = SubprocessDownloadProvider(
-                builtin_root / "youtube",
+            download_details = _BUILTIN_DOWNLOAD_DETAILS.get(provider_id)
+            if download_details is not None:
+                display_name, hosts = download_details
+                download_providers.register_unavailable(
+                    provider_id,
+                    display_name,
+                    reason,
+                    hosts=hosts,
+                )
+
+        def load_builtin(
+            provider_id: str,
+            factory: Callable[[Path], _BuiltinT],
+        ) -> _BuiltinT | None:
+            try:
+                provider_root = ensure_builtin_provider(
+                    paths.builtin_mod,
+                    provider_id,
+                    paths.cache / "builtin-mod",
+                )
+                return factory(provider_root)
+            except Exception as error:
+                record_builtin_failure(provider_id, error)
+                return None
+
+        youtube = load_builtin(
+            "youtube",
+            lambda provider_root: SubprocessDownloadProvider(
+                provider_root,
                 application_root=paths.application,
                 ffmpeg_location=find_executable(paths.application, "ffmpeg"),
                 js_runtime=javascript_runtime,
                 expected_hashes=BUILTIN_PROVIDER_HASHES["youtube"],
                 preview_root=paths.temp / "youtube-auto-split",
-            )
+                runtime_home=paths.temp / "provider-runtime" / "youtube",
+            ),
+        )
+        if youtube is not None:
             download_providers.register(youtube, enabled=True)
             download_providers.register_capability(
                 builtin_download_capability("youtube")
             )
-            generic_ytdlp = SubprocessDownloadProvider(
-                builtin_root / "generic-ytdlp",
+
+        generic_ytdlp = load_builtin(
+            "generic-ytdlp",
+            lambda provider_root: SubprocessDownloadProvider(
+                provider_root,
                 application_root=paths.application,
                 ffmpeg_location=find_executable(paths.application, "ffmpeg"),
                 js_runtime=javascript_runtime,
                 expected_hashes=BUILTIN_PROVIDER_HASHES["generic-ytdlp"],
-            )
+                runtime_home=paths.temp / "provider-runtime" / "generic-ytdlp",
+            ),
+        )
+        if generic_ytdlp is not None:
             download_providers.register(generic_ytdlp, enabled=False)
             download_providers.register_capability(
                 builtin_download_capability("generic-ytdlp")
             )
-            bilibili = SubprocessDownloadProvider(
-                builtin_root / "bilibili",
+
+        bilibili = load_builtin(
+            "bilibili",
+            lambda provider_root: SubprocessDownloadProvider(
+                provider_root,
                 application_root=paths.application,
                 ffmpeg_location=find_executable(paths.application, "ffmpeg"),
                 js_runtime=javascript_runtime,
                 expected_hashes=BUILTIN_PROVIDER_HASHES["bilibili"],
-            )
+                runtime_home=paths.temp / "provider-runtime" / "bilibili",
+            ),
+        )
+        if bilibili is not None:
             download_providers.register(bilibili, enabled=False)
             download_providers.register_capability(
                 builtin_download_capability("bilibili")
             )
-            youtube_search = SubprocessDownloadProvider(
-                builtin_root / "youtube-search",
+
+        youtube_search = load_builtin(
+            "youtube-search",
+            lambda provider_root: SubprocessDownloadProvider(
+                provider_root,
                 application_root=paths.application,
                 js_runtime=javascript_runtime,
                 expected_hashes=BUILTIN_PROVIDER_HASHES["youtube-search"],
-            )
+                runtime_home=paths.temp / "provider-runtime" / "youtube-search",
+            ),
+        )
+        if youtube_search is not None:
             discovery.register(youtube_search, enabled=True)
-            youtube_player = SubprocessDownloadProvider(
-                builtin_root / "youtube-player",
+
+        bilibili_search = load_builtin(
+            "bilibili-search",
+            lambda provider_root: SubprocessDownloadProvider(
+                provider_root,
+                application_root=paths.application,
+                expected_hashes=BUILTIN_PROVIDER_HASHES["bilibili-search"],
+                runtime_home=paths.temp / "provider-runtime" / "bilibili-search",
+            ),
+        )
+        if bilibili_search is not None:
+            discovery.register(bilibili_search, enabled=False)
+
+        ani_gamer_search = load_builtin(
+            "ani-gamer-search",
+            lambda provider_root: SubprocessDownloadProvider(
+                provider_root,
+                application_root=paths.application,
+                expected_hashes=BUILTIN_PROVIDER_HASHES["ani-gamer-search"],
+                runtime_home=paths.temp / "provider-runtime" / "ani-gamer-search",
+            ),
+        )
+        if ani_gamer_search is not None:
+            discovery.register(ani_gamer_search, enabled=False)
+
+        youtube_player = load_builtin(
+            "youtube-player",
+            lambda provider_root: SubprocessDownloadProvider(
+                provider_root,
                 application_root=paths.application,
                 ffmpeg_location=find_executable(paths.application, "ffmpeg"),
                 js_runtime=javascript_runtime,
                 expected_hashes=BUILTIN_PROVIDER_HASHES["youtube-player"],
                 preview_root=paths.temp / "youtube-player",
-            )
+                runtime_home=paths.temp / "provider-runtime" / "youtube-player",
+            ),
+        )
+        if youtube_player is not None:
             discovery.register_video_preview(youtube_player, enabled=False)
-            youtube_history = SubprocessDownloadProvider(
-                builtin_root / "youtube-history",
+
+        youtube_history = load_builtin(
+            "youtube-history",
+            lambda provider_root: SubprocessDownloadProvider(
+                provider_root,
                 application_root=paths.application,
                 expected_hashes=BUILTIN_PROVIDER_HASHES["youtube-history"],
                 history_state_path=paths.data / "youtube-history.json",
-            )
+                runtime_home=paths.temp / "provider-runtime" / "youtube-history",
+            ),
+        )
+        if youtube_history is not None:
             discovery.register_history(youtube_history, enabled=True)
-            youtube_recovery = SubprocessDownloadProvider(
-                builtin_root / "youtube-recovery",
+
+        youtube_recovery = load_builtin(
+            "youtube-recovery",
+            lambda provider_root: SubprocessDownloadProvider(
+                provider_root,
                 application_root=paths.application,
                 expected_hashes=BUILTIN_PROVIDER_HASHES["youtube-recovery"],
-            )
+                runtime_home=paths.temp / "provider-runtime" / "youtube-recovery",
+            ),
+        )
+        if youtube_recovery is not None:
             discovery.register_recovery(youtube_recovery, enabled=True)
-            youtube_similar = SubprocessDownloadProvider(
-                builtin_root / "youtube-similar",
+
+        youtube_similar = load_builtin(
+            "youtube-similar",
+            lambda provider_root: SubprocessDownloadProvider(
+                provider_root,
                 application_root=paths.application,
                 expected_hashes=BUILTIN_PROVIDER_HASHES["youtube-similar"],
-            )
+                runtime_home=paths.temp / "provider-runtime" / "youtube-similar",
+            ),
+        )
+        if youtube_similar is not None:
             discovery.register_similar(youtube_similar, enabled=True)
-            youtube_auto_split = SubprocessDownloadProvider(
-                builtin_root / "youtube-auto-split",
+
+        youtube_auto_split = load_builtin(
+            "youtube-auto-split",
+            lambda provider_root: SubprocessDownloadProvider(
+                provider_root,
                 application_root=paths.application,
                 ffmpeg_location=find_executable(paths.application, "ffmpeg"),
                 expected_hashes=BUILTIN_PROVIDER_HASHES["youtube-auto-split"],
                 analysis_root=paths.temp / "youtube-auto-split",
-            )
+                runtime_home=paths.temp / "provider-runtime" / "youtube-auto-split",
+            ),
+        )
+        if youtube_auto_split is not None:
             discovery.register_split(youtube_auto_split, enabled=True)
-            conversion = ConversionService(
+
+        # Flat-MOD builds allowed saved child states to outlive a disabled
+        # site parent. Reconcile that legacy state before any UI is created.
+        discovery_statuses = {
+            status.provider_id: status for status in discovery.statuses()
+        }
+        for parent_id, child_ids in SITE_MOD_CHILDREN.items():
+            try:
+                parent_enabled = download_providers.is_enabled(parent_id)
+            except KeyError:
+                parent_enabled = False
+            if parent_enabled:
+                continue
+            for child_id in child_ids:
+                status = discovery_statuses.get(child_id)
+                if status is not None and status.enabled:
+                    discovery.set_enabled(child_id, False)
+
+        conversion = load_builtin(
+            "media-convert",
+            lambda provider_root: ConversionService(
                 find_executable(paths.application, "ffmpeg"),
-                builtin_root / "media-convert" / "presets.json",
+                provider_root / "presets.json",
                 paths.temp / "media-convert",
-            )
+            ),
+        )
+        if conversion is not None:
             features.register(conversion, enabled=False)
-            transcription = TranscriptionService(
+
+        transcription = load_builtin(
+            "speech-to-text",
+            lambda _provider_root: TranscriptionService(
                 find_executable(paths.application, "whisper-cli"),
                 SpeechModelManager(paths.data / "models" / "speech-to-text"),
                 paths.temp / "speech-to-text",
-            )
+            ),
+        )
+        if transcription is not None:
             features.register(transcription, enabled=False)
-        except (BuiltinProviderIntegrityError, ProviderProtocolError) as error:
-            security.block(f"built-in download MOD invalid: {error}")
-            audit.write("downloads.builtin_provider_invalid", error=str(error))
+        automation_root = load_builtin("automation", lambda provider_root: provider_root)
         download_queue = DownloadQueue(
             download_providers,
             workers=settings.download_workers,
@@ -273,7 +458,7 @@ class Bootstrap:
             trust_store,
             allow_executable_plugins=False,
         )
-        if builtin_root is not None:
+        if automation_root is not None:
             def dispatch_automation(
                 rule: AutomationRule, candidate: AutomationCandidate
             ) -> str:
@@ -355,11 +540,15 @@ class Bootstrap:
                     )
                 raise RuntimeError("unsupported automation action")
 
-            automation = AutomationService(
-                paths.data / "automation.sqlite3",
-                dispatch_automation,
-            )
-            features.register(automation, enabled=False)
+            try:
+                automation = AutomationService(
+                    paths.data / "automation.sqlite3",
+                    dispatch_automation,
+                )
+                features.register(automation, enabled=False)
+            except Exception as error:
+                record_builtin_failure("automation", error)
+                automation = None
         plugin_cleanup = PluginCleanupManager(paths.mod, plugin_registry)
         plugin_recovery = PluginTransactionRecovery(
             paths.mod, plugin_registry, plugin_manager
@@ -460,6 +649,7 @@ class Bootstrap:
             offline_updates=offline_updates,
             library=library,
             features=features,
+            builtin_mod_errors=builtin_mod_errors,
             conversion=conversion,
             transcription=transcription,
             automation=automation,
