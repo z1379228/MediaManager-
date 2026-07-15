@@ -1,7 +1,10 @@
 from pathlib import Path
+from io import StringIO
+import sys
 from types import SimpleNamespace
 
 import main
+import pytest
 from core.security.safe_mode import SecurityMode
 
 
@@ -60,9 +63,53 @@ def test_plugin_host_entrypoint_routes_without_bootstrap(
 
 
 def test_source_host_stdio_restoration_is_a_noop() -> None:
-    from plugin_host.stdio import restore_frozen_host_stdio
+    from plugin_host.stdio import (
+        restore_frozen_cli_stdio,
+        restore_frozen_host_stdio,
+    )
 
     assert restore_frozen_host_stdio()
+    assert restore_frozen_cli_stdio()
+
+
+def test_frozen_cli_stdio_does_not_require_stdin(monkeypatch) -> None:
+    import plugin_host.stdio as stdio
+
+    stdout = StringIO()
+    stderr = StringIO()
+    original_streams = (sys.stdout, sys.__stdout__, sys.stderr, sys.__stderr__)
+    monkeypatch.setattr(stdio.os, "name", "nt")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(
+        stdio,
+        "_windows_stream",
+        lambda identifier, _mode: stdout if identifier == -11 else stderr,
+    )
+    try:
+        assert stdio.restore_frozen_cli_stdio()
+        assert sys.stdout is stdout
+        assert sys.stderr is stderr
+    finally:
+        sys.stdout, sys.__stdout__, sys.stderr, sys.__stderr__ = original_streams
+
+
+def test_version_prepares_frozen_cli_output_before_argparse(
+    monkeypatch, capsys
+) -> None:
+    import plugin_host.stdio as stdio
+
+    calls = []
+    monkeypatch.setattr(
+        stdio,
+        "restore_frozen_cli_stdio",
+        lambda: calls.append("restore") or True,
+    )
+    with pytest.raises(SystemExit) as raised:
+        main.main(["--version"])
+
+    assert raised.value.code == 0
+    assert calls == ["restore"]
+    assert "MediaManager 開發版 9.1" in capsys.readouterr().out
 
 
 def test_provider_host_routes_with_explicit_builtin_root(
