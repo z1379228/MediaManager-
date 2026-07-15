@@ -8,6 +8,9 @@ import sys
 from typing import TextIO
 
 
+_frozen_cli_streams: tuple[TextIO, TextIO] | None = None
+
+
 def _windows_stream(identifier: int, mode: str) -> TextIO | None:
     import msvcrt
     from ctypes import wintypes
@@ -88,8 +91,11 @@ def restore_frozen_cli_stdio() -> bool:
     console.
     """
 
+    global _frozen_cli_streams
+
     if os.name != "nt" or not getattr(sys, "frozen", False):
         return True
+    close_frozen_cli_stdio()
     stdout = _windows_stream(-11, "w")
     stderr = _windows_stream(-12, "w")
     real_output = stdout is not None and stderr is not None
@@ -99,4 +105,29 @@ def restore_frozen_cli_stdio() -> bool:
         stderr = open(os.devnull, "w", encoding="utf-8")  # noqa: SIM115
     sys.stdout = sys.__stdout__ = stdout
     sys.stderr = sys.__stderr__ = stderr
+    _frozen_cli_streams = (stdout, stderr)
     return real_output
+
+
+def close_frozen_cli_stdio() -> None:
+    """Flush and close duplicated frozen CLI output handles before exit."""
+
+    global _frozen_cli_streams
+
+    streams = _frozen_cli_streams
+    _frozen_cli_streams = None
+    if streams is None:
+        return
+    for stream in streams:
+        try:
+            stream.flush()
+        except OSError:
+            pass
+        try:
+            stream.close()
+        except OSError:
+            pass
+    if sys.stdout in streams or sys.stdout is None:
+        sys.stdout = sys.__stdout__ = None
+    if sys.stderr in streams or sys.stderr is None:
+        sys.stderr = sys.__stderr__ = None

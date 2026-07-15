@@ -89,6 +89,9 @@ def test_frozen_cli_stdio_does_not_require_stdin(monkeypatch) -> None:
         assert stdio.restore_frozen_cli_stdio()
         assert sys.stdout is stdout
         assert sys.stderr is stderr
+        stdio.close_frozen_cli_stdio()
+        assert stdout.closed
+        assert stderr.closed
     finally:
         sys.stdout, sys.__stdout__, sys.stderr, sys.__stderr__ = original_streams
 
@@ -104,11 +107,16 @@ def test_version_prepares_frozen_cli_output_before_argparse(
         "restore_frozen_cli_stdio",
         lambda: calls.append("restore") or True,
     )
+    monkeypatch.setattr(
+        stdio,
+        "close_frozen_cli_stdio",
+        lambda: calls.append("close"),
+    )
     with pytest.raises(SystemExit) as raised:
         main.main(["--version"])
 
     assert raised.value.code == 0
-    assert calls == ["restore"]
+    assert calls == ["restore", "close"]
     assert "MediaManager 開發版 9.1" in capsys.readouterr().out
 
 
