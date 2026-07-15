@@ -17,12 +17,12 @@
 ### 9.1 驗證結果
 
 - Ruff 全專案檢查通過。
-- Pytest：629 項通過、2 項因目前 Windows 帳戶無法建立 symlink 而跳過。
+- Pytest：632 項通過、2 項因目前 Windows 帳戶無法建立 symlink 而跳過。
 - `tools.audit_mod_groups`：通過，驗證 2 個網站群組與每組 4 個語言檔。
 - copied-folder smoke：`--version`、`--verify-only`、`--headless`、凍結後 MOD 載入及
   YouTube Music 播放清單網址解析皆通過。
 - `Version/Development/9.1`：58 項 SHA-256 稽核通過；`MediaManager.exe` SHA-256 為
-  `3FF76A1E278E0C0C791941CECE16F1A8003CF51D1F5B1BB535513F1778B74393`。
+  `D6EC56BA2BD54CC76530040C17389999320F3774110CB9B3733F7006AD244C14`。
 - 發布 preflight 仍因缺少 production Ed25519 發布身分與 Authenticode 簽章而阻擋；
   9.1 僅為 Development／`SAFE_MODE` 成品，不是 Stable 1.0。
 - 完整測試跳過、環境限制與正式發布阻擋記錄於

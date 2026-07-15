@@ -7,7 +7,7 @@
 ## 驗證結果
 
 - Ruff：通過。
-- Pytest：629 passed、2 skipped。
+- Pytest：632 passed、2 skipped。
 - Python compileall：通過。
 - 內建網站 MOD 群組稽核：通過，2 個群組、每組 4 個語言檔。
 - 版本與 SHA-256 稽核：通過；Development 9.1 共檢查 58 個檔案。
@@ -22,7 +22,7 @@
    - `tests/test_builtin_download_provider.py`
    - `tests/test_library_service.py`
 2. 沙盒內第一次重跑 pytest 時，測試暫存路徑回報存取遭拒；改用相同虛擬環境在沙盒外
-   重跑後為 629 passed、2 skipped。這是測試環境權限問題，不是測試斷言失敗。
+   重跑後為 632 passed、2 skipped。這是測試環境權限問題，不是測試斷言失敗。
 3. Windows UI Automation 無法直接操作 Qt 表格內嵌的 MOD 開關；實際 PySide6 元件測試
    已驗證主 MOD 關閉時隱藏子 MOD、開啟後顯示，以及停用主 MOD時級聯停用子 MOD。
 4. `generic-ytdlp` 仍是預設停用的舊 Beta 多網域相容 provider，後續開發版應逐站遷移。
@@ -30,12 +30,14 @@
 
 ## 上傳前已修正
 
-- 第一個 9.1 候選 EXE 的 windowed CLI 模式會因標準輸出 pipe ownership 而無法結束，
-  上傳已暫停。9.1 的凍結 windowed EXE 將 CLI stdout／stderr 固定送到 null device，
-  `--version`、`--verify-only`、`--headless` 以程序 exit code 回報成功或失敗；來源 Python
-  CLI 仍保留文字輸出。重新建置後以 ZIP 內 copied-folder 實測三種模式；未修正的候選
-  檔沒有上傳。日後若需要可捕捉的文字 CLI，應提供獨立 console launcher，不重新混入
-  GUI EXE。
+- 第一個 9.1 候選 EXE 的 windowed CLI 模式會因標準輸出 pipe ownership 與直譯器結束
+  流程而無法退出，上傳因此暫停。9.1 的凍結 windowed EXE 現在將 CLI stdout／stderr
+  固定送到 null device，完成服務清理後以程序級退出回報 exit code；來源 Python CLI 仍
+  保留文字輸出。重新建置後實測 `--version`、`--verify-only`、`--headless` 均於約 3 秒
+  以退出碼 0 結束且無殘留程序；未修正候選檔沒有上傳。日後若需要可捕捉的文字 CLI，
+  應提供獨立 console launcher，不重新混入 GUI EXE。
+- 一次可攜模式測試在候選目錄建立了 `UserData`；版本稽核正確攔截 6 個未列入雜湊的
+  檔案。清除該次測試資料後，Development 9.1 的 58 項 SHA-256 稽核重新通過。
 
 ## Stable 發布阻擋
 
