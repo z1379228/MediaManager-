@@ -5,16 +5,16 @@
 
 ## 目前可確認的來源基線
 
-- 目前來源顯示為測試版 1.0，核心相容版本 11.0.0；開發與測試流程仍維持
-  `SAFE_MODE`。
+- 目前來源顯示為開發版 11.1，核心相容版本 11.1.0；它是 11.0 系列測試檔案，
+  開發與測試流程仍維持 `SAFE_MODE`。
 - GitHub 的 `test-v1.0.0` 是較早 revision 的不可覆寫測試附件。目前來源新增動畫瘋
   目錄、封面與集數導覽後尚未重新封裝，因此來源與已發布附件不能視為同一候選成品。
 - 網站父子生命週期、工作區、網址路由與搜尋來源分離；目前共有 19 個內建 MOD、
   5 個網站群組及每組 4 個語言檔。
 - Ruff、MOD 群組稽核與文字污染檢查通過；Pytest 719 項通過，另有 2 項 Windows
   symlink 測試因帳戶權限跳過。
-- 目前沒有可供 Stable 評估的最新 revision 對應 EXE、`release-info.json`、
-  `SHA256SUMS.txt`、copied-folder smoke 與發布後雜湊證據。
+- 開發版 11.1 的 EXE、`release-info.json`、`SHA256SUMS.txt`、copied-folder smoke
+  與發布後雜湊只證明測試附件一致，不能取代 Stable 的 production 簽章及候選證據。
 
 ## 仍然阻擋 Stable 1.0 的項目
 
