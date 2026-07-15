@@ -211,7 +211,6 @@ def create_download_panel(
         "youtube": "YouTube",
         "bilibili": "Bilibili",
         "facebook": "Facebook",
-        "mega": "MEGA",
     }
     if site_family not in site_labels:
         raise ValueError("download workspace site family is unsupported")
@@ -446,7 +445,7 @@ def create_download_panel(
             self.thumbnail_preview.setAccessibleName(f"{site_label} 網址縮圖")
             self.thumbnail_preview.setFixedSize(104, 62)
             self.thumbnail_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.thumbnail_preview.setVisible(site_family in {"facebook", "mega"})
+            self.thumbnail_preview.setVisible(site_family == "facebook")
             self.set_thumbnail_placeholder()
             self.preview = QLabel(self.workspace_text["initial_preview"])
             self.preview.setObjectName("preview")
@@ -745,23 +744,11 @@ def create_download_panel(
             self.update_site_options()
 
         def set_thumbnail_placeholder(self, kind: str = "") -> None:
-            if self.site_family not in {"facebook", "mega"}:
+            if self.site_family != "facebook":
                 self.thumbnail_preview.clear()
                 return
-            mega_labels = {
-                "mega-folder": "MEGA\nFOLDER",
-                "mega-video": "MEGA\nVIDEO",
-                "mega-archive": "MEGA\nARCHIVE",
-                "mega-document": "MEGA\nDOCUMENT",
-                "mega-audio": "MEGA\nAUDIO",
-                "mega-image": "MEGA\nIMAGE",
-            }
-            label = (
-                "FB"
-                if self.site_family == "facebook"
-                else mega_labels.get(kind, "MEGA\nFILE")
-            )
-            color = QColor("#1877F2" if self.site_family == "facebook" else "#D9272E")
+            label = "FB"
+            color = QColor("#1877F2")
             pixmap = QPixmap(96, 54)
             pixmap.fill(color)
             painter = QPainter(pixmap)
@@ -1038,22 +1025,9 @@ def create_download_panel(
                 route is None or route.site_family != self.site_family
                 for route in routes
             )
-            unsupported_mega_folder = any(
-                route is not None
-                and route.site_family == "mega"
-                and route.resource_kind == "public-folder"
-                for url in urls
-                if (route := classify_site_url(url)) is not None
-            )
-            self.add_download.setEnabled(
-                bool(urls) and not wrong_site and not unsupported_mega_folder
-            )
+            self.add_download.setEnabled(bool(urls) and not wrong_site)
             if wrong_site:
                 self.preview.setText(self.workspace_text["wrong_site"])
-            elif unsupported_mega_folder:
-                self.preview.setText(
-                    "已辨識 MEGA 公開資料夾；Development 9.2 先支援公開檔案下載。"
-                )
             if self.site_family == "youtube":
                 if not urls:
                     classification = "尚未輸入 YouTube 網址。"
@@ -1117,19 +1091,6 @@ def create_download_panel(
                 self.preparation_preview.setText("尚未取得實際格式與容量資訊")
                 return
             preset_id = str(self.format_preset.currentData())
-            if self.site_family == "mega":
-                if not self.filename_manually_edited:
-                    self.output_filename.clear()
-                dependency = (
-                    "mega-get 已偵測，可加入下載佇列"
-                    if self.analyzed_info.get("dependency_available") is True
-                    else "未偵測到官方 mega-get；可讀取網址，但下載會保持失敗關閉"
-                )
-                self.preparation_preview.setText(dependency)
-                self.preparation_preview.setToolTip(
-                    "MEGA 公開連結的原始檔名由官方 MEGAcmd 決定。"
-                )
-                return
             if not self.filename_manually_edited:
                 self.output_filename.setText(
                     suggest_output_filename(
@@ -1324,16 +1285,7 @@ def create_download_panel(
                 f"{data.get('title', '未知標題')}  ·  "
                 f"{data.get('uploader', '未知作者')}  ·  {duration_text}"
             )
-            thumbnail_kind = str(data.get("thumbnail_kind") or "")
-            if self.site_family == "mega":
-                self.set_thumbnail_placeholder(thumbnail_kind)
-                dependency_text = (
-                    "官方 mega-get 已偵測"
-                    if data.get("dependency_available") is True
-                    else "尚未偵測到官方 mega-get"
-                )
-                self.preview.setText(f"{self.preview.text()}  ·  {dependency_text}")
-            elif self.site_family == "facebook":
+            if self.site_family == "facebook":
                 thumbnail_url = str(data.get("thumbnail") or "")
                 if self.thumbnail_loader is not None and thumbnail_url:
                     analyzed_url = self.analyzed_url

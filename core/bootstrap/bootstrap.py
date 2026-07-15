@@ -337,12 +337,21 @@ class Bootstrap:
             )
 
         mega_get = find_executable(paths.application, "mega-get")
+        mega_speedlimit = find_executable(paths.application, "mega-speedlimit")
+        mega_tools = {
+            name: path
+            for name, path in (
+                ("mega-get", mega_get),
+                ("mega-speedlimit", mega_speedlimit),
+            )
+            if path
+        }
         mega = load_builtin(
             "mega",
             lambda provider_root: SubprocessDownloadProvider(
                 provider_root,
                 application_root=paths.application,
-                external_tools={"mega-get": mega_get} if mega_get else {},
+                external_tools=mega_tools,
                 expected_hashes=BUILTIN_PROVIDER_HASHES["mega"],
                 download_timeout=86_400,
                 idle_timeout=900,

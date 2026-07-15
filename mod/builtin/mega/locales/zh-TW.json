@@ -14,8 +14,8 @@
   "modules": {
     "mega": {
       "name": "MEGA Download",
-      "purpose": "辨識公開檔案分享並分流給官方 mega-get；9.2 不下載資料夾分享",
-      "control_location": "MOD 管理啟用後顯示 MEGA 下載工作區"
+      "purpose": "在獨立工作區辨識公開檔案並交由官方 MEGAcmd 下載；可選連線分流，資料夾目前只辨識",
+      "control_location": "MOD 管理啟用後顯示獨立 MEGA 下載工作區"
     }
   }
 }

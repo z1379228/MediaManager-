@@ -48,11 +48,11 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
     },
     "mega": {
         "group.json": "c541dbc81ebbdca4f949ef66419acc0f0486c02a898bd53e472b5652b865e1b6",
-        "locales/en.json": "f2cf2a45a4ed640f9d0bdc0d1c7d4f4226eaad5d1409116b5e4f24ecf9dbde73",
-        "locales/ja.json": "a5eb64e40b2fff500a6f13966318d75ed5b6a570662439c80657ab9b9f885a6a",
-        "locales/zh-CN.json": "67534444055eedf1a630a561e2aa58f03ec36d67722e656f558a864d0948e590",
-        "locales/zh-TW.json": "6a4486b949918e28e159f9ea6f4a1c1cc483fefc71ba6a16ded6d72bc9c9f863",
-        "provider.py": "d6a1564114f2de750d49bbacb631e93c19b0d2a14c227d837764b3b103833aad",
+        "locales/en.json": "3c9f3cce78437c0bf841d1de75ad392af9fe0c1ef50e1758548ce664d1b8a0c9",
+        "locales/ja.json": "11415c166ee2a78818da12b7b91aae5606e23ec0a85c5c9f24b1c7a301d538c7",
+        "locales/zh-CN.json": "323edbf13dff9347c81a7b5c207f62d5c4b4054fe55de6206a437d565129faf8",
+        "locales/zh-TW.json": "ad832a830a86f8c8c671f3857725268e87715a48ea7952a1d13ae0dbb18397fc",
+        "provider.py": "0fc93d225cd491febc4366112131aa90b00e941011182fa05f684b507d5314c9",
         "provider.json": "21023fe910ac917504ac37cc18f32a618a48bda988bad4c2a4171e126c554513",
     },
     "youtube-player": {

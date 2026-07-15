@@ -87,18 +87,142 @@ def parse_share(value: object) -> tuple[str, str] | None:
     return share.group(1), share.group(2)
 
 
-def _mega_get_path(request: dict[str, Any]) -> Path | None:
+def _official_tool_path(
+    request: dict[str, Any], tool_name: str
+) -> Path | None:
     tools = request.get("external_tools")
-    raw_path = tools.get("mega-get") if isinstance(tools, dict) else None
+    raw_path = tools.get(tool_name) if isinstance(tools, dict) else None
     if not isinstance(raw_path, str) or not raw_path:
         return None
     path = Path(raw_path).resolve()
-    if (
-        not path.is_file()
-        or path.name.casefold() not in {"mega-get", "mega-get.exe"}
-    ):
+    allowed_names = {tool_name, f"{tool_name}.exe"}
+    if os.name == "nt":
+        allowed_names.add(f"{tool_name}.bat")
+    if not path.is_file() or path.name.casefold() not in allowed_names:
         return None
     return path
+
+
+def _mega_get_path(request: dict[str, Any]) -> Path | None:
+    return _official_tool_path(request, "mega-get")
+
+
+def _transfer_options(request: dict[str, Any]) -> tuple[int | None, int | None]:
+    raw_options = request.get("provider_options")
+    if raw_options is None:
+        return None, None
+    if not isinstance(raw_options, dict) or len(raw_options) > 16:
+        raise ValueError("MEGA provider options are invalid")
+    allowed = {"download_connections", "download_speed_limit_bps"}
+    if any(not isinstance(key, str) or key not in allowed for key in raw_options):
+        raise ValueError("MEGA provider options contain unsupported keys")
+
+    def bounded_integer(key: str, minimum: int, maximum: int) -> int | None:
+        raw_value = raw_options.get(key)
+        if raw_value in {None, ""}:
+            return None
+        if not isinstance(raw_value, str) or not raw_value.isascii():
+            raise ValueError(f"MEGA {key} is invalid")
+        try:
+            value = int(raw_value)
+        except ValueError as error:
+            raise ValueError(f"MEGA {key} is invalid") from error
+        if not minimum <= value <= maximum:
+            raise ValueError(f"MEGA {key} is outside the allowed range")
+        return value
+
+    return (
+        bounded_integer("download_connections", 1, 6),
+        bounded_integer("download_speed_limit_bps", 65_536, 1_073_741_824),
+    )
+
+
+def _hidden_process_options() -> tuple[object, int]:
+    startupinfo = None
+    creationflags = 0
+    if os.name == "nt":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        creationflags = subprocess.CREATE_NO_WINDOW
+    return startupinfo, creationflags
+
+
+def _official_tool_command(
+    executable: Path, arguments: list[str]
+) -> tuple[list[str], dict[str, str] | None]:
+    """Invoke official Windows batch clients without interpolating user data."""
+
+    if executable.suffix.casefold() != ".bat":
+        return [str(executable), *arguments], None
+    if os.name != "nt":
+        raise RuntimeError("MEGAcmd batch clients are supported only on Windows")
+    system_root = Path(os.environ.get("SystemRoot", "")).resolve()
+    command_processor = (system_root / "System32" / "cmd.exe").resolve()
+    if (
+        not system_root.is_dir()
+        or not command_processor.is_file()
+        or command_processor.name.casefold() != "cmd.exe"
+        or not command_processor.is_relative_to(system_root)
+    ):
+        raise RuntimeError("trusted Windows command processor is unavailable")
+    environment = os.environ.copy()
+    environment["MM_MEGA_TOOL"] = str(executable)
+    variables = []
+    for index, argument in enumerate(arguments):
+        if "\x00" in argument or "\r" in argument or "\n" in argument:
+            raise ValueError("MEGAcmd argument is invalid")
+        variable = f"MM_MEGA_ARG_{index}"
+        environment[variable] = argument
+        variables.append(f'"%{variable}%"')
+    command_text = 'call "%MM_MEGA_TOOL%"'
+    if variables:
+        command_text += " " + " ".join(variables)
+    return (
+        [str(command_processor), "/d", "/s", "/c", command_text],
+        environment,
+    )
+
+
+def _apply_transfer_options(request: dict[str, Any]) -> None:
+    connections, speed_limit = _transfer_options(request)
+    if connections is None and speed_limit is None:
+        return
+    speedlimit = _official_tool_path(request, "mega-speedlimit")
+    if speedlimit is None:
+        raise RuntimeError(
+            "official MEGAcmd mega-speedlimit is required for custom transfer settings"
+        )
+    startupinfo, creationflags = _hidden_process_options()
+    commands: list[list[str]] = []
+    if connections is not None:
+        commands.append(
+            [str(speedlimit), "--download-connections", str(connections)]
+        )
+    if speed_limit is not None:
+        commands.append([str(speedlimit), "-d", str(speed_limit)])
+    for command in commands:
+        command, environment = _official_tool_command(
+            speedlimit, command[1:]
+        )
+        result = subprocess.run(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            shell=False,
+            startupinfo=startupinfo,
+            creationflags=creationflags,
+            timeout=30,
+            check=False,
+            env=environment,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                "official MEGAcmd rejected the requested transfer settings"
+            )
 
 
 def analyze(request: dict[str, Any]) -> dict[str, Any]:
@@ -202,15 +326,14 @@ def download(request: dict[str, Any]) -> str:
         raise ValueError("output directory is unsafe")
     output_filename = _safe_output_filename(request.get("output_filename"))
     before = _file_snapshot(output)
+    _apply_transfer_options(request)
     emit({"type": "progress", "title": "Preparing official MEGA download"})
-    startupinfo = None
-    creationflags = 0
-    if os.name == "nt":
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        creationflags = subprocess.CREATE_NO_WINDOW
+    startupinfo, creationflags = _hidden_process_options()
+    command, environment = _official_tool_command(
+        executable, [str(request["url"]), str(output)]
+    )
     process = subprocess.Popen(
-        [str(executable), str(request["url"]), str(output)],
+        command,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -220,6 +343,7 @@ def download(request: dict[str, Any]) -> str:
         shell=False,
         startupinfo=startupinfo,
         creationflags=creationflags,
+        env=environment,
     )
     assert process.stdout is not None
     for line in process.stdout:

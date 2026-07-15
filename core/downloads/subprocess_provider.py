@@ -103,7 +103,7 @@ class SubprocessDownloadProvider:
                 )
             self.js_runtime = (name, str(runtime_path))
         allowed_tool_names = {
-            "mega": frozenset({"mega-get"}),
+            "mega": frozenset({"mega-get", "mega-speedlimit"}),
         }.get(self.provider_id, frozenset())
         raw_tools = dict(external_tools or {})
         if set(raw_tools) - allowed_tool_names:
@@ -871,6 +871,7 @@ class SubprocessDownloadProvider:
             "subtitle_languages": list(request.subtitle_languages),
             "timed_comment_mode": request.timed_comment_mode,
             "container_preset": request.container_preset,
+            "provider_options": dict(request.provider_options),
         }
         result = self._execute(
             payload,

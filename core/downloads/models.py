@@ -43,6 +43,7 @@ class DownloadRequest:
     subtitle_languages: tuple[str, ...] = ()
     timed_comment_mode: str = "none"
     container_preset: str = "auto"
+    provider_options: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         if not self.url.startswith(("https://", "http://")):
@@ -83,6 +84,29 @@ class DownloadRequest:
             self.timed_comment_mode,
             self.container_preset,
         )
+        if (
+            not isinstance(self.provider_options, tuple)
+            or len(self.provider_options) > 16
+        ):
+            raise ValueError("provider options are invalid")
+        seen_provider_options: set[str] = set()
+        for item in self.provider_options:
+            if (
+                not isinstance(item, tuple)
+                or len(item) != 2
+                or not all(isinstance(value, str) for value in item)
+            ):
+                raise ValueError("provider options are invalid")
+            key, value = item
+            if (
+                not key
+                or len(key) > 64
+                or len(value) > 256
+                or key in seen_provider_options
+                or any(ord(character) < 32 for character in key + value)
+            ):
+                raise ValueError("provider options are invalid")
+            seen_provider_options.add(key)
         filename = self.output_filename
         if (
             not isinstance(filename, str)

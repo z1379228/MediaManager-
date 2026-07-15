@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 from io import StringIO
+import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -110,6 +112,123 @@ def test_download_routes_public_file_to_injected_mega_get(
 
     assert captured == [[str(executable.resolve()), url, str(output.resolve())]]
     assert Path(result).read_bytes() == b"public data"
+
+
+def test_download_applies_opt_in_official_transfer_settings(
+    tmp_path: Path, monkeypatch
+) -> None:
+    provider = load_provider()
+    mega_get = tmp_path / "mega-get.exe"
+    mega_speedlimit = tmp_path / "mega-speedlimit.exe"
+    mega_get.write_bytes(b"test executable placeholder")
+    mega_speedlimit.write_bytes(b"test executable placeholder")
+    output = tmp_path / "downloads"
+    settings_commands: list[list[str]] = []
+
+    def run(arguments, **kwargs):
+        settings_commands.append(arguments)
+        assert kwargs["shell"] is False
+        assert kwargs["timeout"] == 30
+        return SimpleNamespace(returncode=0)
+
+    class Process:
+        def __init__(self, arguments, **_kwargs):
+            destination = Path(arguments[2])
+            destination.mkdir(parents=True, exist_ok=True)
+            (destination / "backup.zip").write_bytes(b"public data")
+            self.stdout = StringIO("100%\n")
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(provider.subprocess, "run", run)
+    monkeypatch.setattr(provider.subprocess, "Popen", Process)
+    provider.download(
+        {
+            "url": "https://mega.nz/file/AbCdEf12#abcdefghijklmnop",
+            "output_dir": str(output),
+            "external_tools": {
+                "mega-get": str(mega_get),
+                "mega-speedlimit": str(mega_speedlimit),
+            },
+            "provider_options": {
+                "download_connections": "4",
+                "download_speed_limit_bps": "10485760",
+            },
+        }
+    )
+
+    executable = str(mega_speedlimit.resolve())
+    assert settings_commands == [
+        [executable, "--download-connections", "4"],
+        [executable, "-d", "10485760"],
+    ]
+
+
+def test_custom_transfer_settings_fail_closed_without_speedlimit(
+    tmp_path: Path,
+) -> None:
+    provider = load_provider()
+    mega_get = tmp_path / "mega-get.exe"
+    mega_get.write_bytes(b"test executable placeholder")
+    with pytest.raises(RuntimeError, match="mega-speedlimit"):
+        provider.download(
+            {
+                "url": "https://mega.nz/file/AbCdEf12#abcdefghijklmnop",
+                "output_dir": str(tmp_path / "downloads"),
+                "external_tools": {"mega-get": str(mega_get)},
+                "provider_options": {"download_connections": "4"},
+            }
+        )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows MEGAcmd uses batch clients")
+def test_windows_official_batch_client_uses_bounded_environment_arguments(
+    tmp_path: Path, monkeypatch
+) -> None:
+    provider = load_provider()
+    batch = tmp_path / "mega-get.bat"
+    system_root = tmp_path / "Windows"
+    command_processor = system_root / "System32" / "cmd.exe"
+    batch.write_text("@echo off\n", encoding="utf-8")
+    command_processor.parent.mkdir(parents=True)
+    command_processor.write_bytes(b"test executable placeholder")
+    monkeypatch.setenv("SystemRoot", str(system_root))
+
+    command, environment = provider._official_tool_command(
+        batch.resolve(),
+        [
+            "https://mega.nz/file/AbCdEf12#abcdefghijklmnop",
+            str(tmp_path / "folder with spaces"),
+        ],
+    )
+
+    assert command[:4] == [
+        str(command_processor.resolve()),
+        "/d",
+        "/s",
+        "/c",
+    ]
+    assert command[4] == (
+        'call "%MM_MEGA_TOOL%" "%MM_MEGA_ARG_0%" "%MM_MEGA_ARG_1%"'
+    )
+    assert environment is not None
+    assert environment["MM_MEGA_TOOL"] == str(batch.resolve())
+    assert environment["MM_MEGA_ARG_1"].endswith("folder with spaces")
+
+
+@pytest.mark.parametrize(
+    "options",
+    (
+        {"download_connections": "0"},
+        {"download_connections": "7"},
+        {"download_speed_limit_bps": "not-a-number"},
+        {"unexpected": "value"},
+    ),
+)
+def test_transfer_settings_are_bounded(options: dict[str, str]) -> None:
+    with pytest.raises(ValueError, match="MEGA"):
+        load_provider()._transfer_options({"provider_options": options})
 
 
 @pytest.mark.parametrize(

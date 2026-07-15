@@ -27,6 +27,7 @@ from trusted_ui.dependency_dialog import (
     startup_dependency_prompt_required,
 )
 from trusted_ui.download_panel import create_download_panel
+from trusted_ui.mega_workspace import create_mega_workspace
 from trusted_ui.conversion_panel import create_conversion_panel
 from trusted_ui.transcription_panel import create_transcription_panel
 from trusted_ui.automation_panel import create_automation_panel
@@ -369,11 +370,9 @@ def run_main_window(context: object) -> int:
                         "mega",
                         lambda: context.download_providers.is_enabled("mega"),
                         lambda: "mega" in registered_downloads,
-                        lambda: create_download_panel(
-                            context, self, site_family="mega"
-                        ),
+                        lambda: create_mega_workspace(context, self),
                         lambda panel: panel.workspace_title.text(),
-                        "MEGA 公開檔案分享與官方 MEGAcmd 分流下載",
+                        "MEGA 公開檔案、類型判定與官方 MEGAcmd 連線分流",
                     ),
                     OptionalWorkspaceSpec(
                         "media-convert",

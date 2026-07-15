@@ -15,6 +15,7 @@ from core.downloads.provider_registry import ProviderStatus
 from core.storage.paths import AppPaths
 from trusted_ui.download_panel import create_download_panel
 from trusted_ui.main_window import apply_download_prefill, configure_workspace_tabs
+from trusted_ui.mega_workspace import create_mega_workspace
 from trusted_ui.search_panel import create_search_panel, search_source_for_url
 
 
@@ -299,13 +300,17 @@ def test_facebook_and_mega_workspaces_enable_and_route_independently(
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     paths = AppPaths.discover(portable=True, app_root=tmp_path)
     monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+    (tmp_path / "mega-get.exe").write_bytes(b"test executable placeholder")
+    (tmp_path / "mega-speedlimit.exe").write_bytes(
+        b"test executable placeholder"
+    )
 
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance() or QApplication([])
     context = Bootstrap(portable=True).initialize(start_background=False)
     facebook_panel = create_download_panel(context, site_family="facebook")
-    mega_panel = create_download_panel(context, site_family="mega")
+    mega_panel = create_mega_workspace(context)
     facebook_panel.timer.stop()
     mega_panel.timer.stop()
     try:
@@ -314,7 +319,10 @@ def test_facebook_and_mega_workspaces_enable_and_route_independently(
         assert facebook_panel.workspace_title.text() == "Facebook 下載工作區"
         assert mega_panel.workspace_title.text() == "MEGA 下載工作區"
         assert facebook_panel.thumbnail_preview.pixmap() is not None
-        assert mega_panel.thumbnail_preview.pixmap() is not None
+        assert mega_panel.share_icon.text() == "MEGA"
+        assert not hasattr(mega_panel, "format_preset")
+        assert not hasattr(mega_panel, "subtitle_mode")
+        assert not hasattr(mega_panel, "expand_playlist")
 
         facebook_panel.enabled.setChecked(True)
         mega_panel.enabled.setChecked(True)
@@ -336,9 +344,12 @@ def test_facebook_and_mega_workspaces_enable_and_route_independently(
         app.processEvents()
         assert mega_panel.read_info.isEnabled()
         assert mega_panel.add_download.isEnabled()
-        assert mega_panel.format_preset.count() == 1
-        assert mega_panel.format_preset.currentData() == "best"
-        assert mega_panel.subtitle_mode.count() == 1
+        assert mega_panel.content_type.text() == "類型：下載後判定"
+        mega_panel.output_filename.setText("backup.zip")
+        assert mega_panel.content_type.text() == "類型：壓縮檔"
+        mega_panel.custom_transfer.setChecked(True)
+        assert mega_panel.download_connections.isEnabled()
+        assert mega_panel.speed_limit.isEnabled()
         assert context.download_providers.provider_for(mega_file).provider_id == "mega"
 
         mega_panel.urls.setPlainText(

@@ -390,7 +390,7 @@ def test_malformed_persisted_queue_is_ignored(tmp_path: Path) -> None:
     assert DownloadQueue(RecordingBackend(), state_path=state).snapshots() == ()
 
 
-def test_queue_round_trip_preserves_timed_comment_options(tmp_path: Path) -> None:
+def test_queue_round_trip_preserves_provider_and_media_options(tmp_path: Path) -> None:
     state = tmp_path / "queue.json"
     original = DownloadQueue(RecordingBackend(), state_path=state)
     original.add(
@@ -399,6 +399,7 @@ def test_queue_round_trip_preserves_timed_comment_options(tmp_path: Path) -> Non
             tmp_path,
             timed_comment_mode="ass",
             container_preset="mkv",
+            provider_options=(("download_connections", "4"),),
         )
     )
 
@@ -407,6 +408,7 @@ def test_queue_round_trip_preserves_timed_comment_options(tmp_path: Path) -> Non
 
     assert request.timed_comment_mode == "ass"
     assert request.container_preset == "mkv"
+    assert request.provider_options == (("download_connections", "4"),)
 
 
 def test_restore_salvages_valid_records_when_one_record_is_invalid(

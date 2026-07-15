@@ -156,7 +156,7 @@ def test_download_accepts_nonempty_file_inside_output_directory(
     assert Path(result).read_bytes() == b"media"
 
 
-def test_download_forwards_timed_comment_and_container_options(
+def test_download_forwards_media_and_bounded_provider_options(
     tmp_path: Path,
 ) -> None:
     source = (
@@ -167,7 +167,8 @@ def test_download_forwards_timed_comment_and_container_options(
         "path.parent.mkdir(parents=True, exist_ok=True)\n"
         "path.write_text(json.dumps({"
         "'timed_comment_mode':raw['timed_comment_mode'],"
-        "'container_preset':raw['container_preset']}), encoding='utf-8')\n"
+        "'container_preset':raw['container_preset'],"
+        "'provider_options':raw['provider_options']}), encoding='utf-8')\n"
         "print(json.dumps({'type':'result','value':str(path)}), flush=True)\n"
     )
     root = make_provider(tmp_path, source)
@@ -177,6 +178,7 @@ def test_download_forwards_timed_comment_and_container_options(
         tmp_path / "out",
         timed_comment_mode="ass",
         container_preset="mkv",
+        provider_options=(("download_connections", "4"),),
     )
 
     result = provider.download(request, lambda _: None, threading.Event())
@@ -184,6 +186,7 @@ def test_download_forwards_timed_comment_and_container_options(
     assert json.loads(Path(result).read_text(encoding="utf-8")) == {
         "timed_comment_mode": "ass",
         "container_preset": "mkv",
+        "provider_options": {"download_connections": "4"},
     }
 
 

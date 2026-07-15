@@ -580,6 +580,18 @@ class DownloadQueue:
         subtitle_languages = item.get("subtitle_languages", [])
         if not isinstance(subtitle_languages, list):
             raise ValueError("queue task subtitle languages are invalid")
+        raw_provider_options = item.get("provider_options", [])
+        if not isinstance(raw_provider_options, list):
+            raise ValueError("queue task provider options are invalid")
+        provider_options: list[tuple[str, str]] = []
+        for option in raw_provider_options:
+            if (
+                not isinstance(option, list)
+                or len(option) != 2
+                or not all(isinstance(value, str) for value in option)
+            ):
+                raise ValueError("queue task provider options are invalid")
+            provider_options.append((option[0], option[1]))
         request = DownloadRequest(
             url=text_value("url", "", 4096),
             output_dir=Path(text_value("output_dir", "", 32_767)),
@@ -598,6 +610,7 @@ class DownloadQueue:
             subtitle_languages=tuple(subtitle_languages),
             timed_comment_mode=text_value("timed_comment_mode", "none", 32),
             container_preset=text_value("container_preset", "auto", 32),
+            provider_options=tuple(provider_options),
         )
         state = DownloadState(item.get("state", "QUEUED"))
         pause_requested = item.get("pause_requested", False)
@@ -665,6 +678,9 @@ class DownloadQueue:
                 "subtitle_languages": list(task.request.subtitle_languages),
                 "timed_comment_mode": task.request.timed_comment_mode,
                 "container_preset": task.request.container_preset,
+                "provider_options": [
+                    list(option) for option in task.request.provider_options
+                ],
                 "state": task.state,
                 "title": task.title,
                 "progress": task.progress,
