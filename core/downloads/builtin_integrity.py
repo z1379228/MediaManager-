@@ -3,15 +3,19 @@
 BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
     "ani-gamer": {
         "feature.json": "8007aeb21bcb58e3e22bee8fbd25174c2b35c84aaa89bb89fb8625a0d38b32bb",
-        "group.json": "0bce6af4cf5a4ba24585362513a7433df3b722d90d3051a6bad76fbe803ff532",
-        "locales/en.json": "d05b12ac5250084103905bd04b57c40eb92f57a3b53ab0fdece1cc44b1f67368",
-        "locales/ja.json": "1044869e7e6a6d8fcaf3b6ee3550f81e70fceccec6dbe0bb4cd5528ee611fe0e",
-        "locales/zh-CN.json": "6d3f10b38e227f137e692869379a413c81d6cdd53a3552ae0013dc213d715f62",
-        "locales/zh-TW.json": "f341ec347c0d0b7cbce5e7e20d2d5c52545fa7968ca3ba80bfc1b97fe15cbb7d",
+        "group.json": "9fbec8f5221ae8a7ea2fa5867182458855d7732e92f389e5bb9b09a1b1bb74e6",
+        "locales/en.json": "28fa379e84926e7d6648cec231e8297249f5813e8e08ef0930e654ab4e91ab76",
+        "locales/ja.json": "214384d93de0d21ea520582867e5822ea49ad60207f3f4152e39e559e69e3d70",
+        "locales/zh-CN.json": "b3097e1e15992cb6eb95211752aeeb73e86966f4bc13e45338f5428fb117e232",
+        "locales/zh-TW.json": "6470b8d7308b2837342e1c1067a3edebb247ba63c9257923462f7d2d2f536d08",
     },
     "ani-gamer-search": {
-        "provider.py": "16c49ab64198828754a762e65b86a1e22eb6be4293feb74d5dc5ea6168278884",
+        "provider.py": "e4bb0b63daf1ec0956ee6132d91d62b095f4d5cf3355e7160fce9fe02de3da41",
         "provider.json": "ea87fe49c16e3a273afe28f7f17e85e69160fd6500b63a72897f1fecca72babe",
+    },
+    "ani-gamer-episodes": {
+        "provider.py": "512222bd9fc311a10f5773a505aed7981e77edc09bf22d0724228c4a1d244d04",
+        "provider.json": "9abb62a3379a4a7cbf3b306ff3c3405ebf9258b9f91edf0ac05126f26e570923",
     },
     "automation": {
         "feature.json": "47fe2b5f6277a064ae404b466819e4383b5928862698a4a0c7f44675ff144f4e",

@@ -33,6 +33,8 @@ SOURCE_RELEASE_FILES = (
     "mod/builtin/ani-gamer/locales/zh-TW.json",
     "mod/builtin/ani-gamer-search/provider.py",
     "mod/builtin/ani-gamer-search/provider.json",
+    "mod/builtin/ani-gamer-episodes/provider.py",
+    "mod/builtin/ani-gamer-episodes/provider.json",
     "mod/builtin/generic-ytdlp/provider.py",
     "mod/builtin/generic-ytdlp/provider.json",
     "mod/builtin/generic-ytdlp/site-matrix.json",
