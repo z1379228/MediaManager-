@@ -91,6 +91,8 @@ def convert_xml_to_ass(
     *,
     width: int = 1920,
     height: int = 1080,
+    segment_start: float | None = None,
+    segment_end: float | None = None,
 ) -> int:
     """Convert bounded Bilibili `<d p=...>` entries and retain the source XML."""
 
@@ -109,6 +111,21 @@ def convert_xml_to_ass(
         or target.suffix.casefold() != ".ass"
     ):
         raise ValueError("danmaku conversion paths or dimensions are invalid")
+    for boundary in (segment_start, segment_end):
+        if boundary is not None and (
+            not isinstance(boundary, (int, float))
+            or isinstance(boundary, bool)
+            or not math.isfinite(boundary)
+            or boundary < 0
+        ):
+            raise ValueError("danmaku segment boundaries are invalid")
+    segment_offset = float(segment_start or 0.0)
+    segment_limit = float(segment_end) if segment_end is not None else None
+    if segment_limit is not None and segment_limit <= segment_offset:
+        raise ValueError("danmaku segment boundaries are invalid")
+    segment_duration = (
+        segment_limit - segment_offset if segment_limit is not None else None
+    )
     _scan_unsafe_declarations(source)
 
     lines = _header(width, height)
@@ -125,7 +142,7 @@ def convert_xml_to_ass(
             continue
         fields = element.attrib.get("p", "").split(",")
         try:
-            start = float(fields[0])
+            source_start = float(fields[0])
             mode = int(fields[1])
             font_size = min(72, max(12, int(float(fields[2]))))
             color = int(fields[3])
@@ -136,13 +153,18 @@ def convert_xml_to_ass(
         element.clear()
         if (
             not text
-            or not math.isfinite(start)
-            or not 0 <= start <= 604_800
+            or not math.isfinite(source_start)
+            or not 0 <= source_start <= 604_800
             or mode not in {1, 2, 3, 4, 5, 6}
+        ):
+            continue
+        if source_start < segment_offset or (
+            segment_limit is not None and source_start >= segment_limit
         ):
             continue
         if count >= MAX_COMMENTS:
             break
+        start = source_start - segment_offset
 
         if mode in {4, 5}:
             lanes = bottom_lanes if mode == 4 else top_lanes
@@ -162,6 +184,8 @@ def convert_xml_to_ass(
             else:
                 motion = rf"\move({width + 24},{y},{-estimated_width},{y})"
             end = start + _SCROLL_SECONDS
+        if segment_duration is not None:
+            end = min(end, segment_duration)
 
         tags = rf"{{{motion}\fs{font_size}\c{_ass_color(color)}}}"
         lines.append(

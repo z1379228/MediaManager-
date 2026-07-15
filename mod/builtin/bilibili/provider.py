@@ -391,7 +391,13 @@ def _find_danmaku_xml(output: Path, media: Path) -> Path | None:
     return None
 
 
-def _convert_danmaku(xml_path: Path, ass_path: Path) -> int:
+def _convert_danmaku(
+    xml_path: Path,
+    ass_path: Path,
+    *,
+    start_time: float | None = None,
+    end_time: float | None = None,
+) -> int:
     converter_path = Path(__file__).resolve().with_name("danmaku_ass.py")
     spec = importlib.util.spec_from_file_location(
         "mediamanager_bilibili_danmaku_ass",
@@ -401,7 +407,14 @@ def _convert_danmaku(xml_path: Path, ass_path: Path) -> int:
         raise RuntimeError("danmaku converter cannot be loaded")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return int(module.convert_xml_to_ass(xml_path, ass_path))
+    return int(
+        module.convert_xml_to_ass(
+            xml_path,
+            ass_path,
+            segment_start=start_time,
+            segment_end=end_time,
+        )
+    )
 
 
 def _mux_ass_into_mkv(
@@ -613,7 +626,12 @@ def download(request: dict[str, Any]) -> str:
         return str(media)
     ass_path = xml_path.with_name(f"{media.stem}.danmaku.ass")
     try:
-        count = _convert_danmaku(xml_path, ass_path)
+        count = _convert_danmaku(
+            xml_path,
+            ass_path,
+            start_time=start,
+            end_time=end,
+        )
     except (OSError, RuntimeError, ValueError) as error:
         emit(
             {

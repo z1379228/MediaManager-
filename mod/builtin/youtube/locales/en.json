@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "locale": "en",
+  "group_name": "YouTube",
+  "workspace": {
+    "title": "YouTube Download Workspace",
+    "subtitle": "YouTube and YouTube Music share this workspace; all other sites are separate.",
+    "enable": "Enable YouTube main MOD",
+    "url_label": "YouTube video / playlist URLs",
+    "placeholder": "Paste one YouTube URL per line. Put a playlist on its own line, for example:\nhttps://music.youtube.com/playlist?list=PL...",
+    "initial_preview": "Enter a YouTube video or playlist URL to inspect and select items in batches.",
+    "wrong_site": "This workspace accepts only YouTube URLs. Switch to the matching site workspace."
+  },
+  "modules": {
+    "youtube": {"name": "Batch Download", "purpose": "Video, audio, playlist and batch downloads with audio preview", "control_location": "YouTube Download Workspace"},
+    "youtube-search": {"name": "Search", "purpose": "Search public YouTube and YouTube Music content", "control_location": "Site Search → YouTube"},
+    "youtube-player": {"name": "Video Preview", "purpose": "Optional low-resolution video preview", "control_location": "Site Search → YouTube result"},
+    "youtube-history": {"name": "Search History", "purpose": "Store bounded local search preferences", "control_location": "Site Search → Recent searches"},
+    "youtube-recovery": {"name": "Recovery", "purpose": "Find replacements for unavailable videos", "control_location": "Site Search → YouTube result"},
+    "youtube-similar": {"name": "Similar Content", "purpose": "Find a random similar video or track", "control_location": "Site Search → YouTube result"},
+    "youtube-auto-split": {"name": "Auto Split", "purpose": "Analyze and preview split points in long videos", "control_location": "YouTube Download Workspace"}
+  }
+}

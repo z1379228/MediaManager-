@@ -69,3 +69,60 @@ def test_converter_caps_comment_count(tmp_path: Path) -> None:
     convert.__globals__["MAX_COMMENTS"] = 2
 
     assert convert(xml, tmp_path / "many.ass") == 2
+
+
+def test_converter_filters_and_retimes_segment_comments(tmp_path: Path) -> None:
+    xml = tmp_path / "segment.danmaku.xml"
+    xml.write_text(
+        "<i>"
+        '<d p="5,1,25,16777215,0,0,user,1">before</d>'
+        '<d p="12,1,25,16777215,0,0,user,2">inside-a</d>'
+        '<d p="18,5,25,16777215,0,0,user,3">inside-b</d>'
+        '<d p="20,1,25,16777215,0,0,user,4">at-end</d>'
+        "</i>",
+        encoding="utf-8",
+    )
+    ass = tmp_path / "segment.danmaku.ass"
+    namespace = runpy.run_path(str(CONVERTER_PATH))
+
+    count = namespace["convert_xml_to_ass"](
+        xml,
+        ass,
+        segment_start=10.0,
+        segment_end=20.0,
+    )
+
+    text = ass.read_text(encoding="utf-8-sig")
+    assert count == 2
+    assert "before" not in text
+    assert "at-end" not in text
+    assert "0:00:02.00,0:00:10.00" in text
+    assert "0:00:08.00,0:00:10.00" in text
+    assert "inside-a" in text
+    assert "inside-b" in text
+    assert xml.is_file()
+
+
+@pytest.mark.parametrize(
+    ("segment_start", "segment_end"),
+    ((-1, None), (10, 10), (20, 10), (False, 10), (0, float("inf"))),
+)
+def test_converter_rejects_invalid_segment_boundaries(
+    tmp_path: Path,
+    segment_start: object,
+    segment_end: object,
+) -> None:
+    xml = tmp_path / "invalid-segment.xml"
+    xml.write_text(
+        '<i><d p="1,1,25,16777215,0,0,user,1">text</d></i>',
+        encoding="utf-8",
+    )
+    namespace = runpy.run_path(str(CONVERTER_PATH))
+
+    with pytest.raises(ValueError, match="segment boundaries"):
+        namespace["convert_xml_to_ass"](
+            xml,
+            tmp_path / "invalid-segment.ass",
+            segment_start=segment_start,
+            segment_end=segment_end,
+        )

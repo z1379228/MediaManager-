@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from core.localization import CORE_LOCALES
 from core.settings import SettingsService
 
 
@@ -21,22 +22,17 @@ def create_mod_pages_panel(context: object, parent: object = None) -> object:
     panel = QWidget(parent)
     layout = QVBoxLayout(panel)
     controls = QHBoxLayout()
-    locale_caption = QLabel("MOD 介面語言")
+    locale_caption = QLabel("核心介面語言")
     locale_caption.setObjectName("modPageLocaleCaption")
     controls.addWidget(locale_caption)
     locale_selector = QComboBox()
     locale_selector.setObjectName("modPageLocaleSelector")
-    locale_selector.setAccessibleName("外部 MOD 介面語言")
-    for label, locale in (
-        ("English", "en"),
-        ("日本語", "ja"),
-        ("简体中文", "zh-CN"),
-        ("繁體中文", "zh-TW"),
-    ):
-        locale_selector.addItem(label, locale)
+    locale_selector.setAccessibleName("核心與 MOD 共用介面語言")
+    for locale in CORE_LOCALES:
+        locale_selector.addItem(locale.display_name, locale.code)
     initial_locale = getattr(context.plugin_ui, "locale", "zh-TW")
     initial_index = locale_selector.findData(initial_locale)
-    locale_selector.setCurrentIndex(initial_index if initial_index >= 0 else 3)
+    locale_selector.setCurrentIndex(initial_index if initial_index >= 0 else 0)
     controls.addWidget(locale_selector)
     controls.addStretch()
     refresh = QPushButton("重新整理")
@@ -73,7 +69,7 @@ def create_mod_pages_panel(context: object, parent: object = None) -> object:
             detail_text = (
                 "這裡只呈現已安裝、已啟用且驗證通過的外部 MOD ui.json。"
                 "內建 YouTube、Bilibili 與其他功能請到「內建 MOD 狀態」管理。"
-                f"目前已保存 {locale_selector.currentText()} 作為 MOD 介面語言；"
+                f"核心目前已保存 {locale_selector.currentText()} 作為共用介面語言；"
                 "即使尚無外部 MOD，之後安裝的多語言 MOD 仍會套用此設定。"
             )
             security = getattr(context, "security", None)
@@ -121,7 +117,7 @@ def create_mod_pages_panel(context: object, parent: object = None) -> object:
         locale_selector.setEnabled(True)
         locale_status.setText(
             f"目前選用：{locale_selector.currentText()}。"
-            "此設定套用至支援多語言的外部 MOD 介面；主程式尚未完整翻譯的文字不會偽裝成已翻譯。"
+            "此設定由可信核心管理並傳給 MOD；尚未完成翻譯的文字不會偽裝成已翻譯。"
         )
         render(selector.currentIndex())
 

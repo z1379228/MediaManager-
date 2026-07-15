@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "locale": "ja",
+  "group_name": "Bilibili",
+  "workspace": {
+    "title": "Bilibili ダウンロードワークスペース",
+    "subtitle": "Bilibili の動画、分割、弾幕オプションはこのワークスペースだけで処理されます。",
+    "enable": "Bilibili メイン MOD を有効化",
+    "url_label": "Bilibili 動画／シリーズ／分割 URL",
+    "placeholder": "1 行に 1 つの Bilibili URL を貼り付けます。例：\nhttps://www.bilibili.com/video/BV...",
+    "initial_preview": "Bilibili の動画、シリーズ、分割 URL を入力すると、情報確認と一括ダウンロードができます。",
+    "wrong_site": "このページでは Bilibili URL のみ使用できます。対応するサイトのワークスペースへ切り替えてください。"
+  },
+  "modules": {
+    "bilibili": {"name": "一括ダウンロードと弾幕", "purpose": "動画、シリーズ、分割、弾幕 XML／ASS、任意の MKV", "control_location": "Bilibili ダウンロードワークスペース"},
+    "bilibili-search": {"name": "検索", "purpose": "Bilibili 公式公開動画を独立検索", "control_location": "サイト検索 → Bilibili"}
+  }
+}

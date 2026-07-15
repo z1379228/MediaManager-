@@ -10,11 +10,28 @@ from trusted_ui.publisher_panel import create_publisher_panel
 from trusted_ui.site_mod_catalog import create_site_mod_catalog_panel
 
 
-def show_plugin_manager(context: object, parent: object) -> None:
-    create_plugin_manager_dialog(context, parent).exec()
+def show_plugin_manager(
+    context: object,
+    parent: object,
+    *,
+    initial_tab: str = "",
+    bridge_id: str = "",
+) -> None:
+    create_plugin_manager_dialog(
+        context,
+        parent,
+        initial_tab=initial_tab,
+        bridge_id=bridge_id,
+    ).exec()
 
 
-def create_plugin_manager_dialog(context: object, parent: object = None) -> object:
+def create_plugin_manager_dialog(
+    context: object,
+    parent: object = None,
+    *,
+    initial_tab: str = "",
+    bridge_id: str = "",
+) -> object:
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QDialog, QLabel, QPushButton, QTabWidget, QVBoxLayout
 
@@ -31,7 +48,11 @@ def create_plugin_manager_dialog(context: object, parent: object = None) -> obje
     tabs.setObjectName("pluginManagerTabs")
     tabs.addTab(create_plugin_panel(context, dialog), "外部 MOD")
     tabs.addTab(create_builtin_mod_panel(context, dialog), "內建 MOD 狀態")
-    tabs.addTab(create_site_mod_catalog_panel(dialog), "網站 MOD 備選")
+    site_catalog = create_site_mod_catalog_panel(
+        dialog,
+        initial_bridge_id=bridge_id,
+    )
+    tabs.addTab(site_catalog, "網站 MOD 備選")
     tabs.addTab(create_publisher_panel(context, dialog), "發布者信任")
     tabs.addTab(create_mod_pages_panel(context, dialog), "外部 MOD 介面")
     tabs.addTab(create_offline_update_panel(context, dialog), "離線更新")
@@ -42,7 +63,9 @@ def create_plugin_manager_dialog(context: object, parent: object = None) -> obje
         if tabs.widget(index) is mod_pages
         else None
     )
-    if not context.plugin_registry.list_all():
+    if initial_tab == "site-catalog":
+        tabs.setCurrentWidget(site_catalog)
+    elif not context.plugin_registry.list_all():
         tabs.setCurrentIndex(1)
     close = QPushButton("關閉")
     close.clicked.connect(dialog.accept)

@@ -16,6 +16,7 @@ _BILIBILI_FEATURES = frozenset(
         "multipart-playlist",
         "bangumi-public-episode",
         "subtitles",
+        "segment-download",
         "danmaku-xml-ass-mkv",
     }
 )

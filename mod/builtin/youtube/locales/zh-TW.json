@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "locale": "zh-TW",
+  "group_name": "YouTube",
+  "workspace": {
+    "title": "YouTube 下載工作區",
+    "subtitle": "YouTube 與 YouTube Music 共用此工作區；其他網站完全分開。",
+    "enable": "啟用 YouTube 主 MOD",
+    "url_label": "YouTube 影片／播放清單網址",
+    "placeholder": "每行貼上一個 YouTube 網址；播放清單請單獨一行，例如：\nhttps://music.youtube.com/playlist?list=PL...",
+    "initial_preview": "輸入 YouTube 影片或播放清單網址後，可讀取資訊並批量選取。",
+    "wrong_site": "此頁只接受 YouTube 網址；請切換到對應網站工作區。"
+  },
+  "modules": {
+    "youtube": {"name": "批量下載", "purpose": "影片、音訊、播放清單與批量下載；含試聽", "control_location": "YouTube 下載工作區"},
+    "youtube-search": {"name": "搜尋器", "purpose": "搜尋 YouTube 與 YouTube Music 公開內容", "control_location": "網站搜尋 → YouTube"},
+    "youtube-player": {"name": "影片試看", "purpose": "可選的低畫質影片預覽", "control_location": "網站搜尋 → YouTube 結果"},
+    "youtube-history": {"name": "搜尋紀錄", "purpose": "記錄有限搜尋偏好", "control_location": "網站搜尋 → 最近搜尋"},
+    "youtube-recovery": {"name": "失效替代", "purpose": "尋找失效影片替代項目", "control_location": "網站搜尋 → YouTube 結果"},
+    "youtube-similar": {"name": "相似內容", "purpose": "隨機尋找相似影片或音樂", "control_location": "網站搜尋 → YouTube 結果"},
+    "youtube-auto-split": {"name": "自動切割", "purpose": "分析並預覽長影片切割點", "control_location": "YouTube 下載工作區"}
+  }
+}

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from core.mod_groups import SITE_MOD_CHILDREN, SITE_MOD_PARENT
+
 
 DOWNLOAD_MOD_IDS = frozenset({"youtube", "generic-ytdlp", "bilibili"})
 DISCOVERY_MOD_IDS = frozenset(
     {
         "youtube-search",
+        "bilibili-search",
+        "ani-gamer-search",
         "youtube-player",
         "youtube-history",
         "youtube-recovery",
@@ -23,6 +27,14 @@ def set_builtin_mod_enabled(
     """Persist a built-in MOD state and cancel work owned by a disabled MOD."""
 
     cancelled = 0
+    parent_id = SITE_MOD_PARENT.get(provider_id)
+    if enabled and parent_id is not None:
+        try:
+            parent_enabled = context.download_providers.is_enabled(parent_id)
+        except (KeyError, RuntimeError) as error:
+            raise RuntimeError(f"{parent_id} 主 MOD 不可用") from error
+        if not parent_enabled:
+            raise RuntimeError(f"請先啟用 {parent_id} 主 MOD")
     if provider_id in DOWNLOAD_MOD_IDS:
         available = {
             status.provider_id for status in context.download_providers.statuses()
@@ -53,6 +65,20 @@ def set_builtin_mod_enabled(
     else:
         raise KeyError(provider_id)
 
+    cascaded_children: list[str] = []
+    if not enabled and provider_id in SITE_MOD_CHILDREN:
+        try:
+            discovery_statuses = tuple(context.discovery.statuses())
+        except (AttributeError, TypeError, RuntimeError):
+            discovery_statuses = ()
+        available_children = {
+            status.provider_id: bool(status.enabled) for status in discovery_statuses
+        }
+        for child_id in SITE_MOD_CHILDREN[provider_id]:
+            if available_children.get(child_id, False):
+                context.discovery.set_enabled(child_id, False)
+                cascaded_children.append(child_id)
+
     audit = getattr(context, "audit", None)
     if audit is not None:
         audit.write(
@@ -63,6 +89,15 @@ def set_builtin_mod_enabled(
         )
     events = getattr(context, "events", None)
     if events is not None:
+        for child_id in cascaded_children:
+            events.publish(
+                "builtin_mod.changed",
+                {
+                    "provider_id": child_id,
+                    "enabled": False,
+                    "cancelled_tasks": 0,
+                },
+            )
         events.publish(
             "builtin_mod.changed",
             {

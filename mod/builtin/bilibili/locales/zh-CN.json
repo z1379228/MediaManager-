@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "locale": "zh-CN",
+  "group_name": "Bilibili",
+  "workspace": {
+    "title": "Bilibili 下载工作区",
+    "subtitle": "Bilibili 视频、分段与弹幕选项只在此工作区处理。",
+    "enable": "启用 Bilibili 主 MOD",
+    "url_label": "Bilibili 视频／番剧／分段网址",
+    "placeholder": "每行粘贴一个 Bilibili 网址，例如：\nhttps://www.bilibili.com/video/BV...",
+    "initial_preview": "输入 Bilibili 视频、番剧或分段网址后，可读取信息并批量下载。",
+    "wrong_site": "此页只接受 Bilibili 网址；请切换到对应网站工作区。"
+  },
+  "modules": {
+    "bilibili": {"name": "批量下载与弹幕", "purpose": "视频、番剧、分段、弹幕 XML／ASS 与可选 MKV", "control_location": "Bilibili 下载工作区"},
+    "bilibili-search": {"name": "搜索器", "purpose": "独立搜索 Bilibili 官方公开视频", "control_location": "网站搜索 → Bilibili"}
+  }
+}

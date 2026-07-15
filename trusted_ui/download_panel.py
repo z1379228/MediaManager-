@@ -31,12 +31,15 @@ from core.downloads.preflight import preflight_download_batch
 from core.downloads.preparation import (
     available_preset_ids,
     build_batch_preview,
+    download_option_lines,
     estimate_preset_bytes,
     format_detail_lines,
     human_bytes,
     suggest_output_filename,
 )
 from core.downloads.split_batch import build_split_requests
+from core.mod_groups import BuiltinModGroupError, load_builtin_mod_group
+from core.site_routing import classify_site_url
 from core.settings import SettingsService, normalized_download_workers
 from trusted_ui.batch_import_dialog import show_batch_import_dialog
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
@@ -45,11 +48,36 @@ from trusted_ui.playlist_dialog import show_playlist_dialog
 from trusted_ui.recovery_dialog import show_recovery_dialog
 from trusted_ui.split_dialog import show_split_dialog
 from trusted_ui.theme import COLORS
+from trusted_ui.youtube_workspace import (
+    create_youtube_workspace,
+    is_youtube_playlist_url,
+    merge_download_urls,
+)
 
 
 ACTIVE_REFRESH_INTERVAL_MS = 500
 IDLE_REFRESH_INTERVAL_MS = 1500
 HIDDEN_REFRESH_INTERVAL_MS = 2500
+
+
+def site_workspace_text(site_family: str, locale: object) -> dict[str, str]:
+    """Read the pinned site-MOD translation selected by the trusted core."""
+
+    try:
+        return dict(load_builtin_mod_group(site_family, locale=locale).workspace)
+    except BuiltinModGroupError:
+        site_label = "YouTube" if site_family == "youtube" else "Bilibili"
+        return {
+            "title": f"{site_label} 下載工作區",
+            "subtitle": f"{site_label} 網址與選項只在此工作區處理。",
+            "enable": f"啟用 {site_label} 主 MOD",
+            "url_label": f"{site_label} 網址",
+            "placeholder": f"每行貼上一個 {site_label} 網址",
+            "initial_preview": f"輸入 {site_label} 網址後可讀取資訊。",
+            "wrong_site": (
+                f"此頁只接受 {site_label} 網址；請切換到對應網站工作區。"
+            ),
+        }
 
 
 def download_refresh_interval(
@@ -151,7 +179,16 @@ def download_render_signature(
     )
 
 
-def create_download_panel(context: object, parent: object = None) -> object:
+def create_download_panel(
+    context: object,
+    parent: object = None,
+    *,
+    site_family: str = "youtube",
+) -> object:
+    if site_family not in {"youtube", "bilibili"}:
+        raise ValueError("download workspace site family is unsupported")
+    provider_id = "youtube" if site_family == "youtube" else "bilibili"
+    site_label = "YouTube" if site_family == "youtube" else "Bilibili"
     from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
     from PySide6.QtGui import QAction, QColor, QDesktopServices
     from PySide6.QtWidgets import (
@@ -193,6 +230,12 @@ def create_download_panel(context: object, parent: object = None) -> object:
     class DownloadPanel(QWidget):
         def __init__(self) -> None:
             super().__init__(parent)
+            self.site_family = site_family
+            self.provider_id = provider_id
+            self.workspace_text = site_workspace_text(
+                site_family,
+                getattr(getattr(context, "settings", None), "language", "zh-TW"),
+            )
             self.info_bridge = InfoBridge()
             self.info_bridge.finished.connect(self.show_info)
             self.recovery_bridge = RecoveryBridge()
@@ -231,20 +274,27 @@ def create_download_panel(context: object, parent: object = None) -> object:
             heading = QHBoxLayout()
             titles = QVBoxLayout()
             titles.setSpacing(2)
-            title = QLabel("網站批量下載")
-            title.setObjectName("sectionTitle")
-            subtitle = QLabel(
-                "YouTube 預設可用；其他白名單網站由獨立 MOD 決定是否啟用。"
-            )
-            subtitle.setObjectName("sectionSubtitle")
-            titles.addWidget(title)
-            titles.addWidget(subtitle)
+            self.workspace_title = QLabel(self.workspace_text["title"])
+            self.workspace_title.setObjectName("sectionTitle")
+            self.workspace_subtitle = QLabel(self.workspace_text["subtitle"])
+            self.workspace_subtitle.setObjectName("sectionSubtitle")
+            titles.addWidget(self.workspace_title)
+            titles.addWidget(self.workspace_subtitle)
             heading.addLayout(titles)
             heading.addStretch()
             self.provider_badge = QLabel()
             self.provider_badge.setObjectName("providerBadge")
             heading.addWidget(self.provider_badge)
             page.addLayout(heading)
+
+            self.youtube_workspace = None
+            if site_family == "youtube":
+                self.youtube_workspace = create_youtube_workspace(
+                    context,
+                    self.append_youtube_search_urls,
+                    self,
+                )
+                page.addWidget(self.youtube_workspace)
 
             input_card = QFrame()
             input_card.setObjectName("card")
@@ -256,38 +306,17 @@ def create_download_panel(context: object, parent: object = None) -> object:
                 status.provider_id for status in context.download_providers.statuses()
             }
             top_controls = QHBoxLayout()
-            self.enabled = QCheckBox("啟用 YouTube MOD")
-            self.enabled.setEnabled("youtube" in provider_ids)
-            self.enabled.setChecked(context.download_providers.is_enabled("youtube"))
-            if "youtube" not in provider_ids:
-                self.enabled.setText("YouTube MOD 不可用（完整性檢查失敗）")
+            self.enabled = QCheckBox(self.workspace_text["enable"])
+            self.enabled.setEnabled(provider_id in provider_ids)
+            self.enabled.setChecked(
+                context.download_providers.is_enabled(provider_id)
+            )
+            if provider_id not in provider_ids:
+                self.enabled.setText(
+                    f"{site_label} MOD 不可用（完整性檢查失敗）"
+                )
             self.enabled.toggled.connect(self.toggle_provider)
             top_controls.addWidget(self.enabled)
-            self.generic_enabled = QCheckBox("其他網站 Beta")
-            self.generic_enabled.setEnabled("generic-ytdlp" in provider_ids)
-            self.generic_enabled.setChecked(
-                context.download_providers.is_enabled("generic-ytdlp")
-            )
-            self.generic_enabled.setToolTip(
-                "Vimeo、Dailymotion、SoundCloud、TikTok、Twitch、X / Twitter；"
-                "預設停用且不接受帳密網址"
-            )
-            if "generic-ytdlp" not in provider_ids:
-                self.generic_enabled.setText("其他網站 MOD 不可用")
-            self.generic_enabled.toggled.connect(self.toggle_generic_provider)
-            top_controls.addWidget(self.generic_enabled)
-            self.bilibili_enabled = QCheckBox("Bilibili")
-            self.bilibili_enabled.setEnabled("bilibili" in provider_ids)
-            self.bilibili_enabled.setChecked(
-                context.download_providers.is_enabled("bilibili")
-            )
-            self.bilibili_enabled.setToolTip(
-                "獨立處理 Bilibili 影片、分段與可選的彈幕 XML；預設停用"
-            )
-            if "bilibili" not in provider_ids:
-                self.bilibili_enabled.setText("Bilibili MOD 不可用")
-            self.bilibili_enabled.toggled.connect(self.toggle_bilibili_provider)
-            top_controls.addWidget(self.bilibili_enabled)
             top_controls.addStretch()
             worker_label = QLabel("同時工作")
             worker_label.setObjectName("fieldLabel")
@@ -321,9 +350,9 @@ def create_download_panel(context: object, parent: object = None) -> object:
             input_layout.addLayout(output_row)
 
             urls_heading = QHBoxLayout()
-            urls_label = QLabel("影片網址")
-            urls_label.setObjectName("fieldLabel")
-            urls_heading.addWidget(urls_label)
+            self.urls_label = QLabel(self.workspace_text["url_label"])
+            self.urls_label.setObjectName("fieldLabel")
+            urls_heading.addWidget(self.urls_label)
             urls_heading.addStretch()
             import_urls = QPushButton("匯入 TXT / CSV…")
             import_urls.setObjectName("ghost")
@@ -336,20 +365,40 @@ def create_download_panel(context: object, parent: object = None) -> object:
             urls_heading.addWidget(import_playlist)
             input_layout.addLayout(urls_heading)
             self.urls = QPlainTextEdit()
-            self.urls.setAccessibleName("下載網址清單")
-            self.urls.setPlaceholderText(
-                "每行貼上一個已啟用 MOD 支援的網址，例如：\n"
-                "https://www.youtube.com/watch?v=... 或 https://www.bilibili.com/video/..."
-            )
+            self.urls.setAccessibleName(f"{site_label} 下載網址清單")
+            self.urls.setPlaceholderText(self.workspace_text["placeholder"])
             self.urls.setMaximumHeight(104)
             self.urls.textChanged.connect(self.update_site_options)
             input_layout.addWidget(self.urls)
 
+            self.official_bridge_notice = QWidget(self)
+            self.official_bridge_notice.setObjectName("officialBridgeNotice")
+            official_bridge_layout = QHBoxLayout(self.official_bridge_notice)
+            official_bridge_layout.setContentsMargins(0, 0, 0, 0)
+            official_bridge_layout.setSpacing(8)
+            self.official_bridge_message = QLabel()
+            self.official_bridge_message.setObjectName("dependencySummary")
+            self.official_bridge_message.setProperty("dependencyState", "warning")
+            self.official_bridge_message.setAccessibleName("官方工具下載限制")
+            self.official_bridge_message.setWordWrap(True)
+            official_bridge_layout.addWidget(self.official_bridge_message, 1)
+            self.open_official_bridge = QPushButton("前往網站 MOD 備選")
+            self.open_official_bridge.setObjectName("ghost")
+            self.open_official_bridge.setAccessibleName("開啟網站 MOD 備選官方工具")
+            self.open_official_bridge.clicked.connect(
+                self.open_official_bridge_catalog
+            )
+            official_bridge_layout.addWidget(self.open_official_bridge)
+            self.official_bridge_notice.hide()
+            self.official_bridge_id = ""
+            # Official bridges and other website candidates belong to their
+            # own workspaces/MOD pages, never to YouTube or Bilibili.
+
             preview_row = QHBoxLayout()
-            self.preview = QLabel("輸入網址後可先讀取影片標題、作者與長度。")
+            self.preview = QLabel(self.workspace_text["initial_preview"])
             self.preview.setObjectName("preview")
             self.preview.setWordWrap(True)
-            self.read_info = QPushButton("讀取第一個網址資訊")
+            self.read_info = QPushButton("讀取網址資訊")
             self.read_info.clicked.connect(self.analyze_first)
             self.expand_playlist = QPushButton("展開播放清單")
             self.expand_playlist.clicked.connect(self.prepare_playlist)
@@ -389,10 +438,10 @@ def create_download_panel(context: object, parent: object = None) -> object:
             self.end_time.setMaximumWidth(100)
             options.addWidget(self.end_time)
             options.addStretch()
-            add = QPushButton("加入下載佇列")
-            add.setObjectName("primary")
-            add.clicked.connect(self.add_batch)
-            options.addWidget(add)
+            self.add_download = QPushButton("加入下載佇列")
+            self.add_download.setObjectName("primary")
+            self.add_download.clicked.connect(self.add_batch)
+            options.addWidget(self.add_download)
             input_layout.addLayout(options)
 
             media_options = QHBoxLayout()
@@ -424,26 +473,29 @@ def create_download_panel(context: object, parent: object = None) -> object:
                 )
             )
             media_options.addWidget(self.subtitle_languages)
-            self.danmaku_xml = QCheckBox("保留彈幕 XML")
+            self.danmaku_xml = QCheckBox("保留彈幕 XML", self)
             self.danmaku_xml.setToolTip(
                 "只下載為獨立 XML 檔，不會燒錄到影片；僅在輸入全為 Bilibili 時顯示"
             )
             self.danmaku_xml.setVisible(False)
             self.danmaku_xml.toggled.connect(self.update_danmaku_options)
-            media_options.addWidget(self.danmaku_xml)
-            self.danmaku_ass = QCheckBox("轉為 ASS")
+            if site_family == "bilibili":
+                media_options.addWidget(self.danmaku_xml)
+            self.danmaku_ass = QCheckBox("轉為 ASS", self)
             self.danmaku_ass.setToolTip(
                 "產生相容離線播放器的 ASS，原始 XML 仍會保留"
             )
             self.danmaku_ass.setVisible(False)
             self.danmaku_ass.toggled.connect(self.update_danmaku_options)
-            media_options.addWidget(self.danmaku_ass)
-            self.danmaku_mkv = QCheckBox("嵌入 MKV")
+            if site_family == "bilibili":
+                media_options.addWidget(self.danmaku_ass)
+            self.danmaku_mkv = QCheckBox("嵌入 MKV", self)
             self.danmaku_mkv.setToolTip(
                 "使用 FFmpeg 無重新編碼封裝；失敗時保留原影片、XML 與 ASS"
             )
             self.danmaku_mkv.setVisible(False)
-            media_options.addWidget(self.danmaku_mkv)
+            if site_family == "bilibili":
+                media_options.addWidget(self.danmaku_mkv)
             self.format_preset.currentIndexChanged.connect(
                 self.update_danmaku_options
             )
@@ -606,27 +658,62 @@ def create_download_panel(context: object, parent: object = None) -> object:
                 events.subscribe(
                     "builtin_mod.changed", self.handle_builtin_mod_changed
                 )
+                events.subscribe("ui.language.changed", self.apply_site_language)
+            self.update_site_options()
+
+        def apply_site_language(self, payload: object = None) -> None:
+            locale = (
+                payload.get("locale")
+                if isinstance(payload, dict)
+                else getattr(getattr(context, "settings", None), "language", "zh-TW")
+            )
+            self.workspace_text = site_workspace_text(self.site_family, locale)
+            self.workspace_title.setText(self.workspace_text["title"])
+            self.workspace_subtitle.setText(self.workspace_text["subtitle"])
+            self.urls_label.setText(self.workspace_text["url_label"])
+            self.urls.setPlaceholderText(self.workspace_text["placeholder"])
+            provider_ids = {
+                status.provider_id for status in context.download_providers.statuses()
+            }
+            self.enabled.setText(
+                self.workspace_text["enable"]
+                if self.provider_id in provider_ids
+                else f"{self.workspace_text['enable']}（不可用）"
+            )
 
         def handle_builtin_mod_changed(self, payload: object) -> None:
             if not isinstance(payload, dict):
                 return
-            provider_id = payload.get("provider_id")
-            controls = {
-                "youtube": self.enabled,
-                "generic-ytdlp": self.generic_enabled,
-                "bilibili": self.bilibili_enabled,
-            }
-            control = controls.get(provider_id)
-            if control is not None:
-                control.blockSignals(True)
-                control.setChecked(
-                    context.download_providers.is_enabled(str(provider_id))
+            changed_provider_id = payload.get("provider_id")
+            if changed_provider_id == self.provider_id:
+                self.enabled.blockSignals(True)
+                self.enabled.setChecked(
+                    context.download_providers.is_enabled(self.provider_id)
                 )
-                control.blockSignals(False)
+                self.enabled.blockSignals(False)
                 self.update_provider_badge()
                 self.update_site_options()
-            if provider_id in {"youtube-recovery", "youtube-auto-split"}:
+            if changed_provider_id in {"youtube-recovery", "youtube-auto-split"}:
                 self.update_action_state()
+            if changed_provider_id == "youtube-search" and self.youtube_workspace:
+                self.youtube_workspace.refresh_availability()
+
+        def append_youtube_search_urls(self, selected_urls: tuple[str, ...]) -> None:
+            """Bring search results into the existing reviewed download flow."""
+
+            before = tuple(
+                line.strip()
+                for line in self.urls.toPlainText().splitlines()
+                if line.strip()
+            )
+            merged = merge_download_urls(self.urls.toPlainText(), selected_urls)
+            self.urls.setPlainText("\n".join(merged))
+            added = max(0, len(merged) - len(dict.fromkeys(before)))
+            self.preview.setText(
+                f"已從 YouTube 搜尋帶入 {added} 筆新網址；"
+                "請確認格式、字幕、開始／結束時間與播放清單選項後再加入佇列。"
+            )
+            self.urls.setFocus()
 
         def update_action_state(self) -> None:
             task = self.selected_task()
@@ -710,22 +797,24 @@ def create_download_panel(context: object, parent: object = None) -> object:
             )
 
         def update_provider_badge(self) -> None:
-            statuses = context.download_providers.statuses()
-            available = len(statuses)
-            active = sum(status.enabled for status in statuses)
-            self.provider_badge.setText(f"下載 MOD {active}/{available} 已啟用")
-            self.provider_badge.setProperty("active", active > 0)
+            status = next(
+                (
+                    item
+                    for item in context.download_providers.statuses()
+                    if item.provider_id == self.provider_id
+                ),
+                None,
+            )
+            available = bool(status and status.available)
+            active = bool(status and status.enabled)
+            state = "已啟用" if active else "未啟用" if available else "不可用"
+            self.provider_badge.setText(f"{site_label} MOD {state}")
+            self.provider_badge.setProperty("active", active)
             self.provider_badge.style().unpolish(self.provider_badge)
             self.provider_badge.style().polish(self.provider_badge)
 
         def toggle_provider(self, enabled: bool) -> None:
-            self.toggle_download_provider("youtube", enabled)
-
-        def toggle_generic_provider(self, enabled: bool) -> None:
-            self.toggle_download_provider("generic-ytdlp", enabled)
-
-        def toggle_bilibili_provider(self, enabled: bool) -> None:
-            self.toggle_download_provider("bilibili", enabled)
+            self.toggle_download_provider(self.provider_id, enabled)
 
         def toggle_download_provider(self, provider_id: str, enabled: bool) -> None:
             set_builtin_mod_enabled(context, provider_id, enabled)
@@ -738,8 +827,16 @@ def create_download_panel(context: object, parent: object = None) -> object:
                 for line in self.urls.toPlainText().splitlines()
                 if line.strip()
             ]
-            is_bilibili_batch = bool(urls) and all(
-                self.provider_id_for_url(url) == "bilibili" for url in urls
+            wrong_site = any(
+                (route := classify_site_url(url)) is None
+                or route.site_family != self.site_family
+                for url in urls
+            )
+            self.add_download.setEnabled(bool(urls) and not wrong_site)
+            if wrong_site:
+                self.preview.setText(self.workspace_text["wrong_site"])
+            is_bilibili_batch = (
+                self.site_family == "bilibili" and bool(urls) and not wrong_site
             )
             self.danmaku_xml.setVisible(is_bilibili_batch)
             if not is_bilibili_batch:
@@ -750,6 +847,18 @@ def create_download_panel(context: object, parent: object = None) -> object:
                 "" if single_item else "批量下載會為每個項目各自產生檔名"
             )
             self.update_danmaku_options()
+
+        def open_official_bridge_catalog(self) -> None:
+            if not self.official_bridge_id:
+                return
+            from trusted_ui.plugin_manager import show_plugin_manager
+
+            show_plugin_manager(
+                context,
+                self,
+                initial_tab="site-catalog",
+                bridge_id=self.official_bridge_id,
+            )
 
         def update_download_preparation(self) -> None:
             if not self.analyzed_info:
@@ -831,9 +940,21 @@ def create_download_panel(context: object, parent: object = None) -> object:
 
         @staticmethod
         def any_download_provider_enabled() -> bool:
-            return any(
-                status.enabled for status in context.download_providers.statuses()
+            return context.download_providers.is_enabled(provider_id)
+
+        def accepts_url(self, url: str) -> bool:
+            route = classify_site_url(url)
+            return route is not None and route.site_family == self.site_family
+
+        def reject_wrong_site_urls(self, urls: list[str]) -> bool:
+            if all(self.accepts_url(url) for url in urls):
+                return False
+            QMessageBox.information(
+                self,
+                self.workspace_text["title"],
+                self.workspace_text["wrong_site"],
             )
+            return True
 
         @staticmethod
         def provider_id_for_url(url: str) -> str:
@@ -850,6 +971,14 @@ def create_download_panel(context: object, parent: object = None) -> object:
             ]
             if not urls:
                 QMessageBox.information(self, "影片資訊", "請先輸入網址。")
+                return
+            if self.reject_wrong_site_urls(urls):
+                return
+            if len(urls) == 1 and is_youtube_playlist_url(urls[0]):
+                self.preview.setText(
+                    "已辨識為 YouTube 播放清單；改用播放清單展開與批量選取。"
+                )
+                self.prepare_playlist()
                 return
             self.analyzed_url = urls[0]
             self.analyzed_info = {}
@@ -943,6 +1072,8 @@ def create_download_panel(context: object, parent: object = None) -> object:
                     "展開播放清單",
                     "請只保留一個播放清單網址；展開後可逐項選擇。",
                 )
+                return
+            if self.reject_wrong_site_urls(urls):
                 return
             self.expand_playlist.setEnabled(False)
             self.expand_playlist.setText("正在展開…")
@@ -1250,6 +1381,15 @@ def create_download_panel(context: object, parent: object = None) -> object:
             supported = []
             issues = list(parsed.issues)
             for entry in parsed.entries:
+                if not self.accepts_url(entry.url):
+                    issues.append(
+                        BatchImportIssue(
+                            entry.row_number,
+                            entry.url,
+                            f"此清單只接受 {site_label} 網址",
+                        )
+                    )
+                    continue
                 try:
                     context.download_providers.provider_for(entry.url)
                 except RuntimeError:
@@ -1322,6 +1462,8 @@ def create_download_panel(context: object, parent: object = None) -> object:
             if not urls:
                 QMessageBox.information(self, "批量下載", "請至少輸入一個網址。")
                 return
+            if self.reject_wrong_site_urls(urls):
+                return
             try:
                 subtitle_mode, subtitle_languages = self.selected_media_options()
                 timed_comment_mode, container_preset = (
@@ -1392,6 +1534,7 @@ def create_download_panel(context: object, parent: object = None) -> object:
             confirmation = build_batch_preview(
                 requests, preflight, estimated_bytes=estimated_bytes
             )
+            option_text = "\n".join(download_option_lines(requests[0]))
             filename_line = (
                 f"\n檔名：{confirmation.filename}"
                 if confirmation.filename
@@ -1402,6 +1545,7 @@ def create_download_panel(context: object, parent: object = None) -> object:
                 "確認下載工作",
                 f"項目：{confirmation.item_count}\n"
                 f"格式：{self.format_preset.currentText()}\n"
+                f"{option_text}\n"
                 f"估計容量：{human_bytes(confirmation.estimated_bytes)}\n"
                 f"磁碟可用：{human_bytes(confirmation.free_bytes)}\n"
                 f"輸出：{confirmation.output_directory}{filename_line}",
@@ -1571,7 +1715,7 @@ def create_download_panel(context: object, parent: object = None) -> object:
                 QMessageBox.information(
                     self,
                     "尋找替代",
-                    "請先在 YouTube 搜尋頁啟用失效替換功能。",
+                    "請在網站搜尋頁的搜尋 MOD 選單啟用 YouTube 失效替換。",
                 )
                 return
             self.pending_recovery_request = task.request
@@ -1702,5 +1846,10 @@ def create_download_panel(context: object, parent: object = None) -> object:
             path = Path(self.output.text()).resolve()
             path.mkdir(parents=True, exist_ok=True)
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+        def closeEvent(self, event: object) -> None:
+            if self.youtube_workspace is not None:
+                self.youtube_workspace.shutdown()
+            super().closeEvent(event)
 
     return DownloadPanel()

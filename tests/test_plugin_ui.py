@@ -175,7 +175,7 @@ def test_external_mod_page_uses_dark_accessible_scroll_surface(
         assert locale_status is not None
         assert scroll.accessibleName() == "外部 MOD 介面內容"
         assert selector.accessibleName() == "外部 MOD 介面選擇"
-        assert locale_selector.accessibleName() == "外部 MOD 介面語言"
+        assert locale_selector.accessibleName() == "核心與 MOD 共用介面語言"
         assert locale_selector.isEnabled()
         assert "繁體中文" in locale_status.text()
         locale_selector.setCurrentIndex(locale_selector.findData("en"))

@@ -5,19 +5,32 @@ valid Ed25519 signature in `security/release-manifest.sig`, the manifest key id
 matches the identity compiled into `core/security/release_key.py`, and every
 listed SHA-256 digest matches.
 
-Release procedure:
+## Required order
 
 1. Generate and retain an Ed25519 private key outside the repository and build
-   system workspace.
+   workspace.
 2. Put only its Base64 raw public key and stable key id in `release_key.py`.
-3. Run `python -m tools.build_version --channel stable --version 1.0.0 --confirm-stable`.
-   A key change therefore requires a new build.
-4. Run `python -m tools.sign_release --root Version/Stable/1.0 --private-key <external-key-path>`.
-5. Apply Windows Authenticode to `Version/Stable/1.0/MediaManager.exe` with the
-   production code-signing identity.
-6. Run `python -m tools.release_preflight --root Version/Stable/1.0`. It must print `READY`.
-7. Distribute the EXE, `mod/builtin` files, and `security` manifest/signature
-   together.
+   A key change requires a new build.
+3. Build `MediaManager.exe` in an isolated work directory.
+4. Apply Windows Authenticode to that work-directory EXE and verify its status is
+   `Valid`.
+5. Stage the already Authenticode-signed EXE, wheel, portable runtimes and release
+   files. Generate the final `release-info.json`, SBOM and `SHA256SUMS.txt` there.
+6. Run `tools.sign_release` against the final staged directory so the Ed25519
+   manifest records the final EXE bytes.
+7. Run release preflight, version audit, copied-folder smoke and candidate evidence
+   validation. Every gate must refer to the same staged artifact.
+8. Distribute the staged directory without modifying any signed or hashed file.
+
+Authenticode changes PE bytes. Applying it after `SHA256SUMS.txt` or the Ed25519
+manifest has been generated invalidates those records and is forbidden.
+
+## Current tooling status
+
+`tools.build_version` currently builds and stages in one operation, before an
+operator can apply Authenticode to the work-directory EXE. Therefore the old
+single-command stable procedure is not approved for release. A tested release
+operator or sign-before-stage hook must be completed before Stable 1.0 packaging.
 
 The signing tool refuses a private key that does not match the compiled public
 key. Never commit, bundle, log, or transmit the private key through MediaManager.

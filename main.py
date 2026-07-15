@@ -20,6 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--headless", action="store_true", help="do not start the graphical security UI")
     parser.add_argument("--verify-only", action="store_true", help="verify core integrity and exit")
     parser.add_argument("--provider-host", help=argparse.SUPPRESS)
+    parser.add_argument("--provider-root", help=argparse.SUPPRESS)
     parser.add_argument("--plugin-host", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--plugin-id", help=argparse.SUPPRESS)
     parser.add_argument("--plugin-root", help=argparse.SUPPRESS)
@@ -31,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.plugin_host:
-        if args.provider_host or not all(
+        if args.provider_host or args.provider_root or not all(
             (args.plugin_id, args.plugin_root, args.entry_point, args.nonce)
         ):
             return 2
@@ -48,6 +49,8 @@ def main(argv: list[str] | None = None) -> int:
             args.nonce,
         )
     if args.provider_host:
+        if not args.provider_root:
+            return 2
         from plugin_host.stdio import restore_frozen_host_stdio
 
         if not restore_frozen_host_stdio():
@@ -57,7 +60,11 @@ def main(argv: list[str] | None = None) -> int:
         application_root = Path(
             sys.executable if getattr(sys, "frozen", False) else __file__
         ).resolve().parent
-        return run_provider(Path(args.provider_host), application_root)
+        return run_provider(
+            Path(args.provider_host),
+            application_root,
+            provider_root=Path(args.provider_root),
+        )
     bootstrap = Bootstrap(portable=args.portable)
     if args.verify_only:
         security = bootstrap.verify_only()

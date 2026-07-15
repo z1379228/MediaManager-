@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "locale": "ja",
+  "group_name": "YouTube",
+  "workspace": {
+    "title": "YouTube ダウンロードワークスペース",
+    "subtitle": "YouTube と YouTube Music はこのワークスペースを共有し、他サイトとは完全に分離されます。",
+    "enable": "YouTube メイン MOD を有効化",
+    "url_label": "YouTube 動画／プレイリスト URL",
+    "placeholder": "1 行に 1 つの YouTube URL を貼り付けます。プレイリストは単独行にしてください。例：\nhttps://music.youtube.com/playlist?list=PL...",
+    "initial_preview": "YouTube 動画またはプレイリスト URL を入力すると、情報確認と一括選択ができます。",
+    "wrong_site": "このページでは YouTube URL のみ使用できます。対応するサイトのワークスペースへ切り替えてください。"
+  },
+  "modules": {
+    "youtube": {"name": "一括ダウンロード", "purpose": "動画、音声、プレイリスト、一括ダウンロードと試聴", "control_location": "YouTube ダウンロードワークスペース"},
+    "youtube-search": {"name": "検索", "purpose": "YouTube と YouTube Music の公開コンテンツを検索", "control_location": "サイト検索 → YouTube"},
+    "youtube-player": {"name": "動画プレビュー", "purpose": "任意の低画質動画プレビュー", "control_location": "サイト検索 → YouTube 結果"},
+    "youtube-history": {"name": "検索履歴", "purpose": "限定された検索傾向をローカル保存", "control_location": "サイト検索 → 最近の検索"},
+    "youtube-recovery": {"name": "代替検索", "purpose": "利用不可動画の代替候補を検索", "control_location": "サイト検索 → YouTube 結果"},
+    "youtube-similar": {"name": "類似コンテンツ", "purpose": "類似する動画や音楽をランダム検索", "control_location": "サイト検索 → YouTube 結果"},
+    "youtube-auto-split": {"name": "自動分割", "purpose": "長時間動画の分割点を解析してプレビュー", "control_location": "YouTube ダウンロードワークスペース"}
+  }
+}

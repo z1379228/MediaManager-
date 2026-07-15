@@ -98,6 +98,36 @@ def test_discovery_service_uses_provider_declared_search_capability(tmp_path) ->
     service.close()
 
 
+def test_federated_search_rejects_explicitly_selected_disabled_source(
+    tmp_path,
+) -> None:
+    provider = Mock()
+    provider.provider_id = "bilibili-search"
+    provider.display_name = "Bilibili Search"
+    provider.search_capability = SearchCapabilityV2(
+        "bilibili-search",
+        ("bilibili",),
+        ("all",),
+        7,
+        "none",
+        False,
+        False,
+    )
+    provider.search.return_value = ()
+    service = DiscoveryService(tmp_path / "discovery-state.json")
+    service.register(provider, enabled=False)
+
+    with pytest.raises(RuntimeError, match="bilibili-search"):
+        service.federated_search(
+            "example",
+            provider_ids=("bilibili-search",),
+        )
+
+    provider.search.assert_not_called()
+    assert service.federated_search("example").items == ()
+    service.close()
+
+
 def test_search_source_health_tracks_failure_and_recovery(tmp_path) -> None:
     provider = Mock()
     provider.provider_id = "catalog-search"

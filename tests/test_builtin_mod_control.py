@@ -72,6 +72,27 @@ def test_discovery_mod_toggle_uses_discovery_registry() -> None:
     discovery.set_enabled.assert_called_once_with("youtube-player", True)
 
 
+def test_site_child_requires_enabled_parent_and_parent_disable_cascades(
+    tmp_path, monkeypatch
+) -> None:
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    try:
+        with pytest.raises(RuntimeError, match="bilibili 主 MOD"):
+            set_builtin_mod_enabled(context, "bilibili-search", True)
+
+        set_builtin_mod_enabled(context, "bilibili", True)
+        set_builtin_mod_enabled(context, "bilibili-search", True)
+        assert context.discovery.is_enabled("bilibili-search")
+
+        set_builtin_mod_enabled(context, "bilibili", False)
+        assert not context.download_providers.is_enabled("bilibili")
+        assert not context.discovery.is_enabled("bilibili-search")
+    finally:
+        context.lifecycle.shutdown()
+
+
 def test_feature_mod_toggle_uses_shared_event_and_reports_cancelled_work() -> None:
     features = Mock()
     features.statuses.return_value = (
@@ -112,19 +133,27 @@ def test_builtin_mod_events_sync_download_and_search_controls(
 
     app = QApplication.instance() or QApplication([])
     context = Bootstrap(portable=True).initialize()
-    download_panel = create_download_panel(context)
+    download_panel = create_download_panel(context, site_family="bilibili")
     search_panel = create_search_panel(context)
     download_panel.timer.stop()
     try:
-        assert not download_panel.bilibili_enabled.isChecked()
+        assert not download_panel.enabled.isChecked()
         assert not search_panel.video_enabled.isChecked()
+        assert not search_panel.bilibili_search_enabled.isVisible()
 
         set_builtin_mod_enabled(context, "bilibili", True)
         set_builtin_mod_enabled(context, "youtube-player", True)
         app.processEvents()
 
-        assert download_panel.bilibili_enabled.isChecked()
+        assert download_panel.enabled.isChecked()
         assert search_panel.video_enabled.isChecked()
+        assert search_panel.bilibili_search_enabled.isVisible()
+
+        set_builtin_mod_enabled(context, "bilibili-search", True)
+        set_builtin_mod_enabled(context, "bilibili", False)
+        app.processEvents()
+        assert not context.discovery.is_enabled("bilibili-search")
+        assert not search_panel.bilibili_search_enabled.isVisible()
     finally:
         search_panel.shutdown()
         search_panel.close()

@@ -1,30 +1,48 @@
 # MediaManager 正式版 1.0 候選狀態
 
-本文件記錄由開發版 9.0 升格為正式版 1.0 的候選結果。它是版本資訊，
-不是已發布的 Stable 宣告；所有正式版門檻通過前，不建立或上傳正式版二進位檔。
+目前結論為 `ready: false`。本文件是候選評估，不是 Stable 發布宣告；所有正式版門檻
+通過且使用者明確確認前，不建立、簽署、包裝或上傳 `Version/Stable/1.0`。
 
-## 已通過
+## 目前可確認的 Development 基線
 
-- Ruff 通過。
-- Pytest 完整回歸通過：549 passed、2 skipped。
-- 9.0 copied-folder 的 `--version`、Portable verify、headless 與 GUI smoke 通過。
-- 升級與回退相關測試通過。
-- 9.0 版本資料夾 44 項 SHA-256 稽核通過。
-- GitHub 目前沒有開放的 P0 或 P1 issue。
-- MOD 可見性、唯一啟用路由、狀態持久化、跨頁同步及選用分頁顯示稽核通過。
+- 核心版本為 Development 9.1.0，成品位於 `Version/Development/9.1`，沒有覆寫 9.0。
+- Ruff 全專案檢查通過；Pytest 627 項通過，另有 2 項 Windows symlink 測試因帳戶權限
+  跳過。
+- YouTube 與 Bilibili 下載工作區、網址路由及搜尋交接已分離；網站主 MOD 關閉時不顯示
+  子 MOD，停用主 MOD 會級聯停用子 MOD。
+- 核心四語言會讀取網站 MOD 的對應 locale；群組稽核通過 2 個網站群組與每組 4 個
+  語言檔。
+- copied-folder smoke 已通過 `--version`、`--verify-only`、`--headless`、凍結後 MOD 載入
+  及 YouTube Music 播放清單網址解析。
+- 9.1 共 58 項 SHA-256 稽核通過；`MediaManager.exe` SHA-256 為
+  `3FF76A1E278E0C0C791941CECE16F1A8003CF51D1F5B1BB535513F1778B74393`。
 
-## 目前阻擋
+## 仍然阻擋 Stable 1.0 的項目
 
-1. 程式內尚未設定有效的 production Ed25519 release key id 與 public key。
-2. `MediaManager.exe` 的 Windows Authenticode 狀態是 `NotSigned`。
+1. 目前工作樹尚未提交，亦沒有對應最終 revision 的 GitHub CI 證據。
+2. 程式內沒有可用的 production Ed25519 release key id 與 public key。
+3. `MediaManager.exe` 的 Windows Authenticode 狀態仍為 `NotSigned`。
+4. 正式候選 evidence 尚須綁定最終來源 revision、成品 digest、產生時間與發布工具版本，
+   並完成升級、回退、MOD 接線與完整 copied-folder 驗證。
+5. `generic-ytdlp` 仍是預設停用的舊 Beta 多網域相容 provider；它不影響 YouTube／
+   Bilibili 工作區隔離，但正式版前仍應評估是否保留或逐站遷移。
 
-因此候選評估結果為 `ready: false`，目前必須維持開發版 9.0，不能包裝或
-上傳 `Version/Stable/1.0`。待外部簽章身分備妥後，需重新建置、簽署並讓
-`tools.release_preflight` 回傳 `READY`，才可由使用者確認正式封版。
+因此目前必須維持 Development 與 `SAFE_MODE`。production Ed25519 私鑰及 Windows
+code-signing 身分是外部發布條件，不得用測試金鑰、略過檢查或手動改狀態取代。
 
-## 重新評估指令
+## 重新評估流程
+
+1. 提交 9.1 最終原始碼並讓 GitHub CI 全部通過。
+2. 以該 revision 重建 Development 9.1，重新產生 `release-info.json` 與
+   `SHA256SUMS.txt`。
+3. 重新執行 Ruff、Pytest、copied-folder、MOD 群組、升級、回退及完整版本稽核。
+4. 取得 production Ed25519 與 Authenticode 發布身分，依正式簽署順序處理成品。
+5. `tools.release_preflight` 必須回傳 `READY`。
+6. 由使用者明確確認後，才可建立或上傳 Stable 1.0。
+
+目前診斷指令：
 
 ```powershell
-.\.venv\Scripts\python.exe -m tools.release_preflight --root Version\Development\9.0 --json
-.\.venv\Scripts\python.exe -m tools.release_candidate --root Version\Development\9.0 --evidence .work\stable-1.0-evidence.json --suggest-stable 1.0.0
+.\.venv\Scripts\python.exe -m tools.release_preflight --root Version\Development\9.1 --json
+.\.venv\Scripts\python.exe -m tools.release_candidate --root Version\Development\9.1 --evidence .work\stable-1.0-evidence.json --suggest-stable 1.0.0
 ```

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "group_id": "bilibili",
+  "site_family": "bilibili",
+  "parent_provider_id": "bilibili",
+  "locales": ["en", "ja", "zh-CN", "zh-TW"],
+  "children": [
+    {"module_id": "search", "provider_id": "bilibili-search"}
+  ]
+}

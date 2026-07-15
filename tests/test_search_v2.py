@@ -77,6 +77,27 @@ def test_federated_search_deduplicates_and_isolates_failure() -> None:
     assert result.failures[0].category == "error"
 
 
+def test_federated_search_keeps_same_id_from_different_sites() -> None:
+    registry = SearchAdapterRegistry()
+    registry.register(
+        _capability("youtube"),
+        lambda query: SearchPageV2(
+            "youtube", (_item("same", url="https://www.youtube.com/watch?v=same"),)
+        ),
+    )
+    registry.register(
+        _capability("bilibili"),
+        lambda query: SearchPageV2(
+            "bilibili", (_item("same", url="https://www.bilibili.com/video/same"),)
+        ),
+    )
+
+    result = registry.search(SearchQueryV2("music"))
+
+    assert len(result.items) == 2
+    assert result.sources == ("youtube", "bilibili")
+
+
 def test_federated_search_classifies_timeout_and_invalid_response() -> None:
     registry = SearchAdapterRegistry()
     registry.register(

@@ -45,7 +45,12 @@ class DownloadArchive:
         video_id = ""
         if host in {"youtu.be", "www.youtu.be"}:
             video_id = parsed.path.strip("/").split("/", 1)[0]
-        elif host in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
+        elif host in {
+            "youtube.com",
+            "www.youtube.com",
+            "m.youtube.com",
+            "music.youtube.com",
+        }:
             if parsed.path == "/watch":
                 video_id = (parse_qs(parsed.query).get("v") or [""])[0]
             else:

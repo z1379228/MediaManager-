@@ -36,6 +36,34 @@ def human_bytes(value: int | None) -> str:
     return "未知"
 
 
+def download_option_lines(request: DownloadRequest) -> tuple[str, ...]:
+    """Return explicit confirmation lines for segment, subtitle and danmaku options."""
+
+    if request.start_time is None and request.end_time is None:
+        segment = "完整內容"
+    else:
+        start = f"{(request.start_time or 0):g} 秒"
+        end = f"{request.end_time:g} 秒" if request.end_time is not None else "結尾"
+        segment = f"{start} → {end}"
+    subtitles = {
+        "none": "不下載",
+        "all": "全部可用字幕",
+        "selected": "指定語言：" + "、".join(request.subtitle_languages),
+    }[request.subtitle_mode]
+    timed_comments = {
+        "none": "不保留",
+        "source": "保留 XML",
+        "ass": "保留 XML 並轉為 ASS",
+    }[request.timed_comment_mode]
+    container = "MKV（嵌入 ASS）" if request.container_preset == "mkv" else "自動"
+    return (
+        f"區段：{segment}",
+        f"字幕：{subtitles}",
+        f"彈幕：{timed_comments}",
+        f"封裝：{container}",
+    )
+
+
 def suggest_output_filename(title: str, media_id: str, preset_id: str) -> str:
     preset = next(
         (item for item in FORMAT_PRESETS_V1 if item.preset_id == preset_id), None
