@@ -84,18 +84,28 @@ def test_ani_gamer_workspace_follows_parent_child_state_and_opens_filter(
             catalog_queries.append(query)
             return FederatedSearchResult((), (), ())
 
+        def wait_for_catalog_query_count(expected: int) -> None:
+            for _ in range(200):
+                app.processEvents()
+                if len(catalog_queries) >= expected and not panel.busy:
+                    return
+                QTest.qWait(10)
+            pytest.fail(
+                f"catalog search did not finish: expected={expected}, "
+                f"actual={len(catalog_queries)}, busy={panel.busy}"
+            )
+
         monkeypatch.setattr(
             context.discovery, "federated_search", fake_catalog_search
         )
         panel.open_filter.click()
-        QTest.qWait(50)
-        app.processEvents()
+        wait_for_catalog_query_count(1)
         assert catalog_queries == [
             ani_gamer_catalog_url("冒險", "電影", "闔家觀賞", 2)
         ]
+        assert panel.quick_buttons["recent"].isEnabled()
         panel.quick_buttons["recent"].click()
-        QTest.qWait(50)
-        app.processEvents()
+        wait_for_catalog_query_count(2)
         assert catalog_queries[-1].endswith("#recent")
 
         series = DiscoveryItemV1(
