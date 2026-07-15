@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 from pathlib import Path
@@ -43,6 +44,37 @@ def test_rejects_provider_entry_path_escape(tmp_path: Path) -> None:
     root = make_provider(tmp_path, "", "../outside.py")
     with pytest.raises(ProviderProtocolError, match="unsafe"):
         SubprocessDownloadProvider(root, application_root=tmp_path)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="official Windows MEGAcmd uses batch clients")
+def test_mega_provider_accepts_only_its_official_named_batch_client(
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "mega"
+    batch = tmp_path / "mega-get.bat"
+    batch.write_text("@echo off\n", encoding="utf-8")
+
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=tmp_path,
+        external_tools={"mega-get": str(batch)},
+    )
+
+    assert provider.external_tools == {"mega-get": str(batch.resolve())}
+
+
+@pytest.mark.skipif(os.name != "nt", reason="official Windows MEGAcmd uses batch clients")
+def test_mega_provider_rejects_wrong_batch_client_name(tmp_path: Path) -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "mega"
+    batch = tmp_path / "untrusted.bat"
+    batch.write_text("@echo off\n", encoding="utf-8")
+
+    with pytest.raises(ProviderProtocolError, match="executable is invalid"):
+        SubprocessDownloadProvider(
+            root,
+            application_root=tmp_path,
+            external_tools={"mega-get": str(batch)},
+        )
 
 
 def test_rejects_malformed_provider_output(tmp_path: Path) -> None:
@@ -156,7 +188,7 @@ def test_download_accepts_nonempty_file_inside_output_directory(
     assert Path(result).read_bytes() == b"media"
 
 
-def test_download_forwards_timed_comment_and_container_options(
+def test_download_forwards_media_and_bounded_provider_options(
     tmp_path: Path,
 ) -> None:
     source = (
@@ -167,7 +199,8 @@ def test_download_forwards_timed_comment_and_container_options(
         "path.parent.mkdir(parents=True, exist_ok=True)\n"
         "path.write_text(json.dumps({"
         "'timed_comment_mode':raw['timed_comment_mode'],"
-        "'container_preset':raw['container_preset']}), encoding='utf-8')\n"
+        "'container_preset':raw['container_preset'],"
+        "'provider_options':raw['provider_options']}), encoding='utf-8')\n"
         "print(json.dumps({'type':'result','value':str(path)}), flush=True)\n"
     )
     root = make_provider(tmp_path, source)
@@ -177,6 +210,7 @@ def test_download_forwards_timed_comment_and_container_options(
         tmp_path / "out",
         timed_comment_mode="ass",
         container_preset="mkv",
+        provider_options=(("download_connections", "4"),),
     )
 
     result = provider.download(request, lambda _: None, threading.Event())
@@ -184,6 +218,7 @@ def test_download_forwards_timed_comment_and_container_options(
     assert json.loads(Path(result).read_text(encoding="utf-8")) == {
         "timed_comment_mode": "ass",
         "container_preset": "mkv",
+        "provider_options": {"download_connections": "4"},
     }
 
 

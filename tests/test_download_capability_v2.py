@@ -65,3 +65,30 @@ def test_generic_provider_does_not_claim_unverified_social_sites() -> None:
 
     assert capability.sites == ("generic",)
     assert not {"facebook", "instagram", "threads"}.intersection(capability.sites)
+
+
+def test_facebook_capability_is_public_video_only() -> None:
+    capability = builtin_download_capability("facebook")
+
+    assert capability.sites == ("facebook",)
+    assert capability.format_presets == (
+        "best",
+        "video-1080",
+        "video-720",
+        "video-480",
+    )
+    assert capability.subtitle_modes == ("none",)
+    assert capability.timed_comments == ("none",)
+    assert not capability.supports_playlist
+    assert not capability.supports_segments
+
+
+def test_mega_capability_is_public_file_transfer_only() -> None:
+    capability = builtin_download_capability("mega")
+
+    assert capability.sites == ("mega",)
+    assert capability.format_presets == ("best",)
+    assert capability.subtitle_modes == ("none",)
+    assert capability.timed_comments == ("none",)
+    assert not capability.supports_playlist
+    assert not capability.supports_segments

@@ -14,8 +14,8 @@
   "modules": {
     "mega": {
       "name": "MEGA Download",
-      "purpose": "公開ファイル共有を公式 mega-get に振り分けます。9.2 ではフォルダーを保存しません",
-      "control_location": "MOD 管理で有効にすると MEGA ダウンロード画面を表示"
+      "purpose": "専用画面で公開ファイルを公式 MEGAcmd に渡します。接続分流は選択式で、フォルダーは現在判定のみです",
+      "control_location": "MOD 管理で有効にすると専用 MEGA ダウンロード画面を表示"
     }
   }
 }

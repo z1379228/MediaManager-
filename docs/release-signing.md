@@ -25,7 +25,7 @@ listed SHA-256 digest matches.
 Authenticode changes PE bytes. Applying it after `SHA256SUMS.txt` or the Ed25519
 manifest has been generated invalidates those records and is forbidden.
 
-## 10.0 metadata anchors
+## Metadata anchors
 
 Stable 簽章檔案集合由 `stable_signed_files()` 產生，除執行期檔案外也包含版本相符的
 wheel、`release-info.json` 與 `SHA256SUMS.txt`。因此公開下載附件的套件、來源／建置

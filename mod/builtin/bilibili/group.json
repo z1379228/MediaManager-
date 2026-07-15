@@ -5,6 +5,7 @@
   "parent_provider_id": "bilibili",
   "locales": ["en", "ja", "zh-CN", "zh-TW"],
   "children": [
-    {"module_id": "search", "provider_id": "bilibili-search"}
+    {"module_id": "search", "provider_id": "bilibili-search"},
+    {"module_id": "danmaku", "provider_id": "bilibili-danmaku"}
   ]
 }

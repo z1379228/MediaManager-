@@ -1,8 +1,8 @@
 # Threads feasibility review
 
-Review date: 2026-07-14
-Release decision: MediaManager 1.7.3 provides an official post and data-export
-bridge only. It does not enable a Threads download provider.
+Review date: 2026-07-16
+Current decision: MediaManager provides an official post and data-export bridge
+only. It does not enable a Threads download provider.
 
 ## Evidence
 

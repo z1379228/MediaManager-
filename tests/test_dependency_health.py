@@ -38,6 +38,18 @@ def test_find_executable_prefers_application_tools(
     assert health.find_executable(tmp_path, "helper") == str(executable.resolve())
 
 
+def test_find_executable_accepts_official_windows_megacmd_batch_client(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = tmp_path / "tools" / "mega-get.bat"
+    client.parent.mkdir()
+    client.write_text("@echo off\n", encoding="utf-8")
+    monkeypatch.setattr(health.os, "name", "nt")
+    monkeypatch.setattr(health.shutil, "which", lambda _name: None)
+
+    assert health.find_executable(tmp_path, "mega-get") == str(client.resolve())
+
+
 def test_dependency_report_marks_full_support_ready(
     tmp_path: Path, monkeypatch
 ) -> None:

@@ -114,6 +114,49 @@ def test_audit_supports_independent_development_and_stable_tracks(
     ]
 
 
+def test_audit_supports_testing_version_separate_from_core(
+    tmp_path: Path,
+) -> None:
+    version_root = tmp_path / "Version"
+    original = _write_tracked_release(version_root, "11.0.0", "Testing")
+    release = original.with_name("1.0")
+    original.rename(release)
+    info_path = release / "release-info.json"
+    info = json.loads(info_path.read_text(encoding="utf-8"))
+    info.update(
+        {
+            "schema_version": 3,
+            "tool_schema_version": 3,
+            "release_version": "1.0.0",
+            "version_folder": "1.0",
+            "source_revision": "unavailable",
+            "source_fingerprint": "a" * 64,
+            "build_id": "b" * 64,
+        }
+    )
+    info_path.write_text(json.dumps(info), encoding="utf-8")
+    files = sorted(
+        path
+        for path in release.rglob("*")
+        if path.is_file() and path.name != "SHA256SUMS.txt"
+    )
+    (release / "SHA256SUMS.txt").write_text(
+        "".join(
+            f"{hashlib.sha256(path.read_bytes()).hexdigest()}  "
+            f"{path.relative_to(release).as_posix()}\n"
+            for path in files
+        ),
+        encoding="ascii",
+    )
+
+    report = audit_versions(version_root)
+
+    assert report.valid
+    assert [(item.track, item.folder, item.core_version) for item in report.versions] == [
+        ("Testing", "1.0", "11.0.0")
+    ]
+
+
 def test_audit_version_detects_tampering_and_unlisted_files(tmp_path: Path) -> None:
     release = _write_release(tmp_path / "Version", "1.3.2")
     (release / "MediaManager.exe").write_bytes(b"tampered")
@@ -140,7 +183,7 @@ def test_audit_version_detects_metadata_and_unsafe_manifest_paths(
     result = audit_version(release)
 
     assert not result.valid
-    assert "core_version does not match the version folder" in result.errors
+    assert "release_version does not match the version folder" in result.errors
     assert "exactly one version-matched wheel is required" in result.errors
     assert "unsafe checksum path: ../outside.txt" in result.errors
 

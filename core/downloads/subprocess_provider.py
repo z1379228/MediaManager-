@@ -103,7 +103,7 @@ class SubprocessDownloadProvider:
                 )
             self.js_runtime = (name, str(runtime_path))
         allowed_tool_names = {
-            "mega": frozenset({"mega-get"}),
+            "mega": frozenset({"mega-get", "mega-speedlimit"}),
         }.get(self.provider_id, frozenset())
         raw_tools = dict(external_tools or {})
         if set(raw_tools) - allowed_tool_names:
@@ -112,6 +112,8 @@ class SubprocessDownloadProvider:
         for tool_name, raw_path in raw_tools.items():
             tool_path = Path(raw_path).resolve()
             expected_names = {tool_name.casefold(), f"{tool_name.casefold()}.exe"}
+            if self.provider_id == "mega" and os.name == "nt":
+                expected_names.add(f"{tool_name.casefold()}.bat")
             if (
                 not tool_path.is_file()
                 or tool_path.name.casefold() not in expected_names
@@ -201,6 +203,7 @@ class SubprocessDownloadProvider:
             "youtube-search": {"network.youtube", "process.javascript"},
             "bilibili-search": {"network.bilibili"},
             "ani-gamer-search": {"network.ani-gamer"},
+            "ani-gamer-episodes": {"network.ani-gamer"},
             "youtube-player": {
                 "network.youtube",
                 "storage.temp.write",
@@ -340,6 +343,7 @@ class SubprocessDownloadProvider:
             "youtube-search": "network.youtube",
             "bilibili-search": "network.bilibili",
             "ani-gamer-search": "network.ani-gamer",
+            "ani-gamer-episodes": "network.ani-gamer",
             "test": "network.youtube",
         }.get(self.provider_id)
         if permission is None:
@@ -871,6 +875,7 @@ class SubprocessDownloadProvider:
             "subtitle_languages": list(request.subtitle_languages),
             "timed_comment_mode": request.timed_comment_mode,
             "container_preset": request.container_preset,
+            "provider_options": dict(request.provider_options),
         }
         result = self._execute(
             payload,

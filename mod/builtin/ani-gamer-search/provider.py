@@ -11,6 +11,10 @@ from urllib import parse, request
 
 
 SEARCH_URL = "https://ani.gamer.com.tw/search.php"
+HOME_URL = "https://ani.gamer.com.tw/"
+LIST_URL = "https://ani.gamer.com.tw/animeList.php"
+RECENT_QUERY = f"{HOME_URL}#recent"
+NEW_QUERY = f"{HOME_URL}#new"
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _RESULT_PATH = re.compile(r"/animeRef\.php\?sn=([0-9]{1,10})")
 
@@ -92,9 +96,13 @@ def safe_thumbnail(value: str) -> str:
 
 
 class AniSearchParser(HTMLParser):
-    def __init__(self, limit: int) -> None:
+    def __init__(self, limit: int, required_section: str = "") -> None:
         super().__init__(convert_charrefs=True)
         self.limit = limit
+        self.required_section = required_section
+        self.active_section = ""
+        self.in_heading = False
+        self.heading_parts: list[str] = []
         self.items: list[dict[str, Any]] = []
         self.current: dict[str, str] | None = None
         self.in_title = False
@@ -109,7 +117,18 @@ class AniSearchParser(HTMLParser):
     ) -> None:
         values = self._attrs(attrs)
         classes = set(values.get("class", "").split())
-        if tag == "a" and "theme-list-main" in classes and len(self.items) < self.limit:
+        if tag == "h1":
+            self.in_heading = True
+            self.heading_parts = []
+        if (
+            tag == "a"
+            and "theme-list-main" in classes
+            and len(self.items) < self.limit
+            and (
+                not self.required_section
+                or self.active_section == self.required_section
+            )
+        ):
             result = safe_result_url(values.get("href", ""))
             self.current = (
                 {"url": result[0], "serial": result[1], "title": "", "thumbnail": ""}
@@ -124,11 +143,18 @@ class AniSearchParser(HTMLParser):
             self.title_parts = []
 
     def handle_data(self, data: str) -> None:
+        if self.in_heading:
+            self.heading_parts.append(data)
         if self.in_title:
             self.title_parts.append(data)
 
     def handle_endtag(self, tag: str) -> None:
-        if tag == "p" and self.in_title:
+        if tag == "h1" and self.in_heading:
+            self.in_heading = False
+            self.active_section = " ".join(
+                "".join(self.heading_parts).split()
+            )[:100]
+        elif tag == "p" and self.in_title:
             self.in_title = False
             title = " ".join("".join(self.title_parts).split())[:300]
             if self.current is not None and title:
@@ -151,8 +177,26 @@ class AniSearchParser(HTMLParser):
             self.in_title = False
 
 
-def fetch_html(query: str) -> str:
-    url = f"{SEARCH_URL}?{parse.urlencode({'keyword': query})}"
+def _is_safe_catalog_page(value: str) -> bool:
+    try:
+        parsed = parse.urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "https"
+        and parsed.hostname == "ani.gamer.com.tw"
+        and parsed.username is None
+        and parsed.password is None
+        and port is None
+        and not parsed.fragment
+        and parsed.path in {"/", "/search.php", "/animeList.php"}
+    )
+
+
+def fetch_page(url: str) -> str:
+    if not _is_safe_catalog_page(url):
+        raise ValueError("AniGamer catalog URL is invalid")
     search_request = request.Request(
         url,
         headers={
@@ -162,13 +206,47 @@ def fetch_html(query: str) -> str:
     )
     opener = request.build_opener(_OfficialRedirectHandler())
     with opener.open(search_request, timeout=20) as response:
-        final = parse.urlsplit(response.geturl())
-        if final.scheme != "https" or final.hostname != "ani.gamer.com.tw":
+        if not _is_safe_catalog_page(response.geturl()):
             raise ValueError("AniGamer search redirected outside the official site")
         payload = response.read(MAX_RESPONSE_BYTES + 1)
     if len(payload) > MAX_RESPONSE_BYTES:
         raise ValueError("AniGamer search response is too large")
     return payload.decode("utf-8", errors="replace")
+
+
+def fetch_html(query: str) -> str:
+    url = f"{SEARCH_URL}?{parse.urlencode({'keyword': query})}"
+    return fetch_page(url)
+
+
+def catalog_source(query: str) -> tuple[str, str] | None:
+    if query == RECENT_QUERY:
+        return HOME_URL, "近期熱播"
+    if query == NEW_QUERY:
+        return HOME_URL, "新上架"
+    try:
+        parsed = parse.urlsplit(query)
+        port = parsed.port
+    except ValueError:
+        return None
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "ani.gamer.com.tw"
+        or parsed.username is not None
+        or parsed.password is not None
+        or port is not None
+        or parsed.path != "/animeList.php"
+        or parsed.fragment
+    ):
+        return None
+    values = parse.parse_qs(parsed.query, keep_blank_values=True)
+    if set(values) != {"tags", "category", "target", "sort"} or not all(
+        len(items) == 1 and 1 <= len(items[0]) <= 40 for items in values.values()
+    ):
+        return None
+    if values["sort"][0] not in {"1", "2"}:
+        return None
+    return query, ""
 
 
 def search(raw_request: dict[str, Any]) -> dict[str, Any]:
@@ -180,9 +258,12 @@ def search(raw_request: dict[str, Any]) -> dict[str, Any]:
     if raw_request.get("content_type", "all") not in {"all", "video"}:
         raise ValueError("AniGamer search content type is invalid")
     limit = max(1, min(int(raw_request.get("limit", 12)), 50))
+    source = catalog_source(query)
+    if source is None and query.startswith(("http://", "https://")):
+        raise ValueError("AniGamer catalog URL is invalid")
     emit({"type": "progress", "title": "Searching AniGamer official catalogue"})
-    parser = AniSearchParser(limit)
-    parser.feed(fetch_html(query))
+    parser = AniSearchParser(limit, source[1] if source is not None else "")
+    parser.feed(fetch_page(source[0]) if source is not None else fetch_html(query))
     parser.close()
     return {"items": parser.items, "next_cursor": ""}
 

@@ -1,0 +1,16 @@
+{
+  "provider_id": "ani-gamer-episodes",
+  "display_name": "動畫瘋集數導覽",
+  "entry_point": "provider.py",
+  "url_hosts": ["ani.gamer.com.tw"],
+  "permissions": ["network.ani-gamer"],
+  "search_capability": {
+    "provider_id": "ani-gamer-episodes",
+    "sites": ["ani-gamer"],
+    "content_types": ["video"],
+    "max_page_size": 50,
+    "pagination": "offset",
+    "audio_preview": false,
+    "video_preview": false
+  }
+}

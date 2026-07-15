@@ -2,22 +2,35 @@
 
 from __future__ import annotations
 
-CORE_VERSION = "10.3.0"
-BUILD_CHANNEL = "development"
-DEVELOPMENT_GENERATION = "10.3"
-SUPPORTED_BUILD_CHANNELS = frozenset({"development", "stable"})
+CORE_VERSION = "11.0.0"
+BUILD_CHANNEL = "testing"
+DEVELOPMENT_GENERATION = "11.0"
+TESTING_VERSION = "1.0.0"
+SUPPORTED_BUILD_CHANNELS = frozenset({"development", "testing", "stable"})
 
 
 def display_version() -> str:
     if BUILD_CHANNEL == "development":
         return f"開發版 {DEVELOPMENT_GENERATION}"
+    if BUILD_CHANNEL == "testing":
+        return f"測試版 {TESTING_VERSION.rsplit('.', 1)[0]}"
     return f"正式版 {CORE_VERSION.rsplit('.', 1)[0]}"
 
 
 def release_track(channel: str = BUILD_CHANNEL) -> str:
     if channel not in SUPPORTED_BUILD_CHANNELS:
-        raise ValueError("release channel must be development or stable")
-    return "Development" if channel == "development" else "Stable"
+        raise ValueError("release channel must be development, testing, or stable")
+    return {
+        "development": "Development",
+        "testing": "Testing",
+        "stable": "Stable",
+    }[channel]
+
+
+def release_identity_version(channel: str = BUILD_CHANNEL) -> str:
+    if channel not in SUPPORTED_BUILD_CHANNELS:
+        raise ValueError("release channel must be development, testing, or stable")
+    return TESTING_VERSION if channel == "testing" else CORE_VERSION
 
 
 def release_version(value: str) -> tuple[int, int, int]:

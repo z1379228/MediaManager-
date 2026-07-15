@@ -9,7 +9,7 @@ below.
 
 The review found one high-value core improvement and one clear MOD boundary:
 
-1. **Adopted in 1.4.2: bounded TXT/CSV batch import with preview.** Queue-first
+1. **Implemented: bounded TXT/CSV batch import with preview.** Queue-first
    desktop tools make large input sets manageable before work starts.
    MediaManager now validates at most 500 local rows, shows invalid and
    unsupported items, and requires explicit confirmation before one atomic
@@ -44,7 +44,7 @@ The useful, non-duplicated directions are:
 
 1. **MEGA stays an independent MOD.** Public MEGA links require
    client-side key handling and are not ordinary media-page extraction. The
-   Development 9.2 adapter validates modern official `mega.nz` public-share
+   current adapter validates modern official `mega.nz` public-share
    URLs and routes public files to an explicitly detected official `mega-get`.
    It discloses the dependency, avoids account/session import, respects transfer
    quotas and access controls, and leaves folder download for later work.
@@ -135,21 +135,20 @@ without weakening isolation, resource bounds or user confirmation.
 2. Explainable recovery candidates.
    Implemented; title/artist match reasons remain visible and replacement is explicit.
 3. Format and naming presets.
-   Implemented as bounded named presets; richer preflight detail remains in 4.2.
+   Implemented as bounded named presets; richer preflight detail remains a future candidate.
 4. Completion and failure notifications.
    Implemented as local, user-controlled notifications.
 5. Bounded search thumbnails and selected-item audio preview.
    Implemented with bounded thumbnails and explicit preview actions.
 
-## Existing optional MODs and 4.x work
+## Existing optional MODs and future work
 
 1. Automation, smart playlists, playlist/archive import/export, local
    speech-to-text, and bounded media conversion already exist as optional MODs.
-2. Per-source scheduling, richer post-download metadata correction, and the 4.x
-   search/download preflight work stay on the authoritative 4.0-to-5.0 roadmap.
+2. Per-source scheduling, richer post-download metadata correction, and richer
+   search/download preflight remain future candidates rather than current release claims.
 3. Newly scanned gallery, transcript-search, cross-site mirror, and optional
-   direct-transfer ideas are deferred until after 5.0 stable and do not expand
-   the current release scope.
+   direct-transfer ideas are deferred and do not expand the current release scope.
 
 ## Do not prioritize
 

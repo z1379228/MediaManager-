@@ -21,7 +21,10 @@ from core.mod_groups import (
 )
 from core.settings import normalized_language
 from trusted_ui.empty_state import create_empty_state
-from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
+from trusted_ui.builtin_mod_control import (
+    builtin_mod_is_enabled,
+    set_builtin_mod_enabled,
+)
 from trusted_ui.thumbnail_loader import create_thumbnail_loader
 
 
@@ -336,7 +339,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 if parent_id is None:
                     return True
                 try:
-                    return context.download_providers.is_enabled(parent_id)
+                    return builtin_mod_is_enabled(context, parent_id)
                 except (AttributeError, KeyError, RuntimeError):
                     if not hasattr(context, "download_providers"):
                         return True
@@ -526,6 +529,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
                             parent_label = {
                                 "youtube": "YouTube",
                                 "bilibili": "Bilibili",
+                                "ani-gamer": "動畫瘋",
                             }.get(parent_id, parent_id)
                             hidden_labels.append(
                                 f"{source_label}需先啟用 {parent_label} 主 MOD"

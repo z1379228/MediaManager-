@@ -24,7 +24,6 @@ from trusted_ui.site_mod_catalog import (
 
 def test_site_mod_catalog_registers_requested_candidates() -> None:
     assert tuple(item.provider_id for item in SITE_MOD_CANDIDATES) == (
-        "ani-gamer",
         "instagram",
         "threads",
     )
@@ -313,12 +312,11 @@ def test_site_mod_catalog_panel_marks_candidates_as_not_installed(
         for label in panel.findChildren(QLabel)
         if label.objectName() == "dependencySummary"
     ]
-    assert table.rowCount() == 3
+    assert table.rowCount() == 2
     assert summaries == [
-        "已登記 3 個候選網站 MOD · 目前均未啟用下載"
+        "已登記 2 個候選網站 MOD · 目前均未啟用下載"
     ]
-    assert {table.item(row, 1).text() for row in range(3)} == {
-        "不可下載 · 官方播放",
+    assert {table.item(row, 1).text() for row in range(2)} == {
         "不可下載 · 官方工具",
     }
     official_site = panel.findChild(QComboBox, "officialSiteBridgeSelect")

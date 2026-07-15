@@ -1,7 +1,7 @@
 # Search／Download Adapter SDK
 
-4.3 起提供離線 Adapter SDK，讓第三方作者在不安裝、不執行程式碼的情況下，
-先驗證 Search v2 或 Download v2 capability、核心版本範圍、權限、必要工具與
+目前提供離線 Adapter SDK，讓第三方作者在不安裝、不執行程式碼的情況下，先驗證
+Search v2 或 Download v2 capability、核心版本範圍、權限、必要工具與
 依賴宣告。這不是信任或安裝捷徑；公開套件仍必須走 schema v2 MOD、檔案清單、
 Ed25519 簽章與使用者信任流程。
 

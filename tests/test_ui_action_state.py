@@ -14,7 +14,9 @@ from core.downloads.models import DownloadRequest, DownloadTask
 from core.downloads.provider_registry import ProviderStatus
 from core.storage.paths import AppPaths
 from trusted_ui.download_panel import create_download_panel
+from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.main_window import apply_download_prefill, configure_workspace_tabs
+from trusted_ui.mega_workspace import create_mega_workspace
 from trusted_ui.search_panel import create_search_panel, search_source_for_url
 
 
@@ -181,15 +183,15 @@ def test_empty_workspace_actions_are_disabled(tmp_path, monkeypatch) -> None:
         youtube_source = search_panel.search_source.findData("youtube-search")
         ani_gamer_source = search_panel.search_source.findData("ani-gamer-search")
         assert youtube_source >= 0
-        assert ani_gamer_source >= 0
+        assert ani_gamer_source < 0
         assert search_panel.search_source.itemText(youtube_source).startswith(
             "YouTube 搜尋"
         )
-        assert search_panel.search_source.itemText(ani_gamer_source).startswith(
-            "動畫瘋官方搜尋"
-        )
         assert search_panel.search_source.findData("bilibili-search") < 0
         assert "Bilibili 搜尋需先啟用 Bilibili 主 MOD" in (
+            search_panel.search_source_summary.text()
+        )
+        assert "動畫瘋官方搜尋需先啟用 動畫瘋 主 MOD" in (
             search_panel.search_source_summary.text()
         )
         search_buttons = {
@@ -236,6 +238,9 @@ def test_empty_workspace_actions_are_disabled(tmp_path, monkeypatch) -> None:
         assert search_panel.search_source.itemText(bilibili_source).startswith(
             "Bilibili 搜尋"
         )
+        bilibili_panel.bilibili_workspace.danmaku_enabled.setChecked(True)
+        app.processEvents()
+        assert context.features.is_enabled("bilibili-danmaku")
         bilibili_panel.urls.setPlainText(
             "https://www.bilibili.com/video/BVexample"
         )
@@ -299,13 +304,17 @@ def test_facebook_and_mega_workspaces_enable_and_route_independently(
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     paths = AppPaths.discover(portable=True, app_root=tmp_path)
     monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+    (tmp_path / "mega-get.exe").write_bytes(b"test executable placeholder")
+    (tmp_path / "mega-speedlimit.exe").write_bytes(
+        b"test executable placeholder"
+    )
 
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance() or QApplication([])
     context = Bootstrap(portable=True).initialize(start_background=False)
     facebook_panel = create_download_panel(context, site_family="facebook")
-    mega_panel = create_download_panel(context, site_family="mega")
+    mega_panel = create_mega_workspace(context)
     facebook_panel.timer.stop()
     mega_panel.timer.stop()
     try:
@@ -314,7 +323,27 @@ def test_facebook_and_mega_workspaces_enable_and_route_independently(
         assert facebook_panel.workspace_title.text() == "Facebook 下載工作區"
         assert mega_panel.workspace_title.text() == "MEGA 下載工作區"
         assert facebook_panel.thumbnail_preview.pixmap() is not None
-        assert mega_panel.thumbnail_preview.pixmap() is not None
+        assert mega_panel.share_icon.text() == "MEGA"
+        assert not hasattr(mega_panel, "format_preset")
+        assert not hasattr(mega_panel, "subtitle_mode")
+        assert not hasattr(mega_panel, "expand_playlist")
+
+        context.events.publish("ui.language.changed", {"locale": "en"})
+        app.processEvents()
+        assert facebook_panel.workspace_title.text() == "Facebook Downloads"
+        assert mega_panel.workspace_title.text() == "MEGA Downloads"
+        assert mega_panel.enabled.text() == "Enable MEGA main MOD"
+        assert mega_panel.urls.placeholderText().startswith("One https://mega.nz/")
+
+        context.events.publish("ui.language.changed", {"locale": "zh-TW"})
+        app.processEvents()
+        assert facebook_panel.workspace_title.text() == "Facebook 下載工作區"
+        assert mega_panel.workspace_title.text() == "MEGA 下載工作區"
+
+        facebook_url = "https://www.facebook.com/reel/123456"
+        facebook_panel.urls.setPlainText(facebook_url)
+        app.processEvents()
+        assert not facebook_panel.add_download.isEnabled()
 
         facebook_panel.enabled.setChecked(True)
         mega_panel.enabled.setChecked(True)
@@ -322,9 +351,6 @@ def test_facebook_and_mega_workspaces_enable_and_route_independently(
         assert context.download_providers.is_enabled("facebook")
         assert context.download_providers.is_enabled("mega")
 
-        facebook_url = "https://www.facebook.com/reel/123456"
-        facebook_panel.urls.setPlainText(facebook_url)
-        app.processEvents()
         assert facebook_panel.read_info.isEnabled()
         assert facebook_panel.add_download.isEnabled()
         assert context.download_providers.provider_for(facebook_url).provider_id == (
@@ -336,9 +362,12 @@ def test_facebook_and_mega_workspaces_enable_and_route_independently(
         app.processEvents()
         assert mega_panel.read_info.isEnabled()
         assert mega_panel.add_download.isEnabled()
-        assert mega_panel.format_preset.count() == 1
-        assert mega_panel.format_preset.currentData() == "best"
-        assert mega_panel.subtitle_mode.count() == 1
+        assert mega_panel.content_type.text() == "類型：下載後判定"
+        mega_panel.output_filename.setText("backup.zip")
+        assert mega_panel.content_type.text() == "類型：壓縮檔"
+        mega_panel.custom_transfer.setChecked(True)
+        assert mega_panel.download_connections.isEnabled()
+        assert mega_panel.speed_limit.isEnabled()
         assert context.download_providers.provider_for(mega_file).provider_id == "mega"
 
         mega_panel.urls.setPlainText(
@@ -388,8 +417,20 @@ def test_core_language_event_updates_built_in_site_mod_ui(
         assert youtube_panel.workspace_title.text() == "YouTube Download Workspace"
         assert youtube_panel.enabled.text() == "Enable YouTube main MOD"
         assert youtube_panel.urls_label.text() == "YouTube video / playlist URLs"
+        assert youtube_panel.youtube_workspace.title.text() == (
+            "YouTube Search and Batch Selection"
+        )
+        assert youtube_panel.youtube_workspace.subtitle.text().startswith(
+            "Search public YouTube"
+        )
         assert bilibili_panel.workspace_title.text() == (
             "Bilibili Download Workspace"
+        )
+        assert bilibili_panel.bilibili_workspace.title.text() == (
+            "Bilibili Search and UP Creator Batch"
+        )
+        assert bilibili_panel.bilibili_workspace.subtitle.text().startswith(
+            "Search public videos"
         )
         assert search_panel.enabled.text() == "YouTube Search"
         assert search_panel.bilibili_search_enabled.text() == "Bilibili Search"
@@ -555,6 +596,7 @@ def test_site_search_mods_toggle_independently_and_never_use_youtube_actions(
     monkeypatch.setattr(QMessageBox, "warning", warning)
     context = Bootstrap(portable=True).initialize()
     context.download_providers.set_enabled("bilibili", True)
+    set_builtin_mod_enabled(context, "ani-gamer", True)
     panel = None
     try:
         panel = create_search_panel(context)

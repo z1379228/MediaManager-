@@ -43,6 +43,11 @@ from core.mod_groups import BuiltinModGroupError, load_builtin_mod_group
 from core.site_routing import classify_site_url
 from core.settings import SettingsService, normalized_download_workers
 from trusted_ui.batch_import_dialog import show_batch_import_dialog
+from trusted_ui.bilibili_workspace import (
+    bilibili_url_kind_label,
+    create_bilibili_workspace,
+    merge_bilibili_download_urls,
+)
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.empty_state import create_empty_state
 from trusted_ui.playlist_dialog import show_playlist_dialog
@@ -211,7 +216,6 @@ def create_download_panel(
         "youtube": "YouTube",
         "bilibili": "Bilibili",
         "facebook": "Facebook",
-        "mega": "MEGA",
     }
     if site_family not in site_labels:
         raise ValueError("download workspace site family is unsupported")
@@ -326,6 +330,7 @@ def create_download_panel(
             page.addLayout(heading)
 
             self.youtube_workspace = None
+            self.bilibili_workspace = None
             if site_family == "youtube":
                 self.youtube_workspace = create_youtube_workspace(
                     context,
@@ -333,6 +338,13 @@ def create_download_panel(
                     self,
                 )
                 page.addWidget(self.youtube_workspace)
+            elif site_family == "bilibili":
+                self.bilibili_workspace = create_bilibili_workspace(
+                    context,
+                    self.append_bilibili_search_urls,
+                    self,
+                )
+                page.addWidget(self.bilibili_workspace)
 
             input_card = QFrame()
             input_card.setObjectName("card")
@@ -414,7 +426,9 @@ def create_download_panel(
             self.url_classification = QLabel()
             self.url_classification.setObjectName("urlClassification")
             self.url_classification.setWordWrap(True)
-            self.url_classification.setVisible(site_family == "youtube")
+            self.url_classification.setVisible(
+                site_family in {"youtube", "bilibili"}
+            )
             input_layout.addWidget(self.url_classification)
 
             self.official_bridge_notice = QWidget(self)
@@ -446,7 +460,7 @@ def create_download_panel(
             self.thumbnail_preview.setAccessibleName(f"{site_label} 網址縮圖")
             self.thumbnail_preview.setFixedSize(104, 62)
             self.thumbnail_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.thumbnail_preview.setVisible(site_family in {"facebook", "mega"})
+            self.thumbnail_preview.setVisible(site_family == "facebook")
             self.set_thumbnail_placeholder()
             self.preview = QLabel(self.workspace_text["initial_preview"])
             self.preview.setObjectName("preview")
@@ -745,23 +759,11 @@ def create_download_panel(
             self.update_site_options()
 
         def set_thumbnail_placeholder(self, kind: str = "") -> None:
-            if self.site_family not in {"facebook", "mega"}:
+            if self.site_family != "facebook":
                 self.thumbnail_preview.clear()
                 return
-            mega_labels = {
-                "mega-folder": "MEGA\nFOLDER",
-                "mega-video": "MEGA\nVIDEO",
-                "mega-archive": "MEGA\nARCHIVE",
-                "mega-document": "MEGA\nDOCUMENT",
-                "mega-audio": "MEGA\nAUDIO",
-                "mega-image": "MEGA\nIMAGE",
-            }
-            label = (
-                "FB"
-                if self.site_family == "facebook"
-                else mega_labels.get(kind, "MEGA\nFILE")
-            )
-            color = QColor("#1877F2" if self.site_family == "facebook" else "#D9272E")
+            label = "FB"
+            color = QColor("#1877F2")
             pixmap = QPixmap(96, 54)
             pixmap.fill(color)
             painter = QPainter(pixmap)
@@ -796,6 +798,10 @@ def create_download_panel(
                 if self.provider_id in provider_ids
                 else f"{self.workspace_text['enable']}（不可用）"
             )
+            if self.youtube_workspace is not None:
+                self.youtube_workspace.apply_language(locale)
+            if self.bilibili_workspace is not None:
+                self.bilibili_workspace.apply_language(locale)
 
         def handle_builtin_mod_changed(self, payload: object) -> None:
             if not isinstance(payload, dict):
@@ -817,6 +823,15 @@ def create_download_panel(
                 "youtube-player",
             } and self.youtube_workspace:
                 self.youtube_workspace.refresh_availability()
+            if changed_provider_id in {
+                "bilibili",
+                "bilibili-search",
+                "bilibili-danmaku",
+            } and (
+                self.bilibili_workspace
+            ):
+                self.bilibili_workspace.refresh_availability()
+                self.update_site_options()
             if changed_provider_id in {"youtube", "youtube-player"}:
                 if self.media_preview_controls is not None:
                     self.media_preview_controls.refresh()
@@ -835,6 +850,27 @@ def create_download_panel(
             self.preview.setText(
                 f"已從 YouTube 搜尋帶入 {added} 筆新網址；"
                 "請確認格式、字幕、開始／結束時間與播放清單選項後再加入佇列。"
+            )
+            self.urls.setFocus()
+
+        def append_bilibili_search_urls(
+            self, selected_urls: tuple[str, ...]
+        ) -> None:
+            """Bring Bilibili search results into this site's reviewed flow."""
+
+            before = tuple(
+                line.strip()
+                for line in self.urls.toPlainText().splitlines()
+                if line.strip()
+            )
+            merged = merge_bilibili_download_urls(
+                self.urls.toPlainText(), selected_urls
+            )
+            self.urls.setPlainText("\n".join(merged))
+            added = max(0, len(merged) - len(dict.fromkeys(before)))
+            self.preview.setText(
+                f"已從 Bilibili 搜尋帶入 {added} 筆新網址；"
+                "請確認格式、字幕、分 P 與彈幕選項後再加入佇列。"
             )
             self.urls.setFocus()
 
@@ -1038,22 +1074,21 @@ def create_download_panel(
                 route is None or route.site_family != self.site_family
                 for route in routes
             )
-            unsupported_mega_folder = any(
-                route is not None
-                and route.site_family == "mega"
-                and route.resource_kind == "public-folder"
-                for url in urls
-                if (route := classify_site_url(url)) is not None
+            bilibili_creator = (
+                self.site_family == "bilibili"
+                and len(routes) == 1
+                and routes[0] is not None
+                and routes[0].resource_kind == "creator"
             )
+            provider_enabled = self.any_download_provider_enabled()
             self.add_download.setEnabled(
-                bool(urls) and not wrong_site and not unsupported_mega_folder
+                provider_enabled
+                and bool(urls)
+                and not wrong_site
+                and not bilibili_creator
             )
             if wrong_site:
                 self.preview.setText(self.workspace_text["wrong_site"])
-            elif unsupported_mega_folder:
-                self.preview.setText(
-                    "已辨識 MEGA 公開資料夾；Development 9.2 先支援公開檔案下載。"
-                )
             if self.site_family == "youtube":
                 if not urls:
                     classification = "尚未輸入 YouTube 網址。"
@@ -1067,9 +1102,21 @@ def create_download_panel(
                         "單片試聽、影片預覽與播放清單展開已停用。"
                     )
                 self.url_classification.setText(classification)
+            elif self.site_family == "bilibili":
+                if not urls:
+                    classification = "尚未輸入 Bilibili 網址。"
+                elif wrong_site:
+                    classification = self.workspace_text["wrong_site"]
+                elif len(urls) == 1:
+                    classification = bilibili_url_kind_label(urls[0])
+                else:
+                    classification = (
+                        f"已確認：Bilibili 批量網址（{len(urls)} 筆）；"
+                        "字幕與彈幕選項會套用到全部工作，清單展開僅支援單一網址。"
+                    )
+                self.url_classification.setText(classification)
 
             single_valid = len(urls) == 1 and not wrong_site
-            provider_enabled = self.any_download_provider_enabled()
             if self.site_family == "youtube":
                 playlist_ready = single_valid and is_youtube_playlist_url(urls[0])
                 info_ready = single_valid and is_youtube_video_url(urls[0])
@@ -1078,7 +1125,13 @@ def create_download_panel(
                 )
             else:
                 playlist_ready = single_valid
-                info_ready = single_valid
+                info_ready = single_valid and not bilibili_creator
+                if self.site_family == "bilibili":
+                    self.expand_playlist.setToolTip(
+                        ""
+                        if playlist_ready
+                        else "只有單一 UP 主、番劇或分 P 網址才能展開"
+                    )
             self.expand_playlist.setEnabled(
                 provider_enabled and playlist_ready and not self.playlist_busy
             )
@@ -1086,7 +1139,10 @@ def create_download_panel(
                 provider_enabled and info_ready and not self.info_busy
             )
             is_bilibili_batch = (
-                self.site_family == "bilibili" and bool(urls) and not wrong_site
+                self.site_family == "bilibili"
+                and bool(urls)
+                and not wrong_site
+                and self.bilibili_danmaku_enabled()
             )
             self.danmaku_xml.setVisible(is_bilibili_batch)
             if not is_bilibili_batch:
@@ -1099,6 +1155,13 @@ def create_download_panel(
             self.update_danmaku_options()
             if self.media_preview_controls is not None:
                 self.media_preview_controls.refresh()
+
+        @staticmethod
+        def bilibili_danmaku_enabled() -> bool:
+            try:
+                return context.features.is_enabled("bilibili-danmaku")
+            except (AttributeError, KeyError, RuntimeError):
+                return False
 
         def open_official_bridge_catalog(self) -> None:
             if not self.official_bridge_id:
@@ -1117,19 +1180,6 @@ def create_download_panel(
                 self.preparation_preview.setText("尚未取得實際格式與容量資訊")
                 return
             preset_id = str(self.format_preset.currentData())
-            if self.site_family == "mega":
-                if not self.filename_manually_edited:
-                    self.output_filename.clear()
-                dependency = (
-                    "mega-get 已偵測，可加入下載佇列"
-                    if self.analyzed_info.get("dependency_available") is True
-                    else "未偵測到官方 mega-get；可讀取網址，但下載會保持失敗關閉"
-                )
-                self.preparation_preview.setText(dependency)
-                self.preparation_preview.setToolTip(
-                    "MEGA 公開連結的原始檔名由官方 MEGAcmd 決定。"
-                )
-                return
             if not self.filename_manually_edited:
                 self.output_filename.setText(
                     suggest_output_filename(
@@ -1324,16 +1374,7 @@ def create_download_panel(
                 f"{data.get('title', '未知標題')}  ·  "
                 f"{data.get('uploader', '未知作者')}  ·  {duration_text}"
             )
-            thumbnail_kind = str(data.get("thumbnail_kind") or "")
-            if self.site_family == "mega":
-                self.set_thumbnail_placeholder(thumbnail_kind)
-                dependency_text = (
-                    "官方 mega-get 已偵測"
-                    if data.get("dependency_available") is True
-                    else "尚未偵測到官方 mega-get"
-                )
-                self.preview.setText(f"{self.preview.text()}  ·  {dependency_text}")
-            elif self.site_family == "facebook":
+            if self.site_family == "facebook":
                 thumbnail_url = str(data.get("thumbnail") or "")
                 if self.thumbnail_loader is not None and thumbnail_url:
                     analyzed_url = self.analyzed_url
@@ -2241,6 +2282,8 @@ def create_download_panel(
                 )
             if self.youtube_workspace is not None:
                 self.youtube_workspace.shutdown()
+            if self.bilibili_workspace is not None:
+                self.bilibili_workspace.shutdown()
             if self.media_preview_controls is not None:
                 self.media_preview_controls.shutdown()
             if self.thumbnail_loader is not None:

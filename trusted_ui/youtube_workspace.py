@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 
 from contracts.discovery_v1 import DiscoveryItemV1
 from core.discovery.adapters import FederatedSearchResult
+from core.localization import normalized_core_locale
+from core.mod_groups import load_builtin_mod_group
 from core.site_routing import YOUTUBE_HOSTS, classify_site_url
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.media_preview_controls import (
@@ -163,15 +165,15 @@ def create_youtube_workspace(
             heading = QHBoxLayout()
             labels = QVBoxLayout()
             labels.setSpacing(1)
-            title = QLabel("YouTube 搜尋與批量選取")
-            title.setObjectName("fieldLabel")
-            subtitle = QLabel(
+            self.title = QLabel("YouTube 搜尋與批量選取")
+            self.title.setObjectName("fieldLabel")
+            self.subtitle = QLabel(
                 "固定使用 YouTube 搜尋 MOD；支援 youtube.com、www、m、music 與 youtu.be。"
             )
-            subtitle.setObjectName("sectionSubtitle")
-            subtitle.setWordWrap(True)
-            labels.addWidget(title)
-            labels.addWidget(subtitle)
+            self.subtitle.setObjectName("sectionSubtitle")
+            self.subtitle.setWordWrap(True)
+            labels.addWidget(self.title)
+            labels.addWidget(self.subtitle)
             heading.addLayout(labels, 1)
             self.toggle_button = QPushButton("展開搜尋")
             self.toggle_button.setObjectName("ghost")
@@ -266,8 +268,26 @@ def create_youtube_workspace(
             body_layout.addLayout(actions)
             layout.addWidget(self.body)
             self.body.hide()
+            self.apply_language(
+                getattr(getattr(context, "settings", None), "language", "zh-TW")
+            )
             self.refresh_availability()
             self.update_action_state()
+
+        def apply_language(self, locale: object) -> None:
+            selected = normalized_core_locale(locale)
+            group = load_builtin_mod_group("youtube", locale=selected)
+            module = next(
+                item for item in group.modules if item.provider_id == "youtube-search"
+            )
+            suffix = {
+                "zh-TW": "與批量選取",
+                "zh-CN": "与批量选择",
+                "en": "and Batch Selection",
+                "ja": "と一括選択",
+            }[selected]
+            self.title.setText(f"{group.display_name} {module.display_name} {suffix}")
+            self.subtitle.setText(module.purpose)
 
         def toggle_body(self, expanded: bool) -> None:
             self.body.setVisible(expanded)
@@ -307,19 +327,26 @@ def create_youtube_workspace(
                 available = YOUTUBE_SEARCH_PROVIDER_ID in {
                     status.provider_id for status in context.discovery.statuses()
                 }
-                enabled = available and context.discovery.is_enabled(
-                    YOUTUBE_SEARCH_PROVIDER_ID
+                parent_enabled = context.download_providers.is_enabled("youtube")
+                enabled = (
+                    available
+                    and parent_enabled
+                    and context.discovery.is_enabled(YOUTUBE_SEARCH_PROVIDER_ID)
                 )
             except (AttributeError, KeyError, RuntimeError, ValueError):
                 available = False
+                parent_enabled = False
                 enabled = False
             previous = self.enabled.blockSignals(True)
-            self.enabled.setEnabled(available and not self.busy)
+            self.enabled.setEnabled(available and parent_enabled and not self.busy)
             self.enabled.setChecked(enabled)
             self.enabled.blockSignals(previous)
             if not available:
                 self.enabled.setText("YouTube 搜尋 MOD 不可用")
                 self.status.setText("YouTube 搜尋 MOD 未通過註冊或完整性檢查。")
+            elif not parent_enabled:
+                self.enabled.setText("先啟用 YouTube 主 MOD")
+                self.status.setText("主 MOD 啟用後，才能個別啟用搜尋子 MOD。")
             else:
                 self.enabled.setText("啟用 YouTube 搜尋 MOD")
                 if not enabled and not self.busy:
@@ -352,8 +379,9 @@ def create_youtube_workspace(
                 self.status.setText("搜尋文字不可超過 200 個字元。")
                 return
             try:
-                enabled = context.discovery.is_enabled(
-                    YOUTUBE_SEARCH_PROVIDER_ID
+                enabled = (
+                    context.download_providers.is_enabled("youtube")
+                    and context.discovery.is_enabled(YOUTUBE_SEARCH_PROVIDER_ID)
                 )
             except (AttributeError, KeyError, RuntimeError, ValueError):
                 enabled = False
@@ -520,8 +548,9 @@ def create_youtube_workspace(
 
         def update_action_state(self) -> None:
             try:
-                enabled = context.discovery.is_enabled(
-                    YOUTUBE_SEARCH_PROVIDER_ID
+                enabled = (
+                    context.download_providers.is_enabled("youtube")
+                    and context.discovery.is_enabled(YOUTUBE_SEARCH_PROVIDER_ID)
                 )
             except (AttributeError, KeyError, RuntimeError, ValueError):
                 enabled = False

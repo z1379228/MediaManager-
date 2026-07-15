@@ -34,9 +34,13 @@ BUILTIN_MOD_CATALOG = (
         dependency_ids=("yt-dlp", "yt-dlp-ejs", "javascript-runtime", "ffmpeg"),
     ),
     BuiltinModDescriptor(
-        "bilibili", "Bilibili", "download", "影片、分段與彈幕 XML／ASS／MKV",
+        "bilibili", "Bilibili", "download", "影片、番劇與分段下載",
         "Bilibili 下載工作區（預設停用）", False,
         dependency_ids=("yt-dlp", "javascript-runtime", "ffmpeg"),
+    ),
+    BuiltinModDescriptor(
+        "ani-gamer", "動畫瘋", "feature", "官方作品目錄與播放頁入口",
+        "啟用後顯示動畫瘋官方目錄工作區", False, "ani-gamer",
     ),
     BuiltinModDescriptor(
         "facebook", "Facebook", "download", "公開影片頁資訊、縮圖與分流下載",
@@ -58,8 +62,21 @@ BUILTIN_MOD_CATALOG = (
         "網站搜尋 → 搜尋 MOD（預設停用）", False, parent_provider_id="bilibili",
     ),
     BuiltinModDescriptor(
+        "bilibili-danmaku", "Bilibili Danmaku", "feature",
+        "依需求保留 XML、轉換 ASS 或封裝 MKV",
+        "Bilibili 下載工作區（預設停用）", False,
+        parent_provider_id="bilibili", dependency_ids=("ffmpeg",),
+    ),
+    BuiltinModDescriptor(
         "ani-gamer-search", "動畫瘋官方搜尋", "discovery", "搜尋官方公開作品目錄；只開官方頁",
-        "網站搜尋 → 搜尋 MOD（預設停用）", False,
+        "動畫瘋官方目錄工作區（預設停用）", False,
+        parent_provider_id="ani-gamer",
+    ),
+    BuiltinModDescriptor(
+        "ani-gamer-episodes", "動畫瘋集數導覽", "discovery",
+        "讀取官方公開作品頁並列出可選集數；只開官方頁",
+        "動畫瘋官方目錄工作區（預設停用）", False,
+        parent_provider_id="ani-gamer",
     ),
     BuiltinModDescriptor(
         "youtube-player", "YouTube Player", "discovery", "可選的低畫質影片預覽",

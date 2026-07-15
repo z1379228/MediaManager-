@@ -106,3 +106,23 @@ def test_invalid_timed_comment_options_are_rejected(
             timed_comment_mode=comment_mode,
             container_preset=container,
         )
+
+
+@pytest.mark.parametrize(
+    "provider_options",
+    (
+        (("duplicate", "1"), ("duplicate", "2")),
+        (("", "value"),),
+        (("key", "x" * 257),),
+        (("key", "line\nbreak"),),
+    ),
+)
+def test_provider_options_are_bounded_and_unique(
+    tmp_path: Path, provider_options: tuple[tuple[str, str], ...]
+) -> None:
+    with pytest.raises(ValueError, match="provider options"):
+        DownloadRequest(
+            "https://example.com/file",
+            tmp_path,
+            provider_options=provider_options,
+        )

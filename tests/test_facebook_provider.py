@@ -102,7 +102,8 @@ def test_analyze_returns_bounded_title_thumbnail_and_formats(monkeypatch) -> Non
     monkeypatch.setitem(sys.modules, "yt_dlp", package)
 
     provider = load_provider()
-    monkeypatch.setattr(provider, "_browser_impersonation_available", lambda: True)
+    target = object()
+    monkeypatch.setattr(provider, "_browser_impersonation_target", lambda: target)
     result = provider.analyze(
         {"url": "https://facebook.com/reel/123456"}
     )
@@ -112,7 +113,19 @@ def test_analyze_returns_bounded_title_thumbnail_and_formats(monkeypatch) -> Non
     assert result["audio_languages"] == ["en"]
     assert result["subtitle_languages"] == ["zh-TW"]
     assert result["formats"][0]["height"] == 720
-    assert captured[0]["impersonate"] == "chrome"
+    assert captured[0]["impersonate"] is target
+
+
+def test_real_ytdlp_accepts_programmatic_impersonation_target() -> None:
+    pytest.importorskip("curl_cffi")
+    from yt_dlp import YoutubeDL
+    from yt_dlp.networking.impersonate import ImpersonateTarget
+
+    target = load_provider()._browser_impersonation_target()
+
+    assert isinstance(target, ImpersonateTarget)
+    with YoutubeDL({"quiet": True, "impersonate": target}):
+        pass
 
 
 def test_parse_failure_explains_public_page_requirement(monkeypatch) -> None:
@@ -135,8 +148,37 @@ def test_parse_failure_explains_public_page_requirement(monkeypatch) -> None:
     package.YoutubeDL = YoutubeDL
     monkeypatch.setitem(sys.modules, "yt_dlp", package)
 
-    with pytest.raises(RuntimeError, match="curl-cffi"):
-        load_provider().analyze({"url": "https://facebook.com/reel/123456"})
+    provider = load_provider()
+    monkeypatch.setattr(provider, "_browser_impersonation_target", lambda: object())
+
+    with pytest.raises(RuntimeError, match="不會讀取 Cookie"):
+        provider.analyze({"url": "https://facebook.com/reel/123456"})
+
+
+def test_parse_failure_explains_missing_impersonation_support(monkeypatch) -> None:
+    package = ModuleType("yt_dlp")
+
+    class YoutubeDL:
+        def __init__(self, _options):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def extract_info(self, _url, download):
+            assert download is False
+            raise RuntimeError("Cannot parse data")
+
+    package.YoutubeDL = YoutubeDL
+    monkeypatch.setitem(sys.modules, "yt_dlp", package)
+    provider = load_provider()
+    monkeypatch.setattr(provider, "_browser_impersonation_target", lambda: None)
+
+    with pytest.raises(RuntimeError, match="未偵測到 curl-cffi"):
+        provider.analyze({"url": "https://facebook.com/reel/123456"})
 
 
 def test_thumbnail_rejects_non_facebook_cdn() -> None:

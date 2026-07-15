@@ -134,6 +134,64 @@ def test_ani_gamer_request_is_limited_to_official_search(monkeypatch) -> None:
     assert parse.parse_qs(parsed.query)["keyword"] == ["test query"]
 
 
+def test_ani_gamer_catalog_queries_filter_home_sections(monkeypatch) -> None:
+    namespace = provider_namespace()
+    search = namespace["search"]
+    html = """
+    <h1>近期熱播</h1>
+    <a href='animeRef.php?sn=100' class='theme-list-main'>
+      <img class='theme-img' data-src='https://p2.bahamut.com.tw/B/ACG/a.JPG' alt='熱門作品'>
+      <p class='theme-name'>熱門作品</p>
+    </a>
+    <h1>新上架</h1>
+    <a href='animeRef.php?sn=200' class='theme-list-main'>
+      <img class='theme-img' data-src='https://p2.bahamut.com.tw/B/ACG/b.JPG' alt='新作品'>
+      <p class='theme-name'>新作品</p>
+    </a>
+    """
+    monkeypatch.setitem(search.__globals__, "fetch_page", lambda _url: html)
+
+    recent = search(
+        {
+            "query": namespace["RECENT_QUERY"],
+            "limit": 12,
+            "content_type": "video",
+            "cursor": "",
+        }
+    )
+    new = search(
+        {
+            "query": namespace["NEW_QUERY"],
+            "limit": 12,
+            "content_type": "video",
+            "cursor": "",
+        }
+    )
+
+    assert [item["title"] for item in recent["items"]] == ["熱門作品"]
+    assert [item["title"] for item in new["items"]] == ["新作品"]
+
+
+def test_ani_gamer_catalog_query_is_strictly_bounded(monkeypatch) -> None:
+    namespace = provider_namespace()
+    search = namespace["search"]
+    monkeypatch.setitem(
+        search.__globals__,
+        "fetch_page",
+        lambda _url: pytest.fail("invalid catalog URL must not contact AniGamer"),
+    )
+
+    with pytest.raises(ValueError, match="catalog URL"):
+        search(
+            {
+                "query": "https://ani.gamer.com.tw/animeList.php?sort=1",
+                "limit": 12,
+                "content_type": "video",
+                "cursor": "",
+            }
+        )
+
+
 def test_ani_gamer_rejects_cross_site_redirect_before_following() -> None:
     namespace = provider_namespace()
     handler = namespace["_OfficialRedirectHandler"]()

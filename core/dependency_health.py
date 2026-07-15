@@ -95,10 +95,22 @@ FFMPEG_MINIMUM = (6, 0, 0)
 def find_executable(application_root: Path, name: str) -> str | None:
     suffix = ".exe" if os.name == "nt" else ""
     executable = name if name.lower().endswith(suffix) else f"{name}{suffix}"
-    for candidate in (
+    candidates = [
         application_root / "tools" / executable,
         application_root / executable,
-    ):
+    ]
+    if os.name == "nt" and name in {"mega-get", "mega-speedlimit"}:
+        batch_name = f"{name}.bat"
+        candidates.extend(
+            (
+                application_root / "tools" / batch_name,
+                application_root / batch_name,
+            )
+        )
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+        if local_app_data:
+            candidates.append(Path(local_app_data) / "MEGAcmd" / batch_name)
+    for candidate in candidates:
         if candidate.is_file():
             if candidate.parent == application_root / "tools":
                 expected = {

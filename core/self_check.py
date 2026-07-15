@@ -125,12 +125,14 @@ def _registry_item(
 def _release_item(application_root: Path) -> SelfCheckItem:
     path = application_root / "release-info.json"
     if not path.is_file():
-        state: SelfCheckState = "warning" if BUILD_CHANNEL == "development" else "block"
+        state: SelfCheckState = (
+            "warning" if BUILD_CHANNEL in {"development", "testing"} else "block"
+        )
         return _item(
             "release.metadata",
             state,
             "來源樹未附發行資訊" if state == "warning" else "正式版缺少發行資訊",
-            "開發來源樹可略過；打包附件必須包含 release-info.json。",
+            "開發／測試來源樹可略過；打包附件必須包含 release-info.json。",
             "release.stage" if state == "warning" else "release.metadata.restore",
         )
     try:
@@ -294,7 +296,7 @@ def run_self_check(context: object) -> SelfCheckReport:
             _item(
                 "security.mode",
                 "warning",
-                "目前為 SAFE_MODE 開發版",
+                "目前為 SAFE_MODE 測試／開發版",
                 "外部可執行 MOD 不會啟動；這不是正式簽署發行版。",
                 "release.signing.required",
             )

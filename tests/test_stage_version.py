@@ -44,6 +44,7 @@ def test_stage_version_creates_complete_version_folder(tmp_path: Path) -> None:
     target = stage_version(
         tmp_path,
         version="1.2.3",
+        channel="development",
         portable_tools={
             "deno.exe": deno,
             "DENO-LICENSE.md": license_file,
@@ -57,8 +58,9 @@ def test_stage_version_creates_complete_version_folder(tmp_path: Path) -> None:
     assert (target / "MediaManager.exe").read_bytes() == b"exe"
     info = json.loads((target / "release-info.json").read_text("utf-8"))
     assert info["core_version"] == "1.2.3"
-    assert info["schema_version"] == 2
-    assert info["tool_schema_version"] == 2
+    assert info["schema_version"] == 3
+    assert info["tool_schema_version"] == 3
+    assert info["release_version"] == "1.2.3"
     assert info["build_channel"] == "development"
     assert info["release_track"] == "Development"
     assert info["version_folder"] == "1.2"
@@ -99,6 +101,7 @@ def test_stage_version_rejects_unsafe_portable_tool_name(tmp_path: Path) -> None
         stage_version(
             tmp_path,
             version="1.2.3",
+            channel="development",
             portable_tools={"../tool.exe": tool},
         )
     except ValueError as error:
@@ -109,11 +112,11 @@ def test_stage_version_rejects_unsafe_portable_tool_name(tmp_path: Path) -> None
 
 def test_stage_version_refuses_to_replace_existing_version(tmp_path: Path) -> None:
     _prepare_source(tmp_path)
-    target = stage_version(tmp_path, version="1.2.3")
+    target = stage_version(tmp_path, version="1.2.3", channel="development")
     (target / "stale.txt").write_text("old", encoding="utf-8")
     (tmp_path / "dist" / "MediaManager.exe").write_bytes(b"new")
     with pytest.raises(FileExistsError, match="increment the development minor"):
-        stage_version(tmp_path, version="1.2.3")
+        stage_version(tmp_path, version="1.2.3", channel="development")
     assert (target / "MediaManager.exe").read_bytes() == b"exe"
     assert (target / "stale.txt").read_text(encoding="utf-8") == "old"
 
@@ -136,7 +139,7 @@ def test_stage_version_retries_short_permission_error(
     monkeypatch.setattr(Path, "replace", locked_twice)
     monkeypatch.setattr(stage_module.time, "sleep", lambda _seconds: None)
 
-    target = stage_version(tmp_path, version="1.2.3")
+    target = stage_version(tmp_path, version="1.2.3", channel="development")
 
     assert target.is_dir()
     assert attempts == 3
@@ -153,7 +156,7 @@ def test_stage_version_recovers_legacy_backup_without_overwriting_target(
     (backup / "MediaManager.exe").write_bytes(b"old")
 
     with pytest.raises(FileExistsError, match="increment the development minor"):
-        stage_version(tmp_path, version="1.2.3")
+        stage_version(tmp_path, version="1.2.3", channel="development")
 
     assert (track / "1.2" / "MediaManager.exe").read_bytes() == b"old"
     assert not backup.exists()
@@ -173,3 +176,21 @@ def test_stage_version_refuses_stable_without_explicit_confirmation(
         confirm_stable=True,
     )
     assert target == tmp_path / "Version" / "Stable" / "1.2"
+
+
+def test_stage_version_separates_testing_and_core_versions(tmp_path: Path) -> None:
+    _prepare_source(tmp_path, "11.0.0")
+
+    target = stage_version(
+        tmp_path,
+        version="11.0.0",
+        release_version="1.0.0",
+        channel="testing",
+    )
+
+    assert target == tmp_path / "Version" / "Testing" / "1.0"
+    info = json.loads((target / "release-info.json").read_text("utf-8"))
+    assert info["core_version"] == "11.0.0"
+    assert info["release_version"] == "1.0.0"
+    assert info["build_channel"] == "testing"
+    assert info["release_track"] == "Testing"

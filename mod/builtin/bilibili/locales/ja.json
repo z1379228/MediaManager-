@@ -4,7 +4,7 @@
   "group_name": "Bilibili",
   "workspace": {
     "title": "Bilibili ダウンロードワークスペース",
-    "subtitle": "Bilibili の動画、分割、弾幕オプションはこのワークスペースだけで処理されます。",
+    "subtitle": "Bilibili の動画、シリーズ、分割ダウンロードはここで処理し、弾幕は子 MOD で個別に制御します。",
     "enable": "Bilibili メイン MOD を有効化",
     "url_label": "Bilibili 動画／シリーズ／分割 URL",
     "placeholder": "1 行に 1 つの Bilibili URL を貼り付けます。例：\nhttps://www.bilibili.com/video/BV...",
@@ -12,7 +12,8 @@
     "wrong_site": "このページでは Bilibili URL のみ使用できます。対応するサイトのワークスペースへ切り替えてください。"
   },
   "modules": {
-    "bilibili": {"name": "一括ダウンロードと弾幕", "purpose": "動画、シリーズ、分割、弾幕 XML／ASS、任意の MKV", "control_location": "Bilibili ダウンロードワークスペース"},
-    "bilibili-search": {"name": "検索", "purpose": "Bilibili 公式公開動画を独立検索", "control_location": "サイト検索 → Bilibili"}
+    "bilibili": {"name": "一括ダウンロード", "purpose": "動画、シリーズ、分割、UP 主ごとの一括ダウンロード", "control_location": "Bilibili ダウンロードワークスペース"},
+    "bilibili-search": {"name": "検索", "purpose": "Bilibili 公式公開動画を独立検索", "control_location": "Bilibili ワークスペース → 検索"},
+    "bilibili-danmaku": {"name": "弾幕", "purpose": "必要に応じて XML 保存、ASS 変換、MKV への格納を行います", "control_location": "Bilibili ワークスペース → 弾幕オプション"}
   }
 }

@@ -127,6 +127,47 @@ def test_youtube_url_kind_keeps_video_and_playlist_context_distinct() -> None:
     assert "播放清單中的單一" in youtube_url_kind_label(context)
 
 
+def test_youtube_search_child_requires_main_mod(monkeypatch) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    parent_state = {"enabled": False}
+    context = SimpleNamespace(
+        discovery=SimpleNamespace(
+            statuses=lambda: (
+                ProviderStatus("youtube-search", "YouTube Search", True),
+            ),
+            is_enabled=lambda provider_id: provider_id == "youtube-search",
+        ),
+        download_providers=SimpleNamespace(
+            is_enabled=lambda provider_id: (
+                provider_id == "youtube" and parent_state["enabled"]
+            )
+        ),
+        events=None,
+        audit=None,
+    )
+    workspace = create_youtube_workspace(context, lambda _urls: None)
+    try:
+        assert not workspace.enabled.isEnabled()
+        assert "先啟用" in workspace.enabled.text()
+        assert not workspace.search_button.isEnabled()
+
+        parent_state["enabled"] = True
+        workspace.refresh_availability()
+        assert workspace.enabled.isEnabled()
+        assert workspace.enabled.isChecked()
+        assert workspace.search_button.isEnabled()
+    finally:
+        workspace.shutdown()
+        workspace.close()
+        workspace.deleteLater()
+        app.processEvents()
+
+
 def test_download_workspace_routes_pure_youtube_playlist_before_analysis(
     monkeypatch,
 ) -> None:
@@ -356,7 +397,14 @@ def test_youtube_workspace_cancel_discards_late_results(monkeypatch) -> None:
         is_enabled=lambda provider_id: provider_id == "youtube-search",
         federated_search=federated_search,
     )
-    context = SimpleNamespace(discovery=discovery, events=None, audit=None)
+    context = SimpleNamespace(
+        discovery=discovery,
+        download_providers=SimpleNamespace(
+            is_enabled=lambda provider_id: provider_id == "youtube"
+        ),
+        events=None,
+        audit=None,
+    )
     workspace = create_youtube_workspace(context, lambda _urls: None)
     try:
         workspace.query.setText("取消測試")

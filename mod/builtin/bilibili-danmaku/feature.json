@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "provider_id": "bilibili-danmaku",
+  "display_name": "Bilibili Danmaku",
+  "kind": "site-addon",
+  "parent_provider_id": "bilibili"
+}

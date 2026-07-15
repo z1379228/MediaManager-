@@ -36,6 +36,18 @@ def test_site_groups_cover_exact_parent_child_and_four_locale_contract() -> None
             assert group.workspace["wrong_site"]
 
 
+def test_ani_gamer_ui_strings_are_complete_in_all_four_mod_locales() -> None:
+    groups = tuple(
+        load_builtin_mod_group("ani-gamer", locale=locale)
+        for locale in SUPPORTED_LOCALE_CODES
+    )
+    expected = set(groups[0].ui)
+
+    assert "load_episodes" in expected
+    assert "episodes_more" in expected
+    assert all(set(group.ui) == expected for group in groups)
+
+
 def test_site_group_rejects_incomplete_selected_translation(tmp_path: Path) -> None:
     builtin_root = tmp_path / "builtin"
     shutil.copytree(BUILTIN_ROOT / "youtube", builtin_root / "youtube")
