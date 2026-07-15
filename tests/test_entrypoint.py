@@ -116,6 +116,42 @@ def test_version_prepares_frozen_cli_output_before_argparse(
     assert "MediaManager 開發版 9.1" in capsys.readouterr().out
 
 
+def test_frozen_windowed_cli_uses_hard_process_exit(monkeypatch) -> None:
+    calls: list[int] = []
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(main, "main", lambda argv: 7)
+    monkeypatch.setattr(main.os, "_exit", calls.append)
+
+    main._script_entry(["--headless"])
+
+    assert calls == [7]
+
+
+def test_frozen_version_converts_argparse_exit_to_hard_exit(monkeypatch) -> None:
+    calls: list[int] = []
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+
+    def raise_version_exit(argv):
+        raise SystemExit(0)
+
+    monkeypatch.setattr(main, "main", raise_version_exit)
+    monkeypatch.setattr(main.os, "_exit", calls.append)
+
+    main._script_entry(["--version"])
+
+    assert calls == [0]
+
+
+def test_source_script_entry_keeps_normal_system_exit(monkeypatch) -> None:
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.setattr(main, "main", lambda argv: 3)
+
+    with pytest.raises(SystemExit) as raised:
+        main._script_entry(["--headless"])
+
+    assert raised.value.code == 3
+
+
 def test_provider_host_routes_with_explicit_builtin_root(
     tmp_path, monkeypatch
 ) -> None:
