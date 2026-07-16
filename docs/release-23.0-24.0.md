@@ -10,3 +10,5 @@
 - 進入下載流程、網站 MOD、UI／語言與 MOD 自檢的完整化階段。
 - 延續父 MOD／子 MOD 分流、四語言核心注入、SAFE_MODE 與輸出路徑防護。
 - Development 附件只保留本機；對外發布限定為通過驗證的 Testing 版本。
+- P0～P2 回歸完成：Ruff 通過，pytest `849 passed, 2 skipped`；兩項 skipped
+  是 Windows 帳戶無法建立 symlink 的既有限制。
