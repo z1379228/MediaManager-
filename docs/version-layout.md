@@ -63,7 +63,7 @@ runtimes. Fetch them once into the ignored local tool cache with:
 
 The downloads and extracted executables are checked against fixed SHA-256 values.
 Successful builds copy Deno, FFmpeg, ffprobe, and their license notices into
-`Version/<version>/tools`.
+`Version/<channel>/<version>/tools` for new three-channel builds.
 Use `--without-portable-runtime` only for a deliberately reduced build.
 
 Temporary PyInstaller and wheel output stays under `.work/<major>.<minor>` and is
@@ -97,7 +97,7 @@ EXE、`SHA256SUMS.txt` 與 `release-info.json` 不得刪除。次版本若依發
 提供簡介，則不要求永久保存其本機大型封裝。
 
 Never run portable GUI or headless smoke tests directly inside a retained
-`Version/<major>.<minor>` folder. Portable mode writes `UserData` beside the
+`Version/<channel>/<major>.<minor>` folder. Portable mode writes `UserData` beside the
 executable and makes the staged folder fail its checksum inventory. Copy the
 complete folder under `.work/smoke-<version>`, test that copy, verify no process
 remains and then remove only that smoke directory. `--version` and
@@ -107,6 +107,6 @@ remains and then remove only that smoke directory. `--version` and
 Formal signing and preflight use the staged folder as their root:
 
 ```powershell
-.\.venv\Scripts\python.exe -m tools.sign_release --root Version\1.0 --private-key <external-key-path>
-.\.venv\Scripts\python.exe -m tools.release_preflight --root Version\1.0
+.\.venv\Scripts\python.exe -m tools.sign_release --root Version\Stable\1.0 --private-key <external-key-path>
+.\.venv\Scripts\python.exe -m tools.release_preflight --root Version\Stable\1.0
 ```

@@ -415,6 +415,21 @@ class Bootstrap:
                 enabled=builtin_default_enabled("ani-gamer-search"),
             )
 
+        ani_gamer_episodes = load_builtin(
+            "ani-gamer-episodes",
+            lambda provider_root: SubprocessDownloadProvider(
+                provider_root,
+                application_root=paths.application,
+                expected_hashes=BUILTIN_PROVIDER_HASHES["ani-gamer-episodes"],
+                runtime_home=paths.temp / "provider-runtime" / "ani-gamer-episodes",
+            ),
+        )
+        if ani_gamer_episodes is not None:
+            discovery.register(
+                ani_gamer_episodes,
+                enabled=builtin_default_enabled("ani-gamer-episodes"),
+            )
+
         ani_gamer = load_builtin(
             "ani-gamer",
             lambda provider_root: DeclarativeFeatureGate.from_file(

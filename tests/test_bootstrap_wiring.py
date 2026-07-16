@@ -79,6 +79,7 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
         "youtube-search",
         "bilibili-search",
         "ani-gamer-search",
+        "ani-gamer-episodes",
         "youtube-player",
         "youtube-history",
         "youtube-recovery",
@@ -88,6 +89,7 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     assert context.discovery.is_enabled("youtube-search")
     assert not context.discovery.is_enabled("bilibili-search")
     assert not context.discovery.is_enabled("ani-gamer-search")
+    assert not context.discovery.is_enabled("ani-gamer-episodes")
     assert {status.provider_id for status in context.features.statuses()} == {
         "ani-gamer",
         "bilibili-danmaku",

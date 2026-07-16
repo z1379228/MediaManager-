@@ -22,7 +22,7 @@ SITE_MOD_CHILDREN = {
         "youtube-auto-split",
     ),
     "bilibili": ("bilibili-search", "bilibili-danmaku"),
-    "ani-gamer": ("ani-gamer-search",),
+    "ani-gamer": ("ani-gamer-search", "ani-gamer-episodes"),
     "facebook": (),
     "mega": (),
 }
@@ -69,6 +69,7 @@ class BuiltinModGroup:
     display_name: str
     locale: str
     workspace: dict[str, str]
+    ui: dict[str, str]
     modules: tuple[BuiltinModModule, ...]
 
 
@@ -157,12 +158,16 @@ def load_builtin_mod_group(
         raise BuiltinModGroupError("built-in MOD child routing does not match the core")
 
     translation = _read_json(group_root / "locales" / f"{selected_locale}.json")
-    if set(translation) != {
+    required_translation_fields = {
         "schema_version",
         "locale",
         "group_name",
         "workspace",
         "modules",
+    }
+    if frozenset(translation) not in {
+        frozenset(required_translation_fields),
+        frozenset({*required_translation_fields, "ui"}),
     }:
         raise BuiltinModGroupError("built-in MOD locale fields are invalid")
     if translation["schema_version"] != 1 or translation["locale"] != selected_locale:
@@ -180,6 +185,21 @@ def load_builtin_mod_group(
     parsed_workspace = {
         key: _bounded_text(value, f"workspace.{key}", limit=1000)
         for key, value in workspace.items()
+    }
+    raw_ui = translation.get("ui", {})
+    if (
+        not isinstance(raw_ui, dict)
+        or len(raw_ui) > 96
+        or not all(
+            isinstance(key, str)
+            and re.fullmatch(r"[a-z][a-z0-9_]{1,63}", key)
+            for key in raw_ui
+        )
+    ):
+        raise BuiltinModGroupError("built-in MOD localized UI strings are invalid")
+    parsed_ui = {
+        key: _bounded_text(value, f"ui.{key}", limit=1000)
+        for key, value in raw_ui.items()
     }
     modules: list[BuiltinModModule] = []
     for provider_id in (group_id, *SITE_MOD_CHILDREN[group_id]):
@@ -212,6 +232,7 @@ def load_builtin_mod_group(
         _bounded_text(translation["group_name"], "group_name", limit=80),
         selected_locale,
         parsed_workspace,
+        parsed_ui,
         tuple(modules),
     )
 

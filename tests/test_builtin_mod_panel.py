@@ -38,6 +38,7 @@ def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
             ProviderStatus("youtube-search", "Search", True),
             ProviderStatus("bilibili-search", "Bilibili Search", False),
             ProviderStatus("ani-gamer-search", "AniGamer Search", False),
+            ProviderStatus("ani-gamer-episodes", "AniGamer Episodes", False),
             ProviderStatus("youtube-player", "Player", False),
             ProviderStatus("youtube-history", "History", False),
             ProviderStatus("youtube-recovery", "Recovery", True),
@@ -52,7 +53,7 @@ def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
             FeatureStatus("automation", "Automation", False),
         ),
     )
-    assert len(rows) == 18
+    assert len(rows) == 19
     assert all(row.available for row in rows)
     assert sum(row.enabled for row in rows) == 5
     player = next(row for row in rows if row.provider_id == "youtube-player")
@@ -72,6 +73,7 @@ def test_builtin_mod_rows_keep_missing_expected_mod_visible() -> None:
         "bilibili-search",
         "bilibili-danmaku",
         "ani-gamer-search",
+        "ani-gamer-episodes",
         "youtube-player",
         "youtube-history",
         "youtube-recovery",
@@ -140,7 +142,8 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
                 for provider_id in (
                     "youtube-search",
                     "bilibili-search",
-                    "ani-gamer-search",
+                        "ani-gamer-search",
+                        "ani-gamer-episodes",
                     "youtube-player",
                     "youtube-history",
                     "youtube-recovery",
@@ -177,7 +180,7 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
     assert len(toggles) == 15
     assert {button.text() for button in toggles} == {"啟用", "停用"}
     assert summary.text() == (
-        "內建 MOD 18/18 已註冊 · 9 個已啟用 · "
+        "內建 MOD 19/19 已註冊 · 10 個已啟用 · "
         f"目前顯示 15 個父／子 MOD · 製作中 {len(PLANNED_MODS)} 項"
     )
     planned_start = table.rowCount() - len(visible_planned)

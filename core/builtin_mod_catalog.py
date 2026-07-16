@@ -73,6 +73,12 @@ BUILTIN_MOD_CATALOG = (
         parent_provider_id="ani-gamer",
     ),
     BuiltinModDescriptor(
+        "ani-gamer-episodes", "動畫瘋集數導覽", "discovery",
+        "讀取官方公開作品頁並列出可選集數；只開官方頁",
+        "動畫瘋官方目錄工作區（預設停用）", False,
+        parent_provider_id="ani-gamer",
+    ),
+    BuiltinModDescriptor(
         "youtube-player", "YouTube Player", "discovery", "可選的低畫質影片預覽",
         "網站搜尋 → 搜尋 MOD", False, parent_provider_id="youtube",
         dependency_ids=("yt-dlp", "yt-dlp-ejs", "javascript-runtime", "ffmpeg"),

@@ -21,10 +21,12 @@ only content they are authorized to save.
 
 ## Opt-in live diagnostic
 
-Run the following command from the repository root after building `Version/1.2`:
+Run the following command from the repository root after building a new Testing
+candidate. Replace `<version>` with that candidate's folder; do not run this
+against or alter a retained historical attachment:
 
 ```powershell
-.\.venv\Scripts\python.exe tools\youtube_e2e.py --release-root Version\1.2
+.\.venv\Scripts\python.exe tools\youtube_e2e.py --release-root Version\Testing\<version>
 ```
 
 This network-dependent diagnostic checks the complete search, analysis,
@@ -82,14 +84,14 @@ format and subtitle options.
 
 ## Generic yt-dlp Beta
 
-Version 1.5 adds a separately switchable `generic-ytdlp` download MOD. It is
-disabled by default and currently routes only explicit Vimeo, Dailymotion,
+The separately switchable `generic-ytdlp` download MOD is disabled by default
+and currently routes only explicit Vimeo, Dailymotion,
 SoundCloud, TikTok, Twitch and X/Twitter hosts. YouTube remains owned by its
 dedicated MOD; Bilibili and social-site feasibility candidates are deliberately
 excluded from this provider. Facebook and Instagram remain official-page and
 official-export bridges because Meta's terms require prior permission for
-automated access or collection. Threads completed the same review in 1.7.3 and
-also remains an official-page and official-export bridge.
+automated access or collection. Threads completed the same review and also
+remains an official-page and official-export bridge.
 
 The generic MOD uses `network.generic` rather than YouTube permission, rejects
 URLs containing embedded credentials and exposes the shared analyze, playlist,
@@ -99,7 +101,7 @@ website cannot change before the next live smoke check.
 
 ## Bilibili and danmaku XML
 
-Version 1.6 adds a dedicated, disabled-by-default `bilibili` MOD for explicit
+The dedicated, disabled-by-default `bilibili` MOD accepts explicit
 `bilibili.com` and `b23.tv` hosts. It does not use the generic provider and has
 its own `network.bilibili` permission. Initial support covers metadata,
 multi-part list expansion, the shared format/segment queue and ordinary
@@ -111,8 +113,8 @@ track as a separate XML sidecar. It does not embed or burn comments into the
 video, so the original media remains unchanged and no additional conversion
 work runs by default.
 
-Version 1.7 adds two nested options that appear only after XML retention is
-selected. **轉為 ASS** performs a local, bounded conversion while retaining the
+Two nested options appear only after XML retention is selected. **轉為 ASS**
+performs a local, bounded conversion while retaining the
 source XML. **嵌入 MKV** uses FFmpeg stream copy to place that ASS track in a
 Matroska container without re-encoding the video or audio. If conversion or
 muxing fails, MediaManager keeps the original media and every sidecar already

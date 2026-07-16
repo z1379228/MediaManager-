@@ -1,13 +1,15 @@
 # 網站父 MOD／子 MOD 與語言契約
 
-Development 9.1 起，完成度足以顯示在可信 UI 的網站功能必須遵守下列規則；
-Development 11.0 將規則套用到下載、搜尋與宣告式功能三種內建登錄表。
+目前所有能顯示在可信 UI 的網站功能都必須遵守下列規則；下載、搜尋與宣告式功能
+三種內建登錄表共用同一套父子生命週期及四語言來源。
 
 ## 資料與語言
 
 - 每個網站主 MOD 使用一個英文 `group_id`，例如 `youtube`、`bilibili`。
 - 主目錄提供受核心雜湊保護的 `group.json` 與 `locales/`；只允許 `en`、`ja`、
   `zh-CN`、`zh-TW` 四個檔案，且每個檔案必須完整覆蓋該群組所有可見子 MOD。
+- 語言檔可包含受驗證的 `ui` 字串表，供可信工作區顯示欄位、動作、狀態與錯誤。
+  字串鍵與長度都有上限，MOD 不能藉此注入 HTML、Qt 物件或可執行內容。
 - 核心 `settings.language` 是唯一語言來源。MOD 不保存第二份語言選擇；核心切換語言後
   發布 `ui.language.changed`，工作區、MOD 管理與搜尋來源同步重新讀取同一語言檔。
 - 未知語言回退到 `zh-TW`；缺檔、少翻譯、額外欄位或無效 UTF-8 均視為群組驗證失敗，
@@ -23,9 +25,11 @@ Development 11.0 將規則套用到下載、搜尋與宣告式功能三種內建
 - Bilibili 的主 MOD 是 `bilibili`，子 MOD 是 `bilibili-search` 與
   `bilibili-danmaku`。停用彈幕子 MOD 時，下載仍可使用，但 XML、ASS 與 MKV
   控制會隱藏並清除，避免把額外能力誤當成主下載必要條件。
-- 動畫瘋的主 MOD 是 `ani-gamer`，`ani-gamer-search` 是子 MOD。主工作區只開啟
-  經允許的官方目錄、分類、作品及播放頁；搜尋子 MOD 關閉時仍可使用官方分類入口。
-- Development 9.2 的 `facebook` 與 `mega` 是沒有子 MOD 的獨立主 MOD；兩者預設
+- 動畫瘋的主 MOD 是 `ani-gamer`，子 MOD 為負責目錄／作品搜尋的
+  `ani-gamer-search` 與負責分頁集數導覽的 `ani-gamer-episodes`。主 MOD 未啟用時
+  不顯示子 MOD；搜尋子 MOD 關閉時不發出目錄或搜尋請求，集數子 MOD 關閉時不讀取
+  作品集數。官方播放頁仍由系統瀏覽器開啟。
+- `facebook` 與 `mega` 是沒有子 MOD 的獨立主 MOD；兩者預設
   停用，啟用後才建立各自下載工作區。Facebook 不與 Instagram／Threads 共用下載
   provider；MEGA 也不經 `generic-ytdlp`。
 
@@ -35,7 +39,8 @@ Development 11.0 將規則套用到下載、搜尋與宣告式功能三種內建
 - Bilibili：影片、番劇、分 P 與字幕；彈幕下載及轉換由獨立子 MOD 管理。
 - Facebook：只處理使用者提供的公開影片頁，無音訊格式、字幕、分段或播放清單控制。
 - MEGA：只處理公開檔案傳輸與檔案種類辨識，不顯示影音格式、字幕、試聽或播放清單。
-- 動畫瘋：官方目錄、分類、搜尋與官方播放入口；不提供下載、廣告處理或串流擷取。
+- 動畫瘋：官方公開目錄、分類、搜尋、封面、分頁集數導覽與官方播放入口；不提供
+  下載、廣告處理、Cookie 匯入或串流擷取。
 
 ## 網域隔離
 

@@ -5,6 +5,7 @@
   "parent_provider_id": "ani-gamer",
   "locales": ["en", "ja", "zh-CN", "zh-TW"],
   "children": [
-    {"module_id": "search", "provider_id": "ani-gamer-search"}
+    {"module_id": "search", "provider_id": "ani-gamer-search"},
+    {"module_id": "episodes", "provider_id": "ani-gamer-episodes"}
   ]
 }

@@ -101,9 +101,12 @@ def test_site_child_requires_enabled_parent_and_parent_disable_cascades(
             set_builtin_mod_enabled(context, "ani-gamer-search", True)
         set_builtin_mod_enabled(context, "ani-gamer", True)
         set_builtin_mod_enabled(context, "ani-gamer-search", True)
+        set_builtin_mod_enabled(context, "ani-gamer-episodes", True)
         assert context.discovery.is_enabled("ani-gamer-search")
+        assert context.discovery.is_enabled("ani-gamer-episodes")
         set_builtin_mod_enabled(context, "ani-gamer", False)
         assert not context.discovery.is_enabled("ani-gamer-search")
+        assert not context.discovery.is_enabled("ani-gamer-episodes")
     finally:
         context.lifecycle.shutdown()
 

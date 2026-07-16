@@ -1,9 +1,9 @@
 # Facebook and Instagram feasibility review
 
-Review date: 2026-07-14
-Release decision: the official-page and export bridges remain. Development 9.2
-adds a separate, disabled-by-default Facebook public-video MOD; Instagram and
-Threads remain bridge-only.
+Review date: 2026-07-16
+Current decision: the official-page and export bridges remain. The current
+source includes a separate, disabled-by-default Facebook public-video MOD;
+Instagram and Threads remain bridge-only.
 
 ## Evidence
 
@@ -27,8 +27,8 @@ Threads remain bridge-only.
 ## Delivered scope
 
 Facebook, Instagram and Threads stay excluded from `generic-ytdlp`. The compact
-official-site bridge remains available, while Development 9.2 adds a separate
-Facebook download workspace:
+official-site bridge remains available, while Facebook has a separate download
+workspace:
 
 - Facebook accepts the HTTPS homepage, canonical `watch` or `video.php` URLs
   with a numeric video id, numeric Reel URLs and bounded Page video paths.
@@ -58,6 +58,6 @@ URLs; bypass rate, region or access controls; or provide Instagram/Threads
 downloads. Users remain responsible for permission to save a public Facebook
 video.
 
-The 9.2 Facebook adapter remains a Development feature rather than a Stable
-support guarantee. Stable promotion still requires live public-content smoke,
+The Facebook adapter remains a Testing feature rather than a Stable support
+guarantee. Stable promotion still requires live public-content smoke,
 documented legal/release review and a maintained extractor.

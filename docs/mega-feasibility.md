@@ -1,8 +1,8 @@
 # MEGA website MOD feasibility
 
-Status: Development 9.2 implements a disabled-by-default public-file adapter
+Status: the current source implements a disabled-by-default public-file adapter
 backed by the official `mega-get` command. Public folders are recognized but
-are not downloaded in 9.2.
+are not downloaded.
 
 ## Why MEGA needs a dedicated MOD
 
@@ -13,7 +13,7 @@ that can download a public link without signing in. This is a better trust
 boundary than copying historical MegaDownloader behavior or passing a MEGA link
 to the generic yt-dlp provider.
 
-## Implemented Development 9.2 surface
+## Implemented surface
 
 - `mega` is an independent main MOD with its own trusted download workspace;
   it is not routed through yt-dlp or another website MOD.
@@ -24,7 +24,7 @@ to the generic yt-dlp provider.
   file/folder thumbnail and reports whether official `mega-get` was detected.
 - Public file downloads are routed through an explicitly injected, verified
   `mega-get` executable and the shared queue. Public folders fail closed with a
-  clear 9.2 limitation instead of starting a partial download.
+  clear limitation instead of starting a partial download.
 - Share keys are removed from analysis labels and ordinary status/error text;
   the full link is passed only to the explicitly started local download process.
 - Credentials, account sessions, legacy links, query parameters, nested folder

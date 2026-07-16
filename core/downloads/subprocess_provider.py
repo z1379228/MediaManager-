@@ -203,6 +203,7 @@ class SubprocessDownloadProvider:
             "youtube-search": {"network.youtube", "process.javascript"},
             "bilibili-search": {"network.bilibili"},
             "ani-gamer-search": {"network.ani-gamer"},
+            "ani-gamer-episodes": {"network.ani-gamer"},
             "youtube-player": {
                 "network.youtube",
                 "storage.temp.write",
@@ -342,6 +343,7 @@ class SubprocessDownloadProvider:
             "youtube-search": "network.youtube",
             "bilibili-search": "network.bilibili",
             "ani-gamer-search": "network.ani-gamer",
+            "ani-gamer-episodes": "network.ani-gamer",
             "test": "network.youtube",
         }.get(self.provider_id)
         if permission is None:
