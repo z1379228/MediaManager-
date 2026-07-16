@@ -139,6 +139,7 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
         QAbstractItemView,
         QCheckBox,
         QComboBox,
+        QDialog,
         QFrame,
         QFileDialog,
         QGridLayout,
@@ -155,9 +156,34 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
         QVBoxLayout,
         QWidget,
     )
+    try:
+        from PySide6.QtWebEngineCore import QWebEnginePage
+        from PySide6.QtWebEngineWidgets import QWebEngineView
+    except ImportError:
+        QWebEnginePage = None
+        QWebEngineView = None
 
     class SearchBridge(QObject):
         finished = Signal(str, int, object, str)
+
+    if QWebEnginePage is not None:
+
+        class OfficialPage(QWebEnginePage):
+            """Allow top-level navigation only inside AniGamer official pages."""
+
+            def acceptNavigationRequest(
+                self, url, navigation_type, is_main_frame
+            ):
+                return (
+                    url.scheme() == "https"
+                    and (url.host() or "").casefold() == "ani.gamer.com.tw"
+                    and not url.userName()
+                    and not url.password()
+                    and url.port() in {-1, 443}
+                )
+
+    else:
+        OfficialPage = None
 
     class AniGamerWorkspace(QWidget):
         def __init__(self) -> None:
@@ -175,6 +201,7 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.offline_archive_root: Path | None = None
             self.text: dict[str, str] = {}
             self.module_names: dict[str, str] = {}
+            self._browser_dialogs: list[object] = []
             self.thumbnail_loader = create_thumbnail_loader(self)
             self.bridge = SearchBridge(self)
             self.bridge.finished.connect(self.show_response)
@@ -268,6 +295,10 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             browse_layout.addLayout(filters)
             filter_actions = QHBoxLayout()
             filter_actions.addStretch()
+            self.open_catalog_embedded = QPushButton("在軟體內搜尋官方目錄")
+            self.open_catalog_embedded.setObjectName("ghost")
+            self.open_catalog_embedded.clicked.connect(self.open_catalog_embedded_page)
+            filter_actions.addWidget(self.open_catalog_embedded)
             filter_actions.addWidget(self.open_filter)
             browse_layout.addLayout(filter_actions)
             self.filter_note = QLabel()
@@ -344,6 +375,12 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.open_selected_button = QPushButton()
             self.open_selected_button.clicked.connect(self.open_selected)
             actions.addWidget(self.open_selected_button)
+            self.open_selected_embedded_button = QPushButton("在軟體內開啟")
+            self.open_selected_embedded_button.setObjectName("ghost")
+            self.open_selected_embedded_button.clicked.connect(
+                self.open_selected_embedded
+            )
+            actions.addWidget(self.open_selected_embedded_button)
             search_layout.addLayout(actions)
 
             self.episode_heading = QLabel()
@@ -371,6 +408,10 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.fallback_open_series.setObjectName("ghost")
             self.fallback_open_series.clicked.connect(self.open_selected)
             fallback_actions.addWidget(self.fallback_open_series)
+            self.fallback_open_embedded = QPushButton("在軟體內開啟")
+            self.fallback_open_embedded.setObjectName("ghost")
+            self.fallback_open_embedded.clicked.connect(self.open_selected_embedded)
+            fallback_actions.addWidget(self.fallback_open_embedded)
             fallback_actions.addStretch()
             fallback_layout.addLayout(fallback_actions)
             manual_episode_row = QHBoxLayout()
@@ -716,6 +757,9 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                 self.status.setText(self.t("filter_invalid"))
                 return
             self.browse_catalog(url)
+
+        def open_catalog_embedded_page(self) -> None:
+            self.open_embedded_url(ANI_GAMER_LIST, "AniGamer 官方目錄")
 
         def begin_operation(self, operation: str) -> int:
             self.generation += 1
@@ -1104,6 +1148,49 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                 return
             QDesktopServices.openUrl(QUrl(selected.url))
             self.status.setText(self.t("series_opened", title=selected.title))
+
+        def open_embedded_url(self, url: str, title: str) -> None:
+            if QWebEngineView is None or OfficialPage is None:
+                self.status.setText("目前環境未安裝 Qt WebEngine，請使用官方頁按鈕")
+                return
+            parsed = urlsplit(url)
+            if (
+                parsed.scheme != "https"
+                or (parsed.hostname or "").casefold() != "ani.gamer.com.tw"
+                or parsed.username
+                or parsed.password
+                or parsed.port not in {None, 443}
+            ):
+                self.status.setText(self.t("catalog_rejected"))
+                return
+            dialog = QDialog(self)
+            dialog.setWindowTitle(title[:120] or "AniGamer 官方頁")
+            dialog.resize(960, 680)
+            layout = QVBoxLayout(dialog)
+            view = QWebEngineView(dialog)
+            view.setPage(OfficialPage(view))
+            view.setUrl(QUrl(url))
+            layout.addWidget(view)
+            self._browser_dialogs.append(dialog)
+            dialog.finished.connect(
+                lambda _result, current=dialog: self._browser_dialogs.remove(current)
+                if current in self._browser_dialogs
+                else None
+            )
+            dialog.show()
+
+        def open_selected_embedded(self) -> None:
+            selected = self.selected_result()
+            route = classify_site_url(selected.url) if selected is not None else None
+            if (
+                selected is None
+                or route is None
+                or route.site_family != "ani-gamer"
+                or route.resource_kind != "series"
+            ):
+                self.status.setText(self.t("select_series"))
+                return
+            self.open_embedded_url(selected.url, selected.title)
 
         def open_selected_episode(self) -> None:
             selected = self.selected_episode()
