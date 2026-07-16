@@ -110,3 +110,29 @@ def test_facebook_and_mega_routes_reject_ambiguous_or_spoofed_urls() -> None:
         "https://user@mega.nz/file/AbCdEf12#abcdefghijklmnop",
     ):
         assert classify_site_url(url) is None
+
+
+def test_social_parent_mod_routes_cover_known_official_subdomains() -> None:
+    assert classify_site_url(
+        "https://m.instagram.com/reel/Cexample456"
+    ) == SiteRoute("instagram", "official-media", None, None)
+    assert classify_site_url(
+        "https://www.threads.net/@openai/post/Cexample789"
+    ) == SiteRoute("threads", "official-post", None, None)
+    assert classify_site_url(
+        "https://mobile.x.com/openai/status/123456"
+    ) == SiteRoute("twitter", "official-post", None, None)
+    assert classify_site_url(
+        "https://twitter.com/i/web/status/123456"
+    ) == SiteRoute("twitter", "official-post", None, None)
+
+
+def test_social_routes_reject_noncanonical_or_credential_urls() -> None:
+    for value in (
+        "https://instagram.com/reel/abc",
+        "https://threads.com/@openai/post/abc?utm_source=share",
+        "https://x.com/openai/status/not-digits",
+        "https://x.com.evil.example/openai/status/123456",
+        "https://user:secret@www.instagram.com/reel/Cexample456",
+    ):
+        assert classify_site_url(value) is None

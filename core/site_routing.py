@@ -39,6 +39,20 @@ FACEBOOK_HOSTS = frozenset(
 )
 MEGA_HOSTS = frozenset({"mega.nz", "www.mega.nz"})
 ANI_GAMER_HOSTS = frozenset({"ani.gamer.com.tw"})
+INSTAGRAM_HOSTS = frozenset({"instagram.com", "www.instagram.com", "m.instagram.com"})
+THREADS_HOSTS = frozenset(
+    {"threads.com", "www.threads.com", "threads.net", "www.threads.net"}
+)
+X_HOSTS = frozenset(
+    {
+        "x.com",
+        "www.x.com",
+        "mobile.x.com",
+        "twitter.com",
+        "www.twitter.com",
+        "mobile.twitter.com",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,6 +238,55 @@ def _ani_gamer_route(path: str, query: str) -> SiteRoute | None:
     )
 
 
+def _social_route(site_family: str, path: str, query: str) -> SiteRoute | None:
+    """Route official social pages without treating them as download URLs."""
+
+    if query:
+        return None
+    parts = tuple(part for part in path.split("/") if part)
+    if site_family == "instagram":
+        if (
+            len(parts) == 2
+            and parts[0] in {"p", "reel", "tv"}
+            and re.fullmatch(r"[A-Za-z0-9_-]{4,100}", parts[1])
+        ):
+            return SiteRoute(site_family, "official-media", None, None)
+        return None
+    if site_family == "threads":
+        if (
+            len(parts) == 3
+            and parts[0].startswith("@")
+            and re.fullmatch(r"@[A-Za-z0-9._-]{1,100}", parts[0])
+            and parts[1] == "post"
+            and re.fullmatch(r"[A-Za-z0-9_-]{4,100}", parts[2])
+        ):
+            return SiteRoute(site_family, "official-post", None, None)
+        return None
+    if site_family == "twitter":
+        if (
+            len(parts) == 3
+            and re.fullmatch(r"[A-Za-z0-9_]{1,50}", parts[0])
+            and parts[1] == "status"
+            and parts[2].isdigit()
+            and 1 <= len(parts[2]) <= 32
+        ):
+            return SiteRoute(site_family, "official-post", None, None)
+        if (
+            len(parts) == 3
+            and parts[:2] == ("i", "web")
+            and parts[2] == "status"
+        ):
+            return None
+        if (
+            len(parts) == 4
+            and parts[:3] == ("i", "web", "status")
+            and parts[3].isdigit()
+            and 1 <= len(parts[3]) <= 32
+        ):
+            return SiteRoute(site_family, "official-post", None, None)
+    return None
+
+
 def classify_site_url(value: object) -> SiteRoute | None:
     """Classify a bounded canonical media URL without performing network I/O."""
 
@@ -259,4 +322,10 @@ def classify_site_url(value: object) -> SiteRoute | None:
         return _facebook_route(host, parsed.path, parsed.query)
     if host in ANI_GAMER_HOSTS:
         return _ani_gamer_route(parsed.path, parsed.query)
+    if host in INSTAGRAM_HOSTS:
+        return _social_route("instagram", parsed.path, parsed.query)
+    if host in THREADS_HOSTS:
+        return _social_route("threads", parsed.path, parsed.query)
+    if host in X_HOSTS:
+        return _social_route("twitter", parsed.path, parsed.query)
     return None
