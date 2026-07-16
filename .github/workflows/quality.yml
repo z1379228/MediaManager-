@@ -39,9 +39,12 @@ jobs:
 
       - name: Pytest
         shell: pwsh
+        env:
+          # Keep cancelled or retried Windows jobs from sharing stale temp files.
+          PYTEST_BASETEMP: .work/pytest-ci-${{ github.run_id }}
         run: |
           New-Item -ItemType Directory -Force .work | Out-Null
-          python -m pytest -vv -rs --timeout=60 --basetemp=.work/pytest-ci
+          python -m pytest -vv -rs --timeout=60 --basetemp="$env:PYTEST_BASETEMP"
 
       - name: Static project audits
         shell: pwsh

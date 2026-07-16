@@ -15,7 +15,8 @@ def test_quality_workflow_keeps_hard_test_timeout() -> None:
     text = _workflow_text()
 
     assert "python -m pytest -vv -rs --timeout=60" in text
-    assert "--basetemp=.work/pytest-ci" in text
+    assert "PYTEST_BASETEMP: .work/pytest-ci-${{ github.run_id }}" in text
+    assert '--basetemp="$env:PYTEST_BASETEMP"' in text
 
 
 def test_quality_workflow_runs_release_and_mod_audits() -> None:
