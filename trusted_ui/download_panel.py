@@ -2415,6 +2415,8 @@ def create_download_panel(
                 f"項目：{confirmation.item_count}\n"
                 f"格式：{self.format_preset.currentText()}\n"
                 f"{option_text}\n"
+                f"Required free: {human_bytes(confirmation.required_free_bytes)}\n"
+                f"Free after estimate: {human_bytes(confirmation.free_after_estimate_bytes)}\n"
                 f"估計容量：{human_bytes(confirmation.estimated_bytes)}\n"
                 f"磁碟可用：{human_bytes(confirmation.free_bytes)}\n"
                 f"輸出：{confirmation.output_directory}{filename_line}",

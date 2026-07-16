@@ -241,3 +241,12 @@ Successful requests are keyed by canonical YouTube ID and segment boundaries.
 Identical full or segmented requests are rejected atomically across batches,
 history clearing and application restarts, while different time segments remain
 allowed.
+
+## 17.0 selected optimization
+
+Reference scan of iDownerGo, FileCentipede, TopClipper, FormatFactory and
+related tools found that the core already covers queue pause/resume, retries,
+playlist selection, named format presets and output safety. 17.0 therefore
+adds only explainable download preflight data: the confirmation view exposes
+the required safety reserve and the estimated free space after the batch.
+P2P engines, ad removal and unrestricted extractor parameters remain excluded.

@@ -182,6 +182,24 @@ def test_filename_and_batch_preview_are_safe_and_explicit(tmp_path: Path) -> Non
     assert preview.item_count == 1
     assert preview.filename == filename
     assert preview.estimated_bytes == 1024
+    assert preview.required_free_bytes == 0
+    assert preview.free_after_estimate_bytes == 4096
+
+
+def test_batch_preview_reports_reserve_and_remaining_space(tmp_path: Path) -> None:
+    request = DownloadRequest(
+        "https://example.test/watch?v=reserve",
+        tmp_path,
+        format_preset="best",
+    )
+    preflight = DownloadPreflight(
+        (tmp_path,), 256, 4096, estimated_bytes=1024, required_free_bytes=1280
+    )
+
+    preview = build_batch_preview((request,), preflight, estimated_bytes=1024)
+
+    assert preview.required_free_bytes == 1280
+    assert preview.free_after_estimate_bytes == 2816
 
 
 def test_high_quality_audio_presets_use_expected_extensions() -> None:

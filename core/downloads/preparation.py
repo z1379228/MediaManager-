@@ -262,6 +262,8 @@ class DownloadBatchPreview:
     filename: str
     estimated_bytes: int | None
     free_bytes: int
+    required_free_bytes: int
+    free_after_estimate_bytes: int | None
 
 
 def human_bytes(value: int | None) -> str:
@@ -447,4 +449,10 @@ def build_batch_preview(
         first.output_filename if len(requests) == 1 else "",
         total_estimate,
         preflight.lowest_free_bytes,
+        preflight.required_free_bytes,
+        (
+            preflight.lowest_free_bytes - preflight.required_free_bytes
+            if total_estimate is not None
+            else None
+        ),
     )
