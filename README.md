@@ -2,12 +2,13 @@
 
 平台無關的桌面媒體管理器。平台功能將由受隔離、具最小權限的 MOD 提供；核心負責安全、工作、儲存、網路與憑證代理。
 
-目前來源版本為開發版 16.1（核心相容版本 16.1.0）；最新完整 Development 成品仍為
-`Version/Development/16.0`，既有 15.0 未被覆寫。16.0 的 Ruff、844 項測試、版本／
+目前來源版本為開發版 16.1（核心相容版本 16.1.0）；最新完整 Development 成品為
+`Version/Development/16.1`，既有 15.0、16.0 均未被覆寫。16.0 的 Ruff、844 項測試、版本／
 污染／MOD 稽核、7/7 封裝 provider smoke、一次性簽署演練與 copied-folder 啟動均
-已通過。16.1 正在建立可重現來源與建置基線，尚未封裝；Development 成品維持
-`SAFE_MODE`，尚未上傳，也不是可宣告的 Stable 正式版。16.1 目前來源回歸為
-848 passed、2 skipped。
+已通過。16.1 的 Ruff、848 項測試、版本／MOD／網域稽核與 headless copied-folder
+smoke 均通過；Development 成品維持 `SAFE_MODE`，尚未上傳，也不是可宣告的 Stable
+正式版。16.1 的正式簽章 preflight 仍因缺少 production Ed25519／Authenticode 而為
+`ready: false`。
 GitHub 的
 [`test-v1.0.0`](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.0.0)
 是既有測試版 Pre-release；它不會被開發版 14.x 覆寫。已公開附件一律不可覆寫，

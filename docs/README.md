@@ -5,9 +5,9 @@
 
 ## 目前狀態
 
-- 來源顯示為開發版 16.1，核心相容版本為 16.1.0；最新完整 Development 成品仍是
-  `Version/Development/16.0`，且未覆寫 15.0。16.0 的 7/7 封裝 provider smoke 與
-  copied-folder 啟動已通過；16.1 可重現基線正在實作且尚未封裝，仍不是 Stable。
+- 來源顯示為開發版 16.1，核心相容版本為 16.1.0；最新完整 Development 成品是
+  `Version/Development/16.1`，且未覆寫 15.0 或 16.0。16.1 的 7/7 封裝 provider
+  smoke、copied-folder headless 啟動與 848 項回歸均已通過，仍不是 Stable。
 - 開發與測試成品仍維持 `SAFE_MODE`；目前沒有可宣告的 Stable 正式版。
 - 目前來源最終回歸為 848 passed、2 skipped；兩個略過項目皆為 Windows symlink
   權限限制，不偽裝為通過。

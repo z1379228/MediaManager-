@@ -5,8 +5,8 @@
 
 ## 目前可確認的來源基線
 
-- 目前來源顯示為開發版 16.1，核心相容版本 16.1.0；最新完整成品仍是
-  `Version/Development/16.0`，16.1 尚未封裝，開發與測試流程維持 `SAFE_MODE`。
+- 目前來源顯示為開發版 16.1，核心相容版本 16.1.0；最新完整成品是
+  `Version/Development/16.1`，開發與測試流程維持 `SAFE_MODE`。
 - GitHub 的 `test-v1.0.0` 是較早 revision 的不可覆寫測試附件。目前來源已再新增
   其後的網站父子 MOD、樹狀管理與動畫瘋番劇儲存，因此來源與已發布附件不能
   視為同一候選成品。
@@ -25,9 +25,8 @@
 2. `MediaManager.exe` 的 Windows Authenticode 狀態仍為 `NotSigned`。
 3. 必須從最終來源 revision 重建新的 Testing 候選，並讓 evidence 綁定成品 digest、
    產生時間與發布工具版本；既有 `test-v1.0.0` 不可覆寫或冒充新候選。
-4. 16.0 Development 已完成成品驗證；16.1 必須先從最終提交 revision 建立可重現
-   Development 成品，之後才可建立新的 Testing 候選。Development 的 copied-folder
-   與本機 SHA-256 不能取代該候選的升級、
+4. 16.1 Development 已完成成品驗證，但仍必須從最終提交 revision 建立新的 Testing
+   候選。Development 的 copied-folder 與本機 SHA-256 不能取代該候選的升級、
    回退、全綠網址 smoke 與上傳前後 SHA-256 比對。
 5. `generic-ytdlp` 仍是預設停用的舊 Beta 多網域相容 provider；它不影響 YouTube／
    Bilibili 工作區隔離，但正式版前仍應評估是否保留或逐站遷移。
