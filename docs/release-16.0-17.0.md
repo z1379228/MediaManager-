@@ -36,5 +36,16 @@
 是否建立附件。17.0 完成時再新增 `## 17.0`，並記錄完整 Development 成品、provider
 smoke、copied-folder 啟動、簽署演練、release-info 與 SHA-256 結果。
 
+## 16.2（CI 與安全盲點）
+
+- `requirements-lock.txt` 鎖定 `pytest-timeout==2.3.1`；CI 不再使用未鎖定的額外套件，
+  本機依賴稽核也已安裝同一版本。
+- Ruff 工作範圍擴至完整專案，包含 `mod/builtin` 與 `plugin_host`；CI 新增文字污染、
+  父子 MOD、網站能力與依賴鎖稽核。
+- 新增 Ubuntu symlink security 工作，專門執行 Windows 帳號目前會 skipped 的兩項
+  路徑／完整性測試；這只驗證本機檔案安全，不開啟 UI 或連線網站。
+- 本地設定檢查、Ruff、MOD／網站／依賴稽核與文字污染掃描通過；遠端 GitHub Actions
+  的首次完整執行尚待推送分支後確認，不提前宣稱 CI 已全綠。
+
 本文件不得回填未完成能力，不得把 Development 宣稱為 Testing 或 Stable，也不得修改
 [`release-15.0-16.0.md`](release-15.0-16.0.md) 已封存的 16.0 歷史內容。

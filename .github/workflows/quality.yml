@@ -31,16 +31,48 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements-lock.txt pytest-timeout
+          python -m pip install -r requirements-lock.txt
           python -m pip install -e . --no-deps
 
       - name: Ruff
-        run: >-
-          python -m ruff check contracts core tests tools trusted_ui views
-          main.py desktop.py
+        run: python -m ruff check .
 
       - name: Pytest
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force .work | Out-Null
           python -m pytest -vv -rs --timeout=60 --basetemp=.work/pytest-ci
+
+      - name: Static project audits
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\audit_text_pollution.ps1
+          python -m tools.audit_mod_groups
+          python -m tools.site_quality_audit
+          python -m tools.dependency_lock_audit
+
+  symlink-security:
+    name: Symlink security tests (Ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-lock.txt
+          python -m pip install -e . --no-deps
+
+      - name: Run symlink security tests
+        run: >-
+          python -m pytest -vv -rs
+          tests/test_builtin_download_provider.py::test_builtin_provider_integrity_rejects_symlink
+          tests/test_library_service.py::test_scan_is_bounded_and_does_not_follow_symlink
