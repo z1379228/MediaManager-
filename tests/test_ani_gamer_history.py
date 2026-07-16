@@ -114,3 +114,24 @@ def test_history_can_be_cleared_or_exported_without_media_side_effects(
     clear_history(path)
     assert load_history(path) == ()
     assert exported.is_file()
+
+
+def test_history_atomic_replace_retries_transient_windows_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "data" / "history.json"
+    original_replace = Path.replace
+    attempts = 0
+
+    def flaky_replace(self: Path, target: Path) -> Path:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise PermissionError("transient file lock")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", flaky_replace)
+    record_history(path, SERIES, EPISODE)
+
+    assert attempts == 2
+    assert load_history(path)[0].episode_id == EPISODE.video_id

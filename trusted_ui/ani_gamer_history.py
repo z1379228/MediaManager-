@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import time
 import uuid
 
 from contracts.discovery_v1 import DiscoveryItemV1
@@ -117,7 +118,14 @@ def _atomic_write(path: Path, payload: bytes) -> None:
         with temporary.open("xb") as output:
             output.write(payload)
             output.flush()
-        temporary.replace(path)
+        for attempt in range(3):
+            try:
+                temporary.replace(path)
+                break
+            except PermissionError:
+                if attempt == 2:
+                    raise
+                time.sleep(0.02 * (attempt + 1))
     finally:
         temporary.unlink(missing_ok=True)
 
