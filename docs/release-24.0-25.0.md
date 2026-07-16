@@ -13,3 +13,4 @@
 - Gopeed 橋接維持延後候選；P2P、瀏覽器擴充、遠端控制與雲端同步不納入核心。
 - Development 附件只保留本機；對外發布限定為通過驗證的 Testing 版本。
 - MOD 父子結構、manifest v2、四語言與安裝流程回歸：36 passed。
+- MOD 自檢、父子啟用限制、語言綁定與安裝流程回歸：34 passed。
