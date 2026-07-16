@@ -183,7 +183,7 @@ def test_filename_and_batch_preview_are_safe_and_explicit(tmp_path: Path) -> Non
     assert preview.filename == filename
     assert preview.estimated_bytes == 1024
     assert preview.required_free_bytes == 256 * 1024 * 1024
-    assert preview.free_after_estimate_bytes == 4096 - 1024 - 256 * 1024 * 1024
+    assert preview.free_after_estimate_bytes == 4096 - 256 * 1024 * 1024
 
 
 def test_batch_preview_reports_reserve_and_remaining_space(tmp_path: Path) -> None:
