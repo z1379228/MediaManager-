@@ -113,7 +113,7 @@ def test_version_prepares_frozen_cli_output_before_argparse(
 
     assert raised.value.code == 0
     assert calls == ["restore", "close"]
-    assert "MediaManager 開發版 18.0" in capsys.readouterr().out
+    assert "MediaManager 開發版 21.0" in capsys.readouterr().out
 
 
 def test_frozen_windowed_cli_uses_hard_process_exit(monkeypatch) -> None:
