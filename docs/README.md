@@ -5,11 +5,10 @@
 
 ## 目前狀態
 
-- 來源顯示為開發版 16.1，核心相容版本為 16.1.0；最新完整 Development 成品是
-  `Version/Development/16.1`，且未覆寫 15.0 或 16.0。16.1 的 7/7 封裝 provider
-  smoke、copied-folder headless 啟動與 848 項回歸均已通過，仍不是 Stable。
+- 來源目前為開發版 29.0，已建立新的 `Version/Development/29.0`；29.0 維持
+  `SAFE_MODE`，不覆寫 28.0，也不是 Stable 或 Testing。
 - 開發與測試成品仍維持 `SAFE_MODE`；目前沒有可宣告的 Stable 正式版。
-- 目前來源最終回歸為 848 passed、2 skipped；兩個略過項目皆為 Windows symlink
+- 目前來源最終回歸為 882 passed、2 skipped；兩個略過項目皆為 Windows symlink
   權限限制，不偽裝為通過。
 - 目前來源含 31 個內建 MOD、8 個網站父群組與 4 種介面語言。
 - 16.0 的離線能力稽核覆蓋 8 個網站父 MOD、5 個通用白名單站點、39 項功能與
@@ -20,7 +19,7 @@
   地區或播放器限制。
 - `media-ad-trim` 是 `media-convert` 下預設關閉的本機子 MOD，只依手動時間區間
   重新編碼並另存新檔；可預覽第一切點，不覆寫原檔，也不接受網站網址。
-- GitHub 的 [`test-v1.0.0`](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.0.0)
+- GitHub 的 [`test-v1.1.0`](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.1.0)
   是不可覆寫的既有測試附件。開發版 11.1 使用獨立版本資料夾及 Pre-release，
   不能讓文件假稱舊附件已包含後續功能。
 
@@ -48,7 +47,7 @@
 - [開發版 14.x 實際更新紀錄](release-14.0-15.0.md)
 - [開發版 15.x 實際更新紀錄](release-15.0-16.0.md)
 - [開發版 16.x 實際更新紀錄（規劃中）](release-16.0-17.0.md)
-- [測試版 1.0 已發布附件紀錄](release-testing-1.0.md)
+- [測試版 1.1 發布附件紀錄](release-testing-1.1.md)
 - [正式版 1.0 候選狀態](release-stable-1.0-candidate.md)
 
 ## 歷史發行紀錄
@@ -82,6 +81,8 @@
 - [開發版 15.0 網站工作流可靠性計畫](roadmap-development-15.0.md)
 - [開發版 16.0 網域搜尋、MOD 適配與下載可靠性計畫](roadmap-development-16.0.md)
 - [開發版 17.0 可重現發行、分站可靠性與第三方 MOD 計畫](roadmap-development-17.0.md)
+- [開發版 28.0～29.0 更新紀錄](release-28.0-29.0.md)
+- [開發版 29.0 可重現性、Self Check 與 MOD 維護計畫](roadmap-development-29.0.md)
 
 ## 文件更新規則
 

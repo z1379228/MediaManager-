@@ -196,7 +196,10 @@ def load_builtin_mod_group(
     raw_ui = translation.get("ui", {})
     if (
         not isinstance(raw_ui, dict)
-        or len(raw_ui) > 96
+        # Site MODs may expose a compact menu plus localized safety/status
+        # messages. Keep the resource bounded while leaving room for those
+        # controls without forcing translations into the core.
+        or len(raw_ui) > 128
         or not all(
             isinstance(key, str)
             and re.fullmatch(r"[a-z][a-z0-9_]{1,63}", key)

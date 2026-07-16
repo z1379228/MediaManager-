@@ -63,6 +63,12 @@ def test_self_check_is_manual_read_only_and_uses_only_warm_snapshot(
     assert any(item.check_id == "dependencies.snapshot" for item in report.items)
     assert any(item.check_id == "security.mode" for item in report.items)
     assert next(
+        item for item in report.items if item.check_id == "transport.boundary"
+    ).state == "pass"
+    assert next(
+        item for item in report.items if item.check_id == "downloads.queue"
+    ).state == "warning"
+    assert next(
         item for item in report.items if item.check_id == "localization.binding"
     ).state == "pass"
     assert next(
@@ -122,6 +128,42 @@ def test_self_check_rejects_inconsistent_manual_provider_smoke(tmp_path: Path) -
 
     assert item.state == "block"
     assert item.remediation_id == "smoke.report.replace"
+
+
+def test_self_check_reports_warm_download_queue_without_starting_work(
+    tmp_path: Path,
+) -> None:
+    value = context(tmp_path)
+    value.download_queue = SimpleNamespace(
+        snapshots=lambda: (
+            SimpleNamespace(state="paused"),
+            SimpleNamespace(state=SimpleNamespace(value="queued")),
+        )
+    )
+
+    report = run_self_check(value)
+
+    item = next(item for item in report.items if item.check_id == "downloads.queue")
+    assert item.state == "pass"
+    assert "paused=1" in item.detail
+    assert "queued=1" in item.detail
+
+
+def test_self_check_uses_queue_state_counts_when_available(tmp_path: Path) -> None:
+    value = context(tmp_path)
+    value.download_queue = SimpleNamespace(
+        snapshots=lambda: (_ for _ in ()).throw(
+            AssertionError("state_counts should be preferred")
+        ),
+        state_counts=lambda: {"QUEUED": 2, "PAUSED": 1},
+    )
+
+    report = run_self_check(value)
+
+    item = next(item for item in report.items if item.check_id == "downloads.queue")
+    assert item.state == "pass"
+    assert "QUEUED=2" in item.detail
+    assert "PAUSED=1" in item.detail
 
 
 def test_self_check_blocks_missing_registry_and_builtin_initialization(

@@ -17,6 +17,7 @@ DISPLAY_NAME = "MEGA"
 _SHARE = re.compile(r"/(file|folder)/([A-Za-z0-9_-]{6,64})/?")
 _KEY = re.compile(r"[A-Za-z0-9_-]{16,128}")
 _PROGRESS = re.compile(r"(?<!\d)(\d{1,3})(?:\.\d+)?%")
+_MAX_TOOL_OUTPUT_CHARS = 4_000
 _FILE_TYPES = {
     "video": frozenset({".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v"}),
     "archive": frozenset(
@@ -370,7 +371,14 @@ def download(request: dict[str, Any]) -> str:
         env=environment,
     )
     assert process.stdout is not None
+    output_lines: list[str] = []
+    output_size = 0
     for line in process.stdout:
+        if output_size < _MAX_TOOL_OUTPUT_CHARS:
+            retained = line.strip()[: _MAX_TOOL_OUTPUT_CHARS - output_size]
+            if retained:
+                output_lines.append(retained)
+                output_size += len(retained)
         match = _PROGRESS.search(line[:1000])
         if match:
             percent = min(100, int(match.group(1)))
@@ -386,7 +394,11 @@ def download(request: dict[str, Any]) -> str:
             )
     returncode = process.wait()
     if returncode != 0:
-        raise RuntimeError(f"official MEGAcmd failed with exit code {returncode}")
+        details = " ".join(output_lines)
+        suffix = f": {details}" if details else ""
+        raise RuntimeError(
+            f"official MEGAcmd failed with exit code {returncode}{suffix}"
+        )
     completed = _completed_entry(output, before)
     if output_filename:
         target = (output / output_filename).resolve()

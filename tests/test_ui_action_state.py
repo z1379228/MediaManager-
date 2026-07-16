@@ -10,7 +10,7 @@ import pytest
 from contracts.discovery_v1 import DiscoveryItemV1
 from core.bootstrap.bootstrap import Bootstrap
 from core.discovery.adapters import FederatedSearchResult, SearchAdapterFailure
-from core.downloads.models import DownloadRequest, DownloadTask
+from core.downloads.models import DownloadRequest, DownloadState, DownloadTask
 from core.downloads.provider_registry import ProviderStatus
 from core.storage.paths import AppPaths
 from trusted_ui.download_panel import create_download_panel
@@ -431,6 +431,22 @@ def test_facebook_and_mega_workspaces_enable_and_route_independently(
         assert mega_panel.download_connections.isEnabled()
         assert mega_panel.speed_limit.isEnabled()
         assert context.download_providers.provider_for(mega_file).provider_id == "mega"
+
+        running_task = DownloadTask(
+            "mega-running",
+            DownloadRequest(mega_file, tmp_path, source_category="mega-file"),
+            state=DownloadState.RUNNING,
+        )
+        monkeypatch.setattr(
+            context.download_queue,
+            "snapshots",
+            lambda: (running_task,),
+        )
+        mega_panel.refresh()
+        mega_panel.table.selectRow(0)
+        app.processEvents()
+        assert mega_panel.pause_button.isEnabled()
+        assert mega_panel.cancel_button.isEnabled()
 
         mega_panel.urls.setPlainText(
             "https://mega.nz/folder/AbCdEf12#abcdefghijklmnop"

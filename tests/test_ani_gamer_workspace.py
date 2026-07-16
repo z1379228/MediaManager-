@@ -140,6 +140,10 @@ def test_ani_gamer_workspace_follows_parent_child_state_and_opens_filter(
         panel.quick_buttons["recent"].click()
         wait_for_catalog_query_count(2)
         assert catalog_queries[-1].endswith("#recent")
+        assert panel.retry_button.isEnabled()
+        panel.retry_button.click()
+        wait_for_catalog_query_count(3)
+        assert catalog_queries[-1].endswith("#recent")
 
         series = DiscoveryItemV1(
             "ani-114115",
@@ -225,7 +229,7 @@ def test_ani_gamer_workspace_follows_parent_child_state_and_opens_filter(
                 break
             QTest.qWait(10)
         assert not panel.busy
-        assert "尚未連結本機媒體" in panel.offline_status.text()
+        assert "尚未連結影片或字幕" in panel.offline_status.text()
         panel.open_selected_episode()
         assert opened == [episode.url]
 

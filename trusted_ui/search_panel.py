@@ -124,6 +124,36 @@ def recent_history_queries(
     return tuple(queries)
 
 
+def recent_history_selections(
+    events: object,
+    *,
+    limit: int = 8,
+) -> tuple[object, ...]:
+    """Return newest unique video selections for the history menu."""
+
+    if not isinstance(events, (list, tuple)):
+        return ()
+    bounded_limit = max(1, min(int(limit), 20))
+    selections: list[object] = []
+    seen: set[str] = set()
+    for event in events:
+        if getattr(event, "event_type", "") != "selection":
+            continue
+        item = getattr(event, "item", None)
+        video_id = getattr(item, "video_id", "")
+        if not item or not isinstance(video_id, str) or not video_id:
+            continue
+        if search_source_for_url(getattr(item, "url", "")) != "youtube-search":
+            continue
+        if video_id in seen:
+            continue
+        seen.add(video_id)
+        selections.append(event)
+        if len(selections) >= bounded_limit:
+            break
+    return tuple(selections)
+
+
 def history_preference_summary(preferences: object) -> str:
     """Build a short local-only preference summary without exposing raw history."""
 
@@ -821,6 +851,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
             )
             summary.setEnabled(False)
             queries = recent_history_queries(events)
+            selections = recent_history_selections(events)
             suggestions = preference_search_queries(preferences, events, limit=4)
             if suggestions:
                 self.history_menu.addSeparator()
@@ -838,17 +869,47 @@ def create_search_panel(context: object, parent: object = None) -> object:
             if not queries:
                 empty = self.history_menu.addAction("尚無搜尋紀錄")
                 empty.setEnabled(False)
-                return
-            self.history_menu.addSeparator()
-            for query in queries:
-                label = query if len(query) <= 60 else f"{query[:57]}…"
-                action = self.history_menu.addAction(label)
-                action.setToolTip(query)
-                action.triggered.connect(
-                    lambda _checked=False, value=query: self.search_from_history(
-                        value
+            else:
+                self.history_menu.addSeparator()
+                for query in queries:
+                    label = query if len(query) <= 60 else f"{query[:57]}…"
+                    action = self.history_menu.addAction(label)
+                    action.setToolTip(query)
+                    action.triggered.connect(
+                        lambda _checked=False, value=query: self.search_from_history(
+                            value
+                        )
                     )
+
+            if selections:
+                self.history_menu.addSeparator()
+                selection_heading = self.history_menu.addAction(
+                    "歷史影片（可尋找替代）"
                 )
+                selection_heading.setEnabled(False)
+                for event in selections:
+                    item = getattr(event, "item", None)
+                    if item is None:
+                        continue
+                    title = " ".join(str(getattr(item, "title", "")).split())
+                    artist = " ".join(str(getattr(item, "artist", "")).split())
+                    label = title or str(getattr(item, "video_id", "歷史影片"))
+                    if artist:
+                        label = f"{label} · {artist}"
+                    menu = self.history_menu.addMenu(
+                        label if len(label) <= 72 else f"{label[:69]}…"
+                    )
+                    menu.setToolTip(str(getattr(item, "url", "")))
+                    open_action = menu.addAction("開啟原影片")
+                    open_action.triggered.connect(
+                        lambda _checked=False, value=item: self.open_history_item(value)
+                    )
+                    replace_action = menu.addAction("尋找替代影片")
+                    replace_action.triggered.connect(
+                        lambda _checked=False, value=item: self.find_replacement_for_item(
+                            value
+                        )
+                    )
 
         def search_from_history(self, query: str) -> None:
             self.query.setText(query)
@@ -938,28 +999,42 @@ def create_search_panel(context: object, parent: object = None) -> object:
         def find_replacement(self) -> None:
             row = self.table.currentRow()
             if not 0 <= row < len(self.results):
-                QMessageBox.information(self, "尋找替代影片", "請先選擇原始影片。")
+                QMessageBox.information(self, "尋找替代影片", "請先選擇一個原始影片。")
+                return
+            self.find_replacement_for_item(
+                self.results[row], source=self.selected_result_source()
+            )
+            return
+
+        def open_history_item(self, item: object) -> None:
+            url = str(getattr(item, "url", "")).strip()
+            if url and search_source_for_url(url) == "youtube-search":
+                QDesktopServices.openUrl(QUrl(url))
+
+        def find_replacement_for_item(
+            self, original: object, *, source: str | None = None
+        ) -> None:
+            if original is None:
                 return
             if not self.recovery_enabled.isChecked():
                 QMessageBox.information(
                     self, "尋找替代影片", "請先啟用 youtube-recovery MOD。"
                 )
                 return
-            source = self.selected_result_source()
+            source = source or search_source_for_url(getattr(original, "url", ""))
             if source != "youtube-search":
                 QMessageBox.information(
                     self,
                     "尋找替代影片",
-                    "替代搜尋目前只屬於 YouTube MOD，不會把其他網站結果轉送到 YouTube。",
+                    "此替代搜尋目前只使用 YouTube 搜尋結果，不會跨網站轉送資料。",
                 )
                 return
-            original = self.results[row]
             limit = int(self.limit.currentData())
             generation = self.begin_action("recovery")
             if generation is None:
                 return
-            self.last_query = original.title
-            self.status.setText("正在尋找替代候選…")
+            self.last_query = str(getattr(original, "title", ""))[:200]
+            self.status.setText("正在尋找替代影片，完成後請確認候選項目。")
 
             def worker() -> None:
                 try:
@@ -977,7 +1052,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
                                     ),
                                     "candidates": candidates,
                                     "mode": "recovery",
-                                    "source": source,
+                                    "source": "youtube-search",
                                 },
                             ),
                             "",

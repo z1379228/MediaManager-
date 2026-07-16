@@ -11,6 +11,7 @@ from trusted_ui.ani_gamer_offline import (
     OfflineImportCancelled,
     create_episode_archive,
     import_local_media,
+    import_local_subtitles,
     verify_episode_archive,
 )
 
@@ -70,6 +71,20 @@ def test_selected_episode_archive_is_atomic_and_preserves_local_media(tmp_path: 
     assert verified.valid
     assert verified.media_state == "ok"
     assert verified.actual_sha256 == preserved["local_media"]["sha256"]
+
+
+def test_offline_archive_supports_bounded_safe_name_components(tmp_path: Path) -> None:
+    archive = create_episode_archive(
+        tmp_path,
+        SERIES,
+        EPISODE,
+        name_prefix="Work/2026",
+        name_suffix="  batch  ",
+    )
+    document = json.loads(archive.metadata.read_text(encoding="utf-8"))
+    assert document["naming"] == {"prefix": "Work_2026", "suffix": "batch"}
+    assert "Work_2026" in archive.root.name
+    assert "batch" in archive.root.name
 
 
 def test_offline_archive_verification_reports_missing_and_tampered_media(
@@ -148,3 +163,44 @@ def test_local_media_import_never_overwrites_existing_media(tmp_path: Path) -> N
     assert first.local_media != second.local_media
     assert first.local_media.read_bytes() == b"one"
     assert second.local_media.read_bytes() == b"two"
+
+
+def test_local_subtitle_import_is_hashed_and_verified_with_media(tmp_path: Path) -> None:
+    archive = create_episode_archive(tmp_path / "output", SERIES, EPISODE)
+    media = tmp_path / "episode.mp4"
+    media.write_bytes(b"owned video")
+    imported_media = import_local_media(archive.root, media)
+    assert imported_media.local_media is not None
+
+    traditional = tmp_path / "zh-TW.ass"
+    traditional.write_text("[Script Info]\nTitle: test\n", encoding="utf-8")
+    english = tmp_path / "en.srt"
+    english.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+
+    imported = import_local_subtitles(archive.root, [traditional, english])
+    document = json.loads(archive.metadata.read_text(encoding="utf-8"))
+    assert len(imported.local_subtitles) == 2
+    assert all(path.parent.name == "subtitles" for path in imported.local_subtitles)
+    assert all(path.is_file() for path in imported.local_subtitles)
+    assert len(document["local_subtitles"]) == 2
+    assert all(entry["sha256"] for entry in document["local_subtitles"])
+
+    verified = verify_episode_archive(archive.root)
+    assert verified.valid
+    assert verified.media_state == "ok"
+    assert verified.subtitle_state == "ok"
+    assert len(verified.subtitle_paths) == 2
+
+
+def test_local_subtitle_verification_reports_tampering(tmp_path: Path) -> None:
+    archive = create_episode_archive(tmp_path / "output", SERIES, EPISODE)
+    subtitle = tmp_path / "zh-TW.vtt"
+    subtitle.write_text("WEBVTT\n\n00:00.000 --> 00:01.000\n字幕\n", encoding="utf-8")
+    imported = import_local_subtitles(archive.root, [subtitle])
+    payload = imported.local_subtitles[0].read_bytes()
+    imported.local_subtitles[0].write_bytes(payload[:-1] + b"X")
+
+    verified = verify_episode_archive(archive.root)
+    assert not verified.valid
+    assert verified.media_state == "not-linked"
+    assert verified.subtitle_state == "hash-mismatch"

@@ -44,6 +44,15 @@ The adapter continues to:
 6. Remain disabled by default and start no provider process until the user
    explicitly requests analysis or download.
 
+### 29.0 P0 download controls
+
+The dedicated workspace now enables pause and cancel for a running MEGA task.
+Those actions use the shared queue's controlled provider-process termination;
+they do not issue global MEGAcmd commands or restart a task after application
+startup. Non-zero `mega-get` output is retained only in a bounded diagnostic
+message so quota, bandwidth and temporary service failures can be classified
+without recording the full share key.
+
 Per-file remote folder browsing, account sync, backup, upload, WebDAV and remote
 cloud management remain out of scope for the download-only adapter. The current
 UI downloads a public folder as one explicit job rather than pretending it can

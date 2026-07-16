@@ -358,6 +358,15 @@ class DownloadQueue:
         with self._lock:
             return tuple(replace(task) for task in self._tasks.values())
 
+    def state_counts(self) -> dict[str, int]:
+        """Return a stable, read-only count for every queue state."""
+
+        counts = {state.value: 0 for state in DownloadState}
+        with self._lock:
+            for task in self._tasks.values():
+                counts[task.state.value] += 1
+        return counts
+
     def _enqueue(self, task: DownloadTask) -> None:
         self._pending.put(
             (-task.request.priority, next(self._sequence), task.task_id)

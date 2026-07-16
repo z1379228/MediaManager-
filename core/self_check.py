@@ -24,6 +24,12 @@ from core.mod_groups import (
 )
 from core.security.safe_mode import SecurityMode
 from core.site_routing import SiteRoute, classify_site_url
+from core.transfers import (
+    default_gopeed_bridge_config,
+    default_p2p_transfer_policy,
+    validate_gopeed_bridge_config,
+    validate_p2p_transfer_policy,
+)
 from core.version import BUILD_CHANNEL, CORE_VERSION
 
 
@@ -326,6 +332,105 @@ def _site_quality_item(application_root: Path) -> SelfCheckItem:
     )
 
 
+def _transport_boundary_item() -> SelfCheckItem:
+    """Verify optional transfer defaults without contacting external tools."""
+
+    try:
+        gopeed = default_gopeed_bridge_config()
+        p2p = default_p2p_transfer_policy()
+        validate_gopeed_bridge_config(
+            {
+                "enabled": gopeed.enabled,
+                "endpoint": gopeed.endpoint,
+                "token": None,
+                "request_timeout_seconds": gopeed.request_timeout_seconds,
+                "max_tasks": gopeed.max_tasks,
+                "auto_start": gopeed.auto_start,
+                "allow_remote": gopeed.allow_remote,
+            }
+        )
+        validate_p2p_transfer_policy(
+            {
+                "enabled": p2p.enabled,
+                "storage_root": None,
+                "max_storage_bytes": p2p.max_storage_bytes,
+                "max_download_bps": p2p.max_download_bps,
+                "max_upload_bps": p2p.max_upload_bps,
+                "legal_use_confirmed": p2p.legal_use_confirmed,
+                "upload_enabled": p2p.upload_enabled,
+                "seeding_enabled": p2p.seeding_enabled,
+                "search_enabled": p2p.search_enabled,
+                "auto_port_forward": p2p.auto_port_forward,
+                "listen_port": p2p.listen_port,
+            }
+        )
+    except (TypeError, ValueError, RuntimeError) as error:
+        return _item(
+            "transport.boundary",
+            "block",
+            "選用傳輸安全基線異常",
+            str(error)[:240],
+            "transport.boundary.repair",
+        )
+    return _item(
+        "transport.boundary",
+        "pass",
+        "選用傳輸維持安全關閉",
+        "Gopeed 與 P2P 預設停用；自檢未連線、未啟動程序、未開啟埠或保存 token。",
+    )
+
+
+def _download_queue_item(context: object) -> SelfCheckItem:
+    """Report the warm queue surface without starting or mutating work."""
+
+    queue = getattr(context, "download_queue", None)
+    snapshots = getattr(queue, "snapshots", None)
+    if queue is None or not callable(snapshots):
+        return _item(
+            "downloads.queue",
+            "warning",
+            "下載佇列尚未附加至目前工作階段",
+            "自檢只檢查已建立的佇列；不會啟動背景工作或重新讀取網路任務",
+            "downloads.queue.attach",
+        )
+    try:
+        state_counts = getattr(queue, "state_counts", None)
+        if callable(state_counts):
+            counts = state_counts()
+            if not isinstance(counts, dict) or any(
+                not isinstance(key, str)
+                or not isinstance(value, int)
+                or value < 0
+                for key, value in counts.items()
+            ):
+                raise ValueError("download queue state counts are invalid")
+            tasks = ()
+        else:
+            tasks = tuple(snapshots())
+    except Exception as error:
+        return _item(
+            "downloads.queue",
+            "block",
+            "下載佇列狀態無法讀取",
+            str(error)[:240],
+            "downloads.queue.repair",
+        )
+    if tasks:
+        counts = {}
+        for task in tasks:
+            raw_state = getattr(task, "state", None)
+            state = str(getattr(raw_state, "value", raw_state or "unknown"))
+            counts[state] = counts.get(state, 0) + 1
+    detail = ", ".join(f"{name}={counts[name]}" for name in sorted(counts)) or "empty"
+    total = sum(counts.values())
+    return _item(
+        "downloads.queue",
+        "pass",
+        "下載佇列可讀取且維持手動控制",
+        f"目前 {total} 項（{detail}）；重啟後工作仍需使用者明確恢復",
+    )
+
+
 def load_provider_smoke_report(path: Path) -> SelfCheckItem:
     """Load one bounded manual smoke report without contacting any provider."""
 
@@ -451,6 +556,8 @@ def run_self_check(
     items.append(_locale_item(context))
     items.append(_site_routing_item())
     items.append(_site_quality_item(Path(context.paths.application)))
+    items.append(_transport_boundary_item())
+    items.append(_download_queue_item(context))
     items.append(
         smoke_item
         or _item(

@@ -728,12 +728,13 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             self.pause_button.setText(
                 "繼續" if state is DownloadState.PAUSED else "暫停"
             )
-            self.pause_button.setEnabled(
-                state in {DownloadState.QUEUED, DownloadState.PAUSED}
-            )
-            self.cancel_button.setEnabled(
-                state in {DownloadState.QUEUED, DownloadState.PAUSED}
-            )
+            controllable = {
+                DownloadState.QUEUED,
+                DownloadState.RUNNING,
+                DownloadState.PAUSED,
+            }
+            self.pause_button.setEnabled(state in controllable)
+            self.cancel_button.setEnabled(state in controllable)
             self.open_result_button.setEnabled(
                 safe_task_output_path(task) is not None if task else False
             )

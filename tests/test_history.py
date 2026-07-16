@@ -16,6 +16,7 @@ from core.downloads.subprocess_provider import SubprocessDownloadProvider
 from trusted_ui.search_panel import (
     history_preference_summary,
     recent_history_queries,
+    recent_history_selections,
 )
 
 
@@ -112,6 +113,31 @@ def test_search_history_ui_helpers_deduplicate_and_summarize() -> None:
     assert history_preference_summary(preferences) == (
         "3 次搜尋 · 2 次選取 · 常選 音樂 · 語言 zh-TW"
     )
+
+
+def test_search_history_selection_helper_keeps_unique_video_records() -> None:
+    item = discovery_item()
+    foreign_item = DiscoveryItemV1.from_dict(
+        {
+            "video_id": "BV1foreign",
+            "url": "https://www.bilibili.com/video/BV1foreign",
+            "title": "Foreign",
+            "artist": "Uploader",
+            "duration": 60,
+            "language": "",
+            "category": "video",
+            "thumbnail_url": "",
+        }
+    )
+    events = (
+        HistoryEventV1("selection", "example", "2026-07-14T00:00:03+00:00", item),
+        HistoryEventV1("search", "example", "2026-07-14T00:00:02+00:00", None),
+        HistoryEventV1("selection", "example", "2026-07-14T00:00:01+00:00", item),
+        HistoryEventV1("selection", "foreign", "2026-07-14T00:00:00+00:00", foreign_item),
+    )
+    selections = recent_history_selections(events)
+    assert len(selections) == 1
+    assert selections[0].item == item
 
 
 def test_history_mod_records_recent_events_and_preferences(tmp_path: Path) -> None:

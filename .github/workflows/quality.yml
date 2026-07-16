@@ -50,6 +50,7 @@ jobs:
           python -m tools.audit_mod_groups
           python -m tools.site_quality_audit
           python -m tools.dependency_lock_audit
+          python -m tools.audit_versions --root Version
 
   symlink-security:
     name: Symlink security tests (Ubuntu)

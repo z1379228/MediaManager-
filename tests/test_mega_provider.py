@@ -155,6 +155,32 @@ def test_download_routes_public_file_to_injected_mega_get(
     assert Path(result).read_bytes() == b"public data"
 
 
+def test_failed_mega_get_preserves_bounded_diagnostic_output(
+    tmp_path: Path, monkeypatch
+) -> None:
+    provider = load_provider()
+    executable = tmp_path / "mega-get.exe"
+    executable.write_bytes(b"test executable placeholder")
+
+    class Process:
+        def __init__(self, _arguments, **_kwargs):
+            self.stdout = StringIO("Bandwidth quota exceeded; retry later\n")
+
+        def wait(self):
+            return 17
+
+    monkeypatch.setattr(provider.subprocess, "Popen", Process)
+
+    with pytest.raises(RuntimeError, match="Bandwidth quota exceeded"):
+        provider.download(
+            {
+                "url": "https://mega.nz/file/AbCdEf12#abcdefghijklmnop",
+                "output_dir": str(tmp_path / "downloads"),
+                "external_tools": {"mega-get": str(executable)},
+            }
+        )
+
+
 def test_download_applies_opt_in_official_transfer_settings(
     tmp_path: Path, monkeypatch
 ) -> None:

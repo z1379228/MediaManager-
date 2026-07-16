@@ -16,6 +16,8 @@ _SUPPORT_STATES = frozenset(
         "offline-contract",
         "verified-local-ffmpeg",
         "browser-mediated-official",
+        "local-only",
+        "local-ui",
     }
 )
 _WORKFLOW_STAGES = (
@@ -41,6 +43,9 @@ _UI_CAPABILITIES = frozenset(
         "danmaku",
         "offline-archive",
         "official-page",
+        "embedded-official-page",
+        "local-watch-history",
+        "user-controlled-next-episode",
         "tree-preview",
         "pause",
         "cancel",

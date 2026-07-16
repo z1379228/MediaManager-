@@ -13,11 +13,22 @@ from core.mod_groups import load_builtin_mod_group
 from core.site_routing import classify_site_url
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.ani_gamer_offline import (
+    ALLOWED_LOCAL_MEDIA_SUFFIXES,
+    ALLOWED_LOCAL_SUBTITLE_SUFFIXES,
     AniGamerArchiveVerification,
     OfflineImportCancelled,
     create_episode_archive,
     import_local_media,
+    import_local_subtitles,
     verify_episode_archive,
+)
+from trusted_ui.ani_gamer_history import (
+    AniGamerHistoryEntry,
+    clear_history,
+    export_history,
+    history_path,
+    load_history,
+    record_history,
 )
 from trusted_ui.thumbnail_loader import create_thumbnail_loader
 
@@ -134,7 +145,7 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
     """Create a catalog/episode surface that never downloads AniGamer streams."""
 
     from PySide6.QtCore import QBuffer, QIODevice, QObject, QSize, Qt, QTimer, QUrl, Signal
-    from PySide6.QtGui import QDesktopServices, QIcon
+    from PySide6.QtGui import QAction, QDesktopServices, QIcon
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QCheckBox,
@@ -149,6 +160,7 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
         QLayout,
         QLineEdit,
         QMessageBox,
+        QMenu,
         QPushButton,
         QScrollArea,
         QTableWidget,
@@ -192,6 +204,10 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.episodes: tuple[DiscoveryItemV1, ...] = ()
             self.episode_query = ""
             self.episode_cursor = ""
+            self.retry_kind = ""
+            self.retry_query = ""
+            self.retry_status_key = ""
+            self.retry_episode_append = False
             self.generation = 0
             self.active_generation = 0
             self.operation = ""
@@ -199,6 +215,7 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.closing = False
             self.offline_cancel_event = threading.Event()
             self.offline_archive_root: Path | None = None
+            self.history_file = history_path(Path(context.paths.data))
             self.text: dict[str, str] = {}
             self.module_names: dict[str, str] = {}
             self._browser_dialogs: list[object] = []
@@ -336,6 +353,10 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.cancel_button.setObjectName("ghost")
             self.cancel_button.clicked.connect(self.cancel_operation)
             search_row.addWidget(self.cancel_button)
+            self.retry_button = QPushButton()
+            self.retry_button.setObjectName("ghost")
+            self.retry_button.clicked.connect(self.retry_last_operation)
+            search_row.addWidget(self.retry_button)
             search_layout.addLayout(search_row)
 
             self.status = QLabel()
@@ -465,6 +486,22 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.open_episode_button = QPushButton()
             self.open_episode_button.clicked.connect(self.open_selected_episode)
             episode_actions.addWidget(self.open_episode_button)
+            self.next_episode_button = QPushButton()
+            self.next_episode_button.setObjectName("ghost")
+            self.next_episode_button.clicked.connect(self.open_next_episode)
+            episode_actions.addWidget(self.next_episode_button)
+            self.open_episode_embedded_button = QPushButton()
+            self.open_episode_embedded_button.setObjectName("ghost")
+            self.open_episode_embedded_button.clicked.connect(
+                self.open_selected_episode_embedded
+            )
+            episode_actions.addWidget(self.open_episode_embedded_button)
+            self.history_button = QPushButton()
+            self.history_button.setObjectName("ghost")
+            self.history_menu = QMenu(self.history_button)
+            self.history_menu.aboutToShow.connect(self.populate_history_menu)
+            self.history_button.setMenu(self.history_menu)
+            episode_actions.addWidget(self.history_button)
             search_layout.addLayout(episode_actions)
             layout.addWidget(search_card, 1)
 
@@ -498,6 +535,16 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.offline_browse_button = QPushButton()
             self.offline_browse_button.clicked.connect(self.choose_offline_output)
             offline_control.addWidget(self.offline_browse_button, 1, 2)
+            self.offline_prefix_label = QLabel()
+            offline_control.addWidget(self.offline_prefix_label, 2, 0)
+            self.offline_prefix = QLineEdit()
+            self.offline_prefix.setMaxLength(48)
+            offline_control.addWidget(self.offline_prefix, 2, 1)
+            self.offline_suffix_label = QLabel()
+            offline_control.addWidget(self.offline_suffix_label, 3, 0)
+            self.offline_suffix = QLineEdit()
+            self.offline_suffix.setMaxLength(48)
+            offline_control.addWidget(self.offline_suffix, 3, 1)
             offline_control.setColumnStretch(1, 1)
             offline_layout.addLayout(offline_control)
 
@@ -580,6 +627,7 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.query.setPlaceholderText(self.t("query_placeholder"))
             self.search_button.setText(self.t("search"))
             self.cancel_button.setText(self.t("cancel"))
+            self.retry_button.setText(self.t("retry"))
             if not self.status.text() or not self.busy:
                 self.status.setText(self.t("initial_status"))
             self.table.setAccessibleName(self.t("title"))
@@ -605,11 +653,23 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             )
             self.load_more_button.setText(self.t("load_more"))
             self.open_episode_button.setText(self.t("open_episode"))
+            self.next_episode_button.setText(self.t("next_episode"))
+            self.open_episode_embedded_button.setText(
+                self.t("open_episode_embedded")
+            )
+            self.history_button.setText(self.t("history"))
+            self.history_button.setToolTip(self.t("history_tooltip"))
             self.offline_heading.setText(self.t("offline_title"))
             self.offline_boundary.setText(self.t("offline_boundary"))
             self.offline_output_label.setText(self.t("offline_output"))
             self.offline_output.setAccessibleName(self.t("offline_output"))
             self.offline_browse_button.setText(self.t("offline_browse"))
+            self.offline_prefix_label.setText(self.t("offline_prefix"))
+            self.offline_prefix.setPlaceholderText(self.t("offline_prefix_placeholder"))
+            self.offline_prefix.setAccessibleName(self.t("offline_prefix"))
+            self.offline_suffix_label.setText(self.t("offline_suffix"))
+            self.offline_suffix.setPlaceholderText(self.t("offline_suffix_placeholder"))
+            self.offline_suffix.setAccessibleName(self.t("offline_suffix"))
             self.offline_save_button.setText(self.t("offline_save"))
             self.offline_import_button.setText(self.t("offline_import"))
             self.offline_verify_button.setText(self.t("offline_verify"))
@@ -776,6 +836,24 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                 return
             self.start_search(query, "search_running")
 
+        def retry_last_operation(self) -> None:
+            if self.busy or self.closing:
+                return
+            if self.retry_kind == "search" and self.retry_query:
+                self.start_search(self.retry_query, self.retry_status_key)
+                return
+            if self.retry_kind == "episodes" and self.retry_query:
+                selected = self.selected_result()
+                if (
+                    not self.retry_episode_append
+                    and (selected is None or selected.url != self.retry_query)
+                ):
+                    self.status.setText(self.t("select_series"))
+                    return
+                self.load_episodes(append=self.retry_episode_append)
+                return
+            self.status.setText(self.t("retry_unavailable"))
+
         def browse_catalog(self, query: str) -> None:
             self.start_search(query, "catalog_running")
 
@@ -786,6 +864,9 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                 return
             if self.busy or self.closing:
                 return
+            self.retry_kind = "search"
+            self.retry_query = query
+            self.retry_status_key = status_key
             generation = self.begin_operation("search")
             self.results = ()
             self.clear_episodes()
@@ -873,6 +954,9 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                     return
             if self.busy or self.closing or (append and not self.episode_cursor):
                 return
+            self.retry_kind = "episodes"
+            self.retry_query = query
+            self.retry_episode_append = append
             cursor = self.episode_cursor if append else ""
             if not append:
                 self.episodes = ()
@@ -1109,6 +1193,10 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.episode_context.setVisible(False)
             self.show_episode_fallback(False)
             self.manual_episode_url.clear()
+            if self.retry_kind == "episodes":
+                self.retry_kind = ""
+                self.retry_query = ""
+                self.retry_episode_append = False
 
         def add_manual_episode_url(self) -> None:
             selected = self.selected_result()
@@ -1204,7 +1292,115 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                 self.status.setText(self.t("select_episode"))
                 return
             QDesktopServices.openUrl(QUrl(selected.url))
+            self.record_episode_history(selected)
             self.status.setText(self.t("episode_opened", title=selected.title))
+
+        def open_next_episode(self) -> None:
+            row = self.episode_table.currentRow()
+            next_row = row + 1
+            if row < 0 or next_row >= len(self.episodes):
+                self.status.setText(self.t("next_episode_unavailable"))
+                return
+            self.episode_table.selectRow(next_row)
+            self.open_selected_episode()
+
+        def open_selected_episode_embedded(self) -> None:
+            selected = self.selected_episode()
+            route = classify_site_url(selected.url) if selected is not None else None
+            if (
+                selected is None
+                or route is None
+                or route.site_family != "ani-gamer"
+                or route.resource_kind != "episode"
+            ):
+                self.status.setText(self.t("select_episode"))
+                return
+            self.record_episode_history(selected)
+            self.open_embedded_url(selected.url, selected.title)
+
+        def record_episode_history(self, episode: DiscoveryItemV1) -> None:
+            series = self.selected_result()
+            if series is None:
+                return
+            try:
+                record_history(self.history_file, series, episode)
+            except (OSError, TypeError, ValueError):
+                # History is an optional local convenience and must never block
+                # opening the official page.
+                return
+
+        def populate_history_menu(self) -> None:
+            self.history_menu.clear()
+            entries = load_history(self.history_file)
+            if not entries:
+                action = self.history_menu.addAction(self.t("history_empty"))
+                action.setEnabled(False)
+                return
+            for entry in entries[:40]:
+                label = f"{entry.series_title} — {entry.episode_title}"
+                action = QAction(label[:180], self.history_menu)
+                action.setToolTip(entry.url)
+                action.triggered.connect(
+                    lambda _checked=False, current=entry: self.open_history_entry(
+                        current
+                    )
+                )
+                self.history_menu.addAction(action)
+
+            self.history_menu.addSeparator()
+            clear_action = QAction(self.t("history_clear"), self.history_menu)
+            clear_action.triggered.connect(self.clear_history_with_confirmation)
+            self.history_menu.addAction(clear_action)
+            export_action = QAction(self.t("history_export"), self.history_menu)
+            export_action.triggered.connect(self.export_history_to_file)
+            self.history_menu.addAction(export_action)
+
+        def clear_history_with_confirmation(self) -> None:
+            answer = QMessageBox.question(
+                self,
+                self.t("history_clear_title"),
+                self.t("history_clear_prompt"),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                clear_history(self.history_file)
+            except (OSError, ValueError):
+                self.status.setText(self.t("history_clear_failed"))
+                return
+            self.status.setText(self.t("history_cleared"))
+
+        def export_history_to_file(self) -> None:
+            filename, _filter = QFileDialog.getSaveFileName(
+                self,
+                self.t("history_export"),
+                str(Path(context.paths.data) / "ani-gamer-history.json"),
+                "JSON (*.json)",
+            )
+            if not filename:
+                return
+            try:
+                export_history(self.history_file, Path(filename))
+            except (OSError, ValueError):
+                self.status.setText(self.t("history_export_failed"))
+                return
+            self.status.setText(self.t("history_exported"))
+
+        def open_history_entry(self, entry: AniGamerHistoryEntry) -> None:
+            route = classify_site_url(entry.url)
+            if (
+                route is None
+                or route.site_family != "ani-gamer"
+                or route.resource_kind != "episode"
+            ):
+                self.status.setText(self.t("catalog_rejected"))
+                return
+            if QWebEngineView is None or OfficialPage is None:
+                QDesktopServices.openUrl(QUrl(entry.url))
+                return
+            self.open_embedded_url(entry.url, entry.episode_title)
 
         def choose_offline_output(self) -> None:
             selected = QFileDialog.getExistingDirectory(
@@ -1247,6 +1443,8 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                 series,
                 episode,
                 cover_png=self.selected_cover_png(),
+                name_prefix=self.offline_prefix.text(),
+                name_suffix=self.offline_suffix.text(),
             )
             self.offline_archive_root = archive.root
             return archive
@@ -1277,14 +1475,34 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                     self.t("offline_failed", error=str(error)[:300])
                 )
                 return
-            filename, _filter = QFileDialog.getOpenFileName(
+            filenames, _filter = QFileDialog.getOpenFileNames(
                 self,
                 self.t("offline_import"),
                 str(Path(context.paths.downloads)),
-                "Media (*.mp4 *.mkv *.webm *.mov *.m4v *.avi *.ts *.mpeg *.mpg "
-                "*.mp3 *.m4a *.flac *.wav *.opus *.ogg)",
+                "Media and subtitles (*.mp4 *.mkv *.webm *.mov *.m4v *.avi *.ts "
+                "*.mpeg *.mpg *.mp3 *.m4a *.flac *.wav *.opus *.ogg *.ass *.srt "
+                "*.ssa *.sub *.ttml *.vtt *.xml)",
             )
-            if not filename:
+            if not filenames:
+                return
+            selected = tuple(Path(filename) for filename in filenames)
+            media = tuple(
+                path
+                for path in selected
+                if path.suffix.casefold() in ALLOWED_LOCAL_MEDIA_SUFFIXES
+            )
+            subtitles = tuple(
+                path
+                for path in selected
+                if path.suffix.casefold() in ALLOWED_LOCAL_SUBTITLE_SUFFIXES
+            )
+            if len(media) > 1 or not media and not subtitles:
+                self.offline_status.setText(
+                    self.t(
+                        "offline_failed",
+                        error=self.t("offline_select_files"),
+                    )
+                )
                 return
             self.offline_cancel_event.clear()
             generation = self.begin_operation("offline-import")
@@ -1292,11 +1510,19 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
 
             def worker() -> None:
                 try:
-                    result = import_local_media(
-                        archive.root,
-                        Path(filename),
-                        cancelled=self.offline_cancel_event.is_set,
-                    )
+                    result = archive
+                    if media:
+                        result = import_local_media(
+                            archive.root,
+                            media[0],
+                            cancelled=self.offline_cancel_event.is_set,
+                        )
+                    if subtitles:
+                        result = import_local_subtitles(
+                            archive.root,
+                            subtitles,
+                            cancelled=self.offline_cancel_event.is_set,
+                        )
                     error = ""
                 except OfflineImportCancelled:
                     result = None
@@ -1330,13 +1556,17 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                 )
                 return
             local_media = getattr(response, "local_media", None)
-            if not isinstance(local_media, Path):
+            subtitles = getattr(response, "local_subtitles", ())
+            paths = [str(local_media)] if isinstance(local_media, Path) else []
+            if isinstance(subtitles, tuple):
+                paths.extend(str(path) for path in subtitles if isinstance(path, Path))
+            if not paths:
                 self.offline_status.setText(
                     self.t("offline_failed", error="invalid local media result")
                 )
                 return
             self.offline_status.setText(
-                self.t("offline_imported", path=str(local_media))
+                self.t("offline_imported", path="; ".join(paths))
             )
 
         def verify_offline_archive(self) -> None:
@@ -1391,15 +1621,35 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                     self.t("offline_failed", error="invalid verification result")
                 )
                 return
-            if response.media_state == "not-linked":
+            if (
+                response.media_state == "not-linked"
+                and response.subtitle_state == "not-linked"
+            ):
                 self.offline_status.setText(self.t("offline_verify_no_media"))
             elif response.valid:
+                verified_paths = [
+                    str(path)
+                    for path in (
+                        [response.media_path]
+                        if response.media_path is not None
+                        else []
+                    )
+                ]
+                verified_paths.extend(str(path) for path in response.subtitle_paths)
                 self.offline_status.setText(
-                    self.t("offline_verified", path=str(response.media_path or ""))
+                    self.t("offline_verified", path="; ".join(verified_paths))
                 )
             else:
+                states = [
+                    state
+                    for state in (response.media_state, response.subtitle_state)
+                    if state not in {"ok", "not-linked"}
+                ]
                 self.offline_status.setText(
-                    self.t("offline_verify_invalid", state=response.media_state)
+                    self.t(
+                        "offline_verify_invalid",
+                        state="/".join(states) or response.media_state,
+                    )
                 )
 
         def update_action_state(self) -> None:
@@ -1427,6 +1677,20 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                     parent_enabled and search_enabled and not self.busy
                 )
             self.cancel_button.setEnabled(self.busy)
+            retry_available = bool(self.retry_kind and self.retry_query)
+            if self.retry_kind == "episodes":
+                _retry_available, retry_provider_enabled = self.provider_state(
+                    ANI_GAMER_EPISODES_PROVIDER_ID
+                )
+                retry_available = retry_available and retry_provider_enabled
+            else:
+                _retry_available, retry_provider_enabled = self.provider_state(
+                    ANI_GAMER_SEARCH_PROVIDER_ID
+                )
+                retry_available = retry_available and retry_provider_enabled
+            self.retry_button.setEnabled(
+                parent_enabled and retry_available and not self.busy
+            )
             self.open_filter.setEnabled(
                 parent_enabled and search_enabled and not self.busy
             )
@@ -1456,6 +1720,16 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.open_episode_button.setEnabled(
                 selected_episode is not None and not self.busy
             )
+            selected_row = self.episode_table.currentRow()
+            self.next_episode_button.setEnabled(
+                selected_episode is not None
+                and selected_row + 1 < len(self.episodes)
+                and not self.busy
+            )
+            self.open_episode_embedded_button.setEnabled(
+                selected_episode is not None and not self.busy
+            )
+            self.history_button.setEnabled(parent_enabled and not self.busy)
             manual_ready = (
                 parent_enabled
                 and episodes_enabled
@@ -1474,6 +1748,8 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             )
             self.offline_output.setEnabled(not self.busy)
             self.offline_browse_button.setEnabled(not self.busy)
+            self.offline_prefix.setEnabled(not self.busy)
+            self.offline_suffix.setEnabled(not self.busy)
             self.offline_save_button.setEnabled(offline_ready and not self.busy)
             self.offline_import_button.setEnabled(offline_ready and not self.busy)
             self.offline_verify_button.setEnabled(offline_ready and not self.busy)

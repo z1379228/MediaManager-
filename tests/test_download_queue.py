@@ -76,6 +76,19 @@ def test_cancel_queued_task(tmp_path: Path) -> None:
     assert downloads.snapshots()[0].state is DownloadState.CANCELLED
 
 
+def test_state_counts_is_stable_and_includes_empty_states(tmp_path: Path) -> None:
+    downloads = DownloadQueue(RecordingBackend(), workers=1)
+    task_id = downloads.add(DownloadRequest("https://youtu.be/x", tmp_path))
+
+    counts = downloads.state_counts()
+
+    assert counts[DownloadState.QUEUED.value] == 1
+    assert counts[DownloadState.CANCELLED.value] == 0
+    assert set(counts) == {state.value for state in DownloadState}
+    assert downloads.cancel(task_id)
+    assert downloads.state_counts()[DownloadState.CANCELLED.value] == 1
+
+
 
 
 class FailingOnceBackend:

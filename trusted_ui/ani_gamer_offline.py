@@ -23,6 +23,8 @@ from core.site_routing import classify_site_url
 OFFLINE_SCHEMA = 1
 MAX_COVER_BYTES = 2 * 1024 * 1024
 MAX_LOCAL_MEDIA_BYTES = 64 * 1024**3
+MAX_LOCAL_SUBTITLE_BYTES = 16 * 1024**2
+MAX_LOCAL_SUBTITLES = 16
 ALLOWED_LOCAL_MEDIA_SUFFIXES = frozenset(
     {
         ".avi",
@@ -41,6 +43,9 @@ ALLOWED_LOCAL_MEDIA_SUFFIXES = frozenset(
         ".wav",
         ".webm",
     }
+)
+ALLOWED_LOCAL_SUBTITLE_SUFFIXES = frozenset(
+    {".ass", ".srt", ".ssa", ".sub", ".ttml", ".vtt", ".xml"}
 )
 _WINDOWS_RESERVED_NAMES = {
     "aux",
@@ -64,6 +69,7 @@ class AniGamerEpisodeArchive:
     metadata: Path
     cover: Path | None
     local_media: Path | None = None
+    local_subtitles: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +82,8 @@ class AniGamerArchiveVerification:
     actual_bytes: int | None = None
     expected_sha256: str = ""
     actual_sha256: str = ""
+    subtitle_state: str = "not-linked"
+    subtitle_paths: tuple[Path, ...] = ()
 
 
 def _safe_component(value: str, fallback: str, *, limit: int = 96) -> str:
@@ -86,6 +94,13 @@ def _safe_component(value: str, fallback: str, *, limit: int = 96) -> str:
     if normalized.casefold() in _WINDOWS_RESERVED_NAMES:
         normalized = f"_{normalized}"
     return normalized[:limit].rstrip(" ._") or fallback
+
+
+def _optional_component(value: str, *, limit: int = 48) -> str:
+    """Normalize an optional user naming component without inventing text."""
+
+    normalized = " ".join(str(value).split())
+    return _safe_component(normalized, "", limit=limit) if normalized else ""
 
 
 def _validated_item(item: DiscoveryItemV1, resource_kind: str) -> None:
@@ -146,6 +161,8 @@ def create_episode_archive(
     episode: DiscoveryItemV1,
     *,
     cover_png: bytes | None = None,
+    name_prefix: str = "",
+    name_suffix: str = "",
 ) -> AniGamerEpisodeArchive:
     """Atomically save one explicitly selected episode record and optional cover."""
 
@@ -162,9 +179,18 @@ def create_episode_archive(
     series_name = _safe_component(
         f"{series.title}-{series.video_id}", "ani-gamer-series"
     )
-    episode_name = _safe_component(
-        f"{episode.title}-{episode.video_id}", "ani-gamer-episode"
+    prefix = _optional_component(name_prefix)
+    suffix = _optional_component(name_suffix)
+    episode_label = " - ".join(
+        part
+        for part in (
+            prefix,
+            f"{episode.title}-{episode.video_id}",
+            suffix,
+        )
+        if part
     )
+    episode_name = _safe_component(episode_label, "ani-gamer-episode")
     series_root = _prepare_directory(output / series_name)
     episode_root = _prepare_directory(series_root / episode_name)
     if not episode_root.is_relative_to(output):
@@ -172,8 +198,13 @@ def create_episode_archive(
 
     metadata_path = episode_root / "episode.json"
     existing_media: object = None
+    existing_subtitles: object = []
     if metadata_path.exists():
-        existing_media = _read_metadata(metadata_path).get("local_media")
+        existing_document = _read_metadata(metadata_path)
+        existing_media = existing_document.get("local_media")
+        existing_subtitles = existing_document.get("local_subtitles", [])
+        if not isinstance(existing_subtitles, list):
+            raise ValueError("AniGamer local subtitle metadata is invalid")
 
     cover_path: Path | None = None
     if cover_png is not None:
@@ -201,7 +232,9 @@ def create_episode_archive(
             "official_url": episode.url,
         },
         "cover": cover_path.name if cover_path is not None else None,
+        "naming": {"prefix": prefix, "suffix": suffix},
         "local_media": existing_media,
+        "local_subtitles": existing_subtitles,
     }
     encoded = (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode(
         "utf-8"
@@ -291,12 +324,209 @@ def import_local_media(
         target.unlink(missing_ok=True)
         raise
     cover = root / "cover.png"
+    subtitle_paths = tuple(
+        root / Path(str(entry["path"]))
+        for entry in document.get("local_subtitles", [])
+        if isinstance(entry, dict) and isinstance(entry.get("path"), str)
+    )
     return AniGamerEpisodeArchive(
         root,
         metadata_path,
         cover if cover.is_file() and not cover.is_symlink() else None,
         target,
+        subtitle_paths,
     )
+
+
+def import_local_subtitles(
+    archive_root: Path,
+    sources: tuple[Path, ...] | list[Path],
+    *,
+    cancelled: Callable[[], bool] | None = None,
+) -> AniGamerEpisodeArchive:
+    """Copy explicitly selected subtitle sidecars into an episode archive."""
+
+    root = Path(archive_root).resolve()
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("AniGamer episode archive is unsafe")
+    metadata_path = root / "episode.json"
+    document = _read_metadata(metadata_path)
+    selected = tuple(Path(source).expanduser() for source in sources)
+    if not selected:
+        raise ValueError("no subtitle files were selected")
+    if len(selected) > MAX_LOCAL_SUBTITLES:
+        raise ValueError("too many subtitle files were selected")
+
+    existing = document.get("local_subtitles", [])
+    if existing is None:
+        existing = []
+    if not isinstance(existing, list):
+        raise ValueError("AniGamer local subtitle metadata is invalid")
+    if len(existing) + len(selected) > MAX_LOCAL_SUBTITLES:
+        raise ValueError("subtitle archive limit exceeded")
+
+    subtitle_root = _prepare_directory(root / "subtitles")
+    created: list[Path] = []
+    entries: list[dict[str, object]] = []
+    try:
+        for candidate in selected:
+            if cancelled is not None and cancelled():
+                raise OfflineImportCancelled("subtitle import cancelled")
+            if candidate.is_symlink() or not candidate.is_file():
+                raise ValueError("selected subtitle is missing or unsafe")
+            candidate = candidate.resolve()
+            suffix = candidate.suffix.casefold()
+            initial = candidate.stat()
+            if (
+                suffix not in ALLOWED_LOCAL_SUBTITLE_SUFFIXES
+                or initial.st_size <= 0
+                or initial.st_size > MAX_LOCAL_SUBTITLE_BYTES
+            ):
+                raise ValueError("selected subtitle type or size is unsupported")
+
+            base_name = _safe_component(candidate.stem, "episode-subtitle", limit=80)
+            target = subtitle_root / f"{base_name}{suffix}"
+            counter = 2
+            while target.exists():
+                target = subtitle_root / f"{base_name}-{counter:02d}{suffix}"
+                counter += 1
+                if counter > 999:
+                    raise ValueError("AniGamer subtitle destination is full")
+
+            temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.part")
+            digest = hashlib.sha256()
+            written = 0
+            try:
+                with candidate.open("rb") as input_file, temporary.open("xb") as output_file:
+                    while chunk := input_file.read(1024 * 1024):
+                        if cancelled is not None and cancelled():
+                            raise OfflineImportCancelled("subtitle import cancelled")
+                        written += len(chunk)
+                        if written > initial.st_size or written > MAX_LOCAL_SUBTITLE_BYTES:
+                            raise ValueError("selected subtitle changed during import")
+                        digest.update(chunk)
+                        output_file.write(chunk)
+                    output_file.flush()
+                final = candidate.stat()
+                if (
+                    written != initial.st_size
+                    or final.st_size != initial.st_size
+                    or final.st_mtime_ns != initial.st_mtime_ns
+                ):
+                    raise ValueError("selected subtitle changed during import")
+                temporary.replace(target)
+                created.append(target)
+            finally:
+                temporary.unlink(missing_ok=True)
+            entries.append(
+                {
+                    "path": target.relative_to(root).as_posix(),
+                    "bytes": written,
+                    "sha256": digest.hexdigest(),
+                    "source_name": candidate.name,
+                }
+            )
+
+        document["local_subtitles"] = [*existing, *entries]
+        encoded = (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode(
+            "utf-8"
+        )
+        if len(encoded) > 64 * 1024:
+            raise ValueError("AniGamer offline metadata is too large")
+        _atomic_write(metadata_path, encoded)
+    except Exception:
+        for target in created:
+            target.unlink(missing_ok=True)
+        raise
+
+    cover = root / "cover.png"
+    local_media = document.get("local_media")
+    media_path: Path | None = None
+    if isinstance(local_media, dict) and isinstance(local_media.get("path"), str):
+        candidate = root / Path(str(local_media["path"]))
+        if candidate.is_file() and not candidate.is_symlink():
+            media_path = candidate
+    return AniGamerEpisodeArchive(
+        root,
+        metadata_path,
+        cover if cover.is_file() and not cover.is_symlink() else None,
+        media_path,
+        tuple(root / Path(str(entry["path"])) for entry in [*existing, *entries] if isinstance(entry, dict) and isinstance(entry.get("path"), str)),
+    )
+
+
+def _verify_local_subtitles(
+    root: Path,
+    document: dict[str, object],
+    *,
+    cancelled: Callable[[], bool] | None = None,
+) -> tuple[bool, str, tuple[Path, ...]]:
+    raw_subtitles = document.get("local_subtitles", [])
+    if raw_subtitles is None:
+        return True, "not-linked", ()
+    if not isinstance(raw_subtitles, list):
+        raise ValueError("AniGamer local subtitle metadata is invalid")
+    if len(raw_subtitles) > MAX_LOCAL_SUBTITLES:
+        raise ValueError("AniGamer subtitle metadata exceeds limit")
+
+    paths: list[Path] = []
+    state = "ok"
+    valid = True
+    for raw_subtitle in raw_subtitles:
+        if cancelled is not None and cancelled():
+            raise OfflineImportCancelled("offline archive verification cancelled")
+        if not isinstance(raw_subtitle, dict):
+            raise ValueError("AniGamer local subtitle metadata is invalid")
+        raw_path = raw_subtitle.get("path")
+        expected_bytes = raw_subtitle.get("bytes")
+        expected_sha256 = raw_subtitle.get("sha256")
+        if (
+            not isinstance(raw_path, str)
+            or not raw_path
+            or "\\" in raw_path
+            or Path(raw_path).is_absolute()
+            or ".." in Path(raw_path).parts
+            or Path(raw_path).suffix.casefold() not in ALLOWED_LOCAL_SUBTITLE_SUFFIXES
+            or not isinstance(expected_bytes, int)
+            or isinstance(expected_bytes, bool)
+            or not 0 < expected_bytes <= MAX_LOCAL_SUBTITLE_BYTES
+            or not isinstance(expected_sha256, str)
+            or re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is None
+        ):
+            raise ValueError("AniGamer local subtitle metadata is invalid")
+        subtitle_path = root.joinpath(*raw_path.split("/"))
+        resolved_subtitle = subtitle_path.resolve()
+        if not resolved_subtitle.is_relative_to(root):
+            raise ValueError("AniGamer subtitle path escaped its archive")
+        paths.append(subtitle_path)
+        if subtitle_path.is_symlink() or not subtitle_path.is_file():
+            valid = False
+            state = "missing"
+            continue
+        initial = subtitle_path.stat()
+        if initial.st_size != expected_bytes:
+            valid = False
+            state = "size-mismatch"
+            continue
+        digest = hashlib.sha256()
+        read_bytes = 0
+        with subtitle_path.open("rb") as input_file:
+            while chunk := input_file.read(1024 * 1024):
+                if cancelled is not None and cancelled():
+                    raise OfflineImportCancelled("offline archive verification cancelled")
+                read_bytes += len(chunk)
+                if read_bytes > expected_bytes:
+                    raise ValueError("AniGamer subtitle changed during verification")
+                digest.update(chunk)
+        final = subtitle_path.stat()
+        if final.st_size != initial.st_size or final.st_mtime_ns != initial.st_mtime_ns:
+            raise ValueError("AniGamer subtitle changed during verification")
+        if read_bytes != expected_bytes or digest.hexdigest() != expected_sha256:
+            valid = False
+            state = "hash-mismatch"
+    if not raw_subtitles:
+        state = "not-linked"
+    return valid, state, tuple(paths)
 
 
 def verify_episode_archive(
@@ -311,9 +541,19 @@ def verify_episode_archive(
         raise ValueError("AniGamer episode archive is unsafe")
     root = candidate.resolve()
     document = _read_metadata(root / "episode.json")
+    subtitles_valid, subtitle_state, subtitle_paths = _verify_local_subtitles(
+        root, document, cancelled=cancelled
+    )
     local_media = document.get("local_media")
     if local_media is None:
-        return AniGamerArchiveVerification(root, True, "not-linked", None)
+        return AniGamerArchiveVerification(
+            root,
+            subtitles_valid,
+            "not-linked",
+            None,
+            subtitle_state=subtitle_state,
+            subtitle_paths=subtitle_paths,
+        )
     if not isinstance(local_media, dict):
         raise ValueError("AniGamer local media metadata is invalid")
     raw_path = local_media.get("path")
@@ -345,6 +585,8 @@ def verify_episode_archive(
             expected_bytes,
             None,
             expected_sha256,
+            subtitle_state=subtitle_state,
+            subtitle_paths=subtitle_paths,
         )
     initial = media_path.stat()
     if initial.st_size != expected_bytes:
@@ -356,6 +598,8 @@ def verify_episode_archive(
             expected_bytes,
             initial.st_size,
             expected_sha256,
+            subtitle_state=subtitle_state,
+            subtitle_paths=subtitle_paths,
         )
     digest = hashlib.sha256()
     read_bytes = 0
@@ -371,7 +615,7 @@ def verify_episode_archive(
     if final.st_size != initial.st_size or final.st_mtime_ns != initial.st_mtime_ns:
         raise ValueError("AniGamer local media changed during verification")
     actual_sha256 = digest.hexdigest()
-    valid = actual_sha256 == expected_sha256
+    valid = actual_sha256 == expected_sha256 and subtitles_valid
     return AniGamerArchiveVerification(
         root,
         valid,
@@ -381,4 +625,6 @@ def verify_episode_archive(
         read_bytes,
         expected_sha256,
         actual_sha256,
+        subtitle_state=subtitle_state,
+        subtitle_paths=subtitle_paths,
     )

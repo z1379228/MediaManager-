@@ -16,6 +16,8 @@ from core.downloads.errors import ProviderFailure, classify_provider_failure
         ("Unsupported URL", ProviderFailureCode.UNSUPPORTED, False),
         ("Connection timed out", ProviderFailureCode.TEMPORARY, True),
         ("HTTP Error 500: Domain Not Found", ProviderFailureCode.TEMPORARY, True),
+        ("MEGA transfer quota exceeded", ProviderFailureCode.RATE_LIMITED, True),
+        ("MEGA service unavailable; connection reset", ProviderFailureCode.TEMPORARY, True),
     ],
 )
 def test_provider_failures_have_stable_codes(

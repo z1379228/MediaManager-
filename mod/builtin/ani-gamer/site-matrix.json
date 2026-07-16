@@ -12,13 +12,18 @@
     "complete": "conditional"
   },
   "ui_capabilities": [
-    "search", "thumbnail", "official-page", "offline-archive", "cancel"
+    "search", "thumbnail", "official-page", "embedded-official-page",
+    "offline-archive", "local-watch-history", "user-controlled-next-episode",
+    "cancel"
   ],
   "features": [
     {"feature_id": "official-catalog", "support_status": "browser-mediated-official"},
     {"feature_id": "canonical-series-url", "support_status": "offline-contract"},
     {"feature_id": "canonical-episode-url", "support_status": "offline-contract"},
     {"feature_id": "official-cover", "support_status": "browser-mediated-official"},
+    {"feature_id": "embedded-official-page", "support_status": "browser-mediated-official"},
+    {"feature_id": "local-watch-history", "support_status": "local-only"},
+    {"feature_id": "user-controlled-next-episode", "support_status": "local-ui"},
     {"feature_id": "local-media-archive", "support_status": "offline-contract"},
     {"feature_id": "local-archive-sha256", "support_status": "offline-contract"}
   ],
