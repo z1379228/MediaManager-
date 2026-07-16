@@ -1,5 +1,13 @@
 # Release signing
 
+## Distribution policy
+
+Development builds are local engineering artifacts. Their complete files stay
+in the local `Version/Development/<version>` folder and are not uploaded to
+GitHub Releases. Public uploads are limited to verified `Testing/<version>`
+artifacts and their release notes. A Development build may be packaged for
+local validation, but it must not be presented as a downloadable release.
+
 MediaManager enters `NORMAL` only when `security/release-manifest.json` has a
 valid Ed25519 signature in `security/release-manifest.sig`, the manifest key id
 matches the identity compiled into `core/security/release_key.py`, and every
