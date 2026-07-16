@@ -6,14 +6,10 @@ from trusted_ui.planned_mod_catalog import PLANNED_MOD_IDS, PLANNED_MODS
 
 def test_planned_mod_catalog_is_ordered_and_separate_from_runtime_mods() -> None:
     assert tuple(item.provider_id for item in PLANNED_MODS) == (
-        "ani-gamer-offline",
-        "direct-transfer",
         "gopeed-transfer",
         "p2p-transfer",
     )
     assert tuple(item.priority for item in PLANNED_MODS) == (
-        "P1",
-        "P2",
         "P2",
         "P2",
     )
@@ -29,6 +25,7 @@ def test_official_bridges_stay_separate_from_pending_download_mods() -> None:
         "instagram",
         "threads",
     }
-    assert "ani-gamer-offline" in PLANNED_MOD_IDS
+    assert "ani-gamer-offline" not in PLANNED_MOD_IDS
+    assert "ani-gamer-offline" in BUILTIN_MOD_IDS
     assert "bilibili-danmaku" not in PLANNED_MOD_IDS
     assert not {"facebook", "mega"} & PLANNED_MOD_IDS

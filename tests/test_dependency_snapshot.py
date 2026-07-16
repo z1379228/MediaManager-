@@ -98,7 +98,7 @@ def test_snapshot_derives_readiness_for_each_catalog_mod(tmp_path: Path) -> None
 
     snapshot = service.refresh()
 
-    assert len(snapshot.readiness) == 19
+    assert len(snapshot.readiness) == 31
     assert snapshot.readiness_for("youtube").ready
     assert snapshot.readiness_for("mega").ready
     assert not snapshot.readiness_for("speech-to-text").ready

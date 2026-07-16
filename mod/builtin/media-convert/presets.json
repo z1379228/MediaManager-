@@ -49,6 +49,18 @@
       "extensions": [".srt"],
       "estimate_ratio": 0.01,
       "args": ["-map", "0:s:0", "-c:s", "srt"]
+    },
+    "ad-trim-h264": {
+      "strategy": "本機廣告段落剪除（H.264/AAC 新檔）",
+      "extensions": [".mp4", ".mkv"],
+      "estimate_ratio": 0.9,
+      "args": [
+        "-map", "0:v:0", "-map", "0:a?",
+        "-vf", "@REMOVE_VIDEO_FILTER@",
+        "-af", "@REMOVE_AUDIO_FILTER@",
+        "-c:v", "libx264", "-preset", "medium", "-crf", "22",
+        "-c:a", "aac", "-b:a", "192k"
+      ]
     }
   }
 }

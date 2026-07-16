@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "locale": "zh-TW",
+  "group_name": "X / Twitter",
+  "workspace": {
+    "title": "X 官方工具",
+    "subtitle": "只驗證並開啟 X／Twitter 官方貼文，或前往 X 官方帳號資料封存說明；不使用非 API 網頁自動化。",
+    "enable": "啟用 X 主 MOD",
+    "url_label": "X／Twitter 官方貼文網址",
+    "placeholder": "https://x.com/user/status/...",
+    "initial_preview": "啟用對應子 MOD 後，可開啟官方貼文或帳號資料封存說明。",
+    "wrong_site": "只接受 x.com 或 twitter.com 的官方 status 貼文網址。"
+  },
+  "ui": {
+    "boundary": "此 MOD 不使用非 API 網頁自動化、不下載貼文媒體，也不讀取 Cookie。",
+    "open_page": "開啟官方貼文",
+    "open_export": "開啟官方帳號資料封存說明",
+    "page_disabled": "請先啟用「官方貼文頁」子 MOD。",
+    "export_disabled": "請先啟用「帳號資料封存」子 MOD。",
+    "invalid_url": "網址不是允許的 X／Twitter 官方貼文頁。",
+    "opened_page": "已交由系統瀏覽器開啟 X 官方貼文。",
+    "opened_export": "已開啟 X 官方帳號資料封存說明。",
+    "browser_failed": "系統無法開啟瀏覽器。"
+  },
+  "modules": {
+    "twitter": {"name": "X 主 MOD", "purpose": "管理 X 官方工具及其子 MOD", "control_location": "MOD 管理 → X / Twitter"},
+    "twitter-page": {"name": "官方貼文頁", "purpose": "驗證 X／Twitter 官方貼文網址後交由瀏覽器開啟", "control_location": "X 官方工具 → 開啟官方貼文"},
+    "twitter-export": {"name": "帳號資料封存", "purpose": "開啟 X 官方帳號資料封存下載說明", "control_location": "X 官方工具 → 官方資料封存"}
+  }
+}

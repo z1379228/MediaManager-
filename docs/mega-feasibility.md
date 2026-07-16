@@ -1,8 +1,7 @@
 # MEGA website MOD feasibility
 
-Status: the current source implements a disabled-by-default public-file adapter
-backed by the official `mega-get` command. Public folders are recognized but
-are not downloaded.
+Status: the current source implements a disabled-by-default public file/folder
+adapter backed by the official `mega-get` command.
 
 ## Why MEGA needs a dedicated MOD
 
@@ -22,9 +21,10 @@ to the generic yt-dlp provider.
   open `mega.io`/`mega.nz` home pages in the system browser.
 - Analysis is local-only: it identifies file versus folder, shows a local
   file/folder thumbnail and reports whether official `mega-get` was detected.
-- Public file downloads are routed through an explicitly injected, verified
-  `mega-get` executable and the shared queue. Public folders fail closed with a
-  clear limitation instead of starting a partial download.
+- Public file and whole-folder downloads are routed through an explicitly
+  injected, verified `mega-get` executable and the shared queue. A completed
+  folder must produce exactly one confined root folder; its local tree is
+  bounded to 10,000 entries and may not contain symbolic links.
 - Share keys are removed from analysis labels and ordinary status/error text;
   the full link is passed only to the explicitly started local download process.
 - Credentials, account sessions, legacy links, query parameters, nested folder
@@ -44,8 +44,10 @@ The adapter continues to:
 6. Remain disabled by default and start no provider process until the user
    explicitly requests analysis or download.
 
-Account sync, backup, upload, WebDAV and remote cloud management remain out of
-scope for the first download-only adapter.
+Per-file remote folder browsing, account sync, backup, upload, WebDAV and remote
+cloud management remain out of scope for the download-only adapter. The current
+UI downloads a public folder as one explicit job rather than pretending it can
+preselect remote children without an authenticated listing contract.
 
 Official references:
 

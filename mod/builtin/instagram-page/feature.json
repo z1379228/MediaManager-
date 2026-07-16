@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "provider_id": "instagram-page",
+  "display_name": "Instagram Official Page",
+  "kind": "site-addon",
+  "parent_provider_id": "instagram"
+}

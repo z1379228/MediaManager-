@@ -131,6 +131,57 @@ def test_download_panel_reuses_progress_widget_for_incremental_updates(
         context.lifecycle.shutdown()
 
 
+def test_download_panel_can_select_cancel_and_clear_all_tasks(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    app = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    for index in range(3):
+        context.download_queue.add(
+            DownloadRequest(f"https://youtu.be/{index}", tmp_path)
+        )
+    panel = create_download_panel(context)
+    panel.timer.stop()
+    try:
+        panel.render_signature = None
+        panel.refresh()
+        panel.table.selectAll()
+        app.processEvents()
+
+        assert len(panel.selected_task_ids()) == 3
+        assert panel.cancel_button.isEnabled()
+        assert "已選 3 個任務" in panel.task_detail_text.text()
+
+        panel.cancel_button.click()
+        assert all(
+            task.state is DownloadState.CANCELLED
+            for task in context.download_queue.snapshots()
+        )
+        assert panel.clear_button.isEnabled()
+
+        panel.clear_button.click()
+        assert context.download_queue.snapshots() == ()
+        assert panel.table.rowCount() == 0
+    finally:
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
 def test_safe_task_output_requires_confined_completed_regular_file(
     tmp_path: Path,
 ) -> None:
@@ -150,6 +201,24 @@ def test_safe_task_output_requires_confined_completed_regular_file(
     output.unlink()
     assert safe_task_output_path(task) is None
     assert "已移動或目前不存在" in task_detail_summary(task)
+
+
+def test_safe_task_output_accepts_confined_mega_folder(tmp_path: Path) -> None:
+    output_dir = tmp_path / "downloads"
+    folder = output_dir / "shared-folder"
+    folder.mkdir(parents=True)
+    task = DownloadTask(
+        "mega-folder",
+        DownloadRequest(
+            "https://mega.nz/folder/AbCdEf12#abcdefghijklmnop",
+            output_dir,
+            source_category="mega-folder",
+        ),
+        state=DownloadState.COMPLETED,
+        output_path=str(folder),
+    )
+
+    assert safe_task_output_path(task) == folder.resolve()
 
 
 def test_download_task_detail_exposes_failure_and_completed_output(

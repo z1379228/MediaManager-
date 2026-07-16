@@ -30,7 +30,17 @@ def test_search_source_is_inferred_only_from_exact_official_hosts() -> None:
         == "youtube-search"
     )
     assert (
+        search_source_for_url("https://www.youtube-nocookie.com/embed/example")
+        == "youtube-search"
+    )
+    assert (
         search_source_for_url("https://www.bilibili.com/video/BV1example123")
+        == "bilibili-search"
+    )
+    assert (
+        search_source_for_url(
+            "https://search.bilibili.com/all?keyword=%E5%B9%BB%E6%9C%88%E7%92%B0"
+        )
         == "bilibili-search"
     )
     assert (
@@ -39,6 +49,7 @@ def test_search_source_is_inferred_only_from_exact_official_hosts() -> None:
     )
     assert search_source_for_url("https://www.youtube.com.evil.test/watch?v=x") == ""
     assert search_source_for_url("https://music.youtube.com.evil.test/watch?v=x") == ""
+    assert search_source_for_url("https://www.youtube-nocookie.com/watch?v=x") == ""
     assert search_source_for_url("https://user@www.bilibili.com/video/x") == ""
     assert search_source_for_url("http://ani.gamer.com.tw/animeRef.php?sn=123") == ""
 
@@ -128,6 +139,7 @@ def test_youtube_search_result_can_be_added_as_single_download(
     context = Bootstrap(portable=True).initialize(start_background=False)
     panel = create_download_panel(context, site_family="youtube")
     panel.timer.stop()
+    panel.thumbnail_loader.load = Mock()
     tabs = QTabWidget()
     tabs.addTab(panel, "YouTube")
     payload = {
@@ -145,6 +157,9 @@ def test_youtube_search_result_can_be_added_as_single_download(
         assert apply_download_prefill(panel, tabs, payload)
         assert panel.analyzed_url == payload["url"]
         assert panel.analyzed_info["title"] == "Search result"
+        assert panel.thumbnail_loader is not None
+        assert panel.thumbnail_preview.isVisibleTo(panel)
+        panel.thumbnail_loader.load.assert_called_once()
         assert panel.add_download.isEnabled()
 
         panel.add_batch()
@@ -217,6 +232,10 @@ def test_empty_workspace_actions_are_disabled(tmp_path, monkeypatch) -> None:
         bilibili_panel = create_download_panel(context, site_family="bilibili")
         youtube_panel.timer.stop()
         bilibili_panel.timer.stop()
+        assert youtube_panel.thumbnail_loader is not None
+        assert bilibili_panel.thumbnail_loader is not None
+        assert not youtube_panel.thumbnail_preview.isHidden()
+        assert not bilibili_panel.thumbnail_preview.isHidden()
         youtube_controls = {
             control.text() for control in youtube_panel.findChildren(QCheckBox)
         }
@@ -224,6 +243,39 @@ def test_empty_workspace_actions_are_disabled(tmp_path, monkeypatch) -> None:
         assert "其他網站 Beta" not in youtube_controls
         assert youtube_panel.danmaku_xml.isHidden()
         assert youtube_panel.format_preset.currentData() == "best"
+        assert youtube_panel.container_preset.currentData() == "auto"
+        assert [
+            youtube_panel.container_preset.itemData(index)
+            for index in range(youtube_panel.container_preset.count())
+        ] == ["auto", "mp4", "mkv", "webm"]
+        youtube_panel.container_preset.setCurrentIndex(
+            youtube_panel.container_preset.findData("mp4")
+        )
+        app.processEvents()
+        assert "請先讀取影片資訊" in youtube_panel.container_hint.text()
+        youtube_panel.container_preset.setCurrentIndex(
+            youtube_panel.container_preset.findData("auto")
+        )
+        for preset_id in (
+            "video-2160",
+            "video-1440",
+            "video-h264-1080",
+            "audio-m4a-256",
+            "audio-mp3-320",
+            "audio-opus",
+            "audio-flac",
+            "audio-wav",
+        ):
+            assert youtube_panel.format_preset.findData(preset_id) >= 0
+            assert bilibili_panel.format_preset.findData(preset_id) >= 0
+        youtube_panel.format_preset.setCurrentIndex(
+            youtube_panel.format_preset.findData("audio-flac")
+        )
+        app.processEvents()
+        assert "不會提升" in youtube_panel.encoding_hint.text()
+        youtube_panel.format_preset.setCurrentIndex(
+            youtube_panel.format_preset.findData("best")
+        )
         assert youtube_panel.subtitle_mode.currentData() == "none"
         assert youtube_panel.subtitle_languages.isHidden()
         youtube_panel.subtitle_mode.setCurrentIndex(1)
@@ -281,8 +333,8 @@ def test_empty_workspace_actions_are_disabled(tmp_path, monkeypatch) -> None:
         for label in (
             "重試",
             "失敗項目找替代",
-            "取消任務",
-            "清除已結束紀錄",
+            "取消所選任務",
+            "清除已結束列表",
         ):
             assert not download_buttons[label].isEnabled()
     finally:
@@ -318,11 +370,21 @@ def test_facebook_and_mega_workspaces_enable_and_route_independently(
     facebook_panel.timer.stop()
     mega_panel.timer.stop()
     try:
+        mega_panel.resize(940, 360)
+        mega_panel.show()
+        app.processEvents()
+        assert mega_panel.scroll_area.horizontalScrollBar().maximum() == 0
+        assert mega_panel.scroll_area.verticalScrollBar().maximum() > 0
         assert not facebook_panel.enabled.isChecked()
         assert not mega_panel.enabled.isChecked()
         assert facebook_panel.workspace_title.text() == "Facebook 下載工作區"
         assert mega_panel.workspace_title.text() == "MEGA 下載工作區"
         assert facebook_panel.thumbnail_preview.pixmap() is not None
+        assert facebook_panel.format_label.isHidden()
+        assert facebook_panel.format_preset.isHidden()
+        assert facebook_panel.subtitle_label.isHidden()
+        assert facebook_panel.subtitle_mode.isHidden()
+        assert facebook_panel.encoding_hint.isHidden()
         assert mega_panel.share_icon.text() == "MEGA"
         assert not hasattr(mega_panel, "format_preset")
         assert not hasattr(mega_panel, "subtitle_mode")
@@ -375,7 +437,9 @@ def test_facebook_and_mega_workspaces_enable_and_route_independently(
         )
         app.processEvents()
         assert mega_panel.read_info.isEnabled()
-        assert not mega_panel.add_download.isEnabled()
+        assert mega_panel.add_download.isEnabled()
+        assert not mega_panel.output_filename.isEnabled()
+        assert "資料夾會由官方 mega-get 完整下載" in mega_panel.preview.text()
 
         facebook_panel.urls.setPlainText(mega_file)
         app.processEvents()

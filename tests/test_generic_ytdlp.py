@@ -23,7 +23,6 @@ PROVIDER_ROOT = ROOT / "mod" / "builtin" / "generic-ytdlp"
         "https://soundcloud.com/artist/track",
         "https://www.tiktok.com/@artist/video/123",
         "https://clips.twitch.tv/Example",
-        "https://x.com/example/status/123",
     ),
 )
 def test_generic_provider_accepts_only_explicit_matrix_hosts(url: str) -> None:
@@ -43,6 +42,8 @@ def test_generic_provider_accepts_only_explicit_matrix_hosts(url: str) -> None:
         "https://www.bilibili.com/video/BVexample",
         "https://www.facebook.com/watch/?v=123",
         "https://www.instagram.com/reel/example",
+        "https://x.com/example/status/123",
+        "https://twitter.com/example/status/123",
         "https://user:secret@vimeo.com/123",
         "https://vimeo.com:99999/123",
     ),

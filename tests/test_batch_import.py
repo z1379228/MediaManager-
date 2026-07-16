@@ -127,16 +127,27 @@ def test_build_import_requests_keeps_options_and_metadata(tmp_path: Path) -> Non
 def test_batch_import_dialog_renders_offscreen(monkeypatch) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QDialog
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication, QDialog, QPushButton, QTableWidget
 
     from trusted_ui.batch_import_dialog import show_batch_import_dialog
 
     app = QApplication.instance() or QApplication([])
-    monkeypatch.setattr(
-        QDialog,
-        "exec",
-        lambda _dialog: QDialog.DialogCode.Rejected,
-    )
+    def inspect_dialog(dialog):
+        table = dialog.findChild(QTableWidget)
+        select_all = dialog.findChild(QPushButton, "batchImportSelectAll")
+        clear_all = dialog.findChild(QPushButton, "batchImportClearAll")
+        assert table is not None
+        assert select_all is not None and select_all.text() == "全選有效項目"
+        assert clear_all is not None and clear_all.text() == "全部取消"
+        assert table.item(0, 0).checkState() == Qt.CheckState.Checked
+        clear_all.click()
+        assert table.item(0, 0).checkState() == Qt.CheckState.Unchecked
+        select_all.click()
+        assert table.item(0, 0).checkState() == Qt.CheckState.Checked
+        return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(QDialog, "exec", inspect_dialog)
     result = BatchImportResult(
         (
             BatchImportEntry(1, "https://example.com/video", "Title", "Artist"),

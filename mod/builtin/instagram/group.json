@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "group_id": "instagram",
+  "site_family": "instagram",
+  "parent_provider_id": "instagram",
+  "locales": ["en", "ja", "zh-CN", "zh-TW"],
+  "children": [
+    {"module_id": "official-page", "provider_id": "instagram-page"},
+    {"module_id": "data-export", "provider_id": "instagram-export"}
+  ]
+}

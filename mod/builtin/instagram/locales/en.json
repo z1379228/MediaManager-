@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "locale": "en",
+  "group_name": "Instagram",
+  "workspace": {
+    "title": "Instagram Official Tools",
+    "subtitle": "Validate and open an official public media page or Meta's account-data export help. No content is collected automatically.",
+    "enable": "Enable the Instagram parent MOD",
+    "url_label": "Official Instagram media URL",
+    "placeholder": "https://www.instagram.com/reel/...",
+    "initial_preview": "Enable the matching child MOD to open an official media page or export help.",
+    "wrong_site": "Only official instagram.com post, Reel, or IGTV URLs are accepted."
+  },
+  "ui": {
+    "boundary": "This MOD does not automatically parse, collect, or download Instagram content and never reads cookies.",
+    "open_page": "Open official media page",
+    "open_export": "Open official data-export help",
+    "page_disabled": "Enable the Official media page child MOD first.",
+    "export_disabled": "Enable the Data export child MOD first.",
+    "invalid_url": "The URL is not an allowed official Instagram public media page.",
+    "opened_page": "The Instagram official page was opened in the system browser.",
+    "opened_export": "Meta's official Instagram data-export help was opened.",
+    "browser_failed": "The system browser could not be opened."
+  },
+  "modules": {
+    "instagram": {"name": "Instagram parent MOD", "purpose": "Manage Instagram official tools and their child MODs", "control_location": "MOD Manager → Instagram"},
+    "instagram-page": {"name": "Official media page", "purpose": "Validate a public post, Reel, or IGTV URL and open it in the browser", "control_location": "Instagram Official Tools → Open official page"},
+    "instagram-export": {"name": "Data export", "purpose": "Open Meta's official Instagram data-export help", "control_location": "Instagram Official Tools → Official data export"}
+  }
+}

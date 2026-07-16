@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "locale": "en",
+  "group_name": "X / Twitter",
+  "workspace": {
+    "title": "X Official Tools",
+    "subtitle": "Validate and open an official X/Twitter post or X's account archive help. No non-API website automation is used.",
+    "enable": "Enable the X parent MOD",
+    "url_label": "Official X/Twitter post URL",
+    "placeholder": "https://x.com/user/status/...",
+    "initial_preview": "Enable the matching child MOD to open an official post or account archive help.",
+    "wrong_site": "Only official x.com or twitter.com status URLs are accepted."
+  },
+  "ui": {
+    "boundary": "This MOD does not use non-API website automation, download post media, or read cookies.",
+    "open_page": "Open official post",
+    "open_export": "Open official account-archive help",
+    "page_disabled": "Enable the Official post page child MOD first.",
+    "export_disabled": "Enable the Account data archive child MOD first.",
+    "invalid_url": "The URL is not an allowed official X/Twitter post page.",
+    "opened_page": "The official X post was opened in the system browser.",
+    "opened_export": "X's official account-archive help was opened.",
+    "browser_failed": "The system browser could not be opened."
+  },
+  "modules": {
+    "twitter": {"name": "X parent MOD", "purpose": "Manage X official tools and their child MODs", "control_location": "MOD Manager → X / Twitter"},
+    "twitter-page": {"name": "Official post page", "purpose": "Validate an X/Twitter post URL and open it in the browser", "control_location": "X Official Tools → Open official post"},
+    "twitter-export": {"name": "Account data archive", "purpose": "Open X's official account-archive download help", "control_location": "X Official Tools → Official data archive"}
+  }
+}

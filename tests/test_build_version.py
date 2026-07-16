@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -6,7 +7,9 @@ from tools import build_version
 from tools.build_version import (
     configured_project_version,
     portable_release_tools,
+    validate_clean_source,
     validate_build_version,
+    wheel_build_environment,
     version_build_paths,
     wheel_build_command,
 )
@@ -21,6 +24,37 @@ def test_build_version_sources_match_and_override_is_rejected() -> None:
     validate_build_version(ROOT, CORE_VERSION)
     with pytest.raises(ValueError, match="override is not allowed"):
         validate_build_version(ROOT, "5.0.1")
+
+
+def test_clean_release_source_returns_exact_revision(monkeypatch) -> None:
+    responses = iter(
+        (
+            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="a" * 40 + "\n", stderr=""),
+        )
+    )
+    monkeypatch.setattr(build_version.shutil, "which", lambda _name: "git.exe")
+    monkeypatch.setattr(
+        build_version.subprocess,
+        "run",
+        lambda *_args, **_kwargs: next(responses),
+    )
+
+    assert validate_clean_source(ROOT) == "a" * 40
+
+
+def test_dirty_release_source_is_rejected(monkeypatch) -> None:
+    monkeypatch.setattr(build_version.shutil, "which", lambda _name: "git.exe")
+    monkeypatch.setattr(
+        build_version.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            [], 0, stdout=" M core/version.py\n", stderr=""
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="source is dirty"):
+        validate_clean_source(ROOT)
 
 
 def test_version_build_paths_are_isolated_under_work(tmp_path: Path) -> None:
@@ -102,3 +136,90 @@ def test_wheel_build_uses_existing_environment_without_dependencies(
     assert "--no-deps" in command
     assert "--no-build-isolation" in command
     assert command[-2:] == ["--wheel-dir", str(tmp_path / "wheel")]
+
+
+def test_wheel_build_environment_is_confined_to_build_attempt(
+    tmp_path: Path,
+) -> None:
+    temp_root = tmp_path / ".work" / "Development" / "14.1-attempt-test" / "temp"
+    environment = wheel_build_environment({"PATH": "example"}, temp_root)
+
+    assert environment["PATH"] == "example"
+    assert environment["TEMP"] == str(temp_root)
+    assert environment["TMP"] == str(temp_root)
+    assert environment["PIP_BUILD_TRACKER"] == str(temp_root / "build-tracker")
+    assert environment["PIP_CACHE_DIR"] == str(temp_root / "cache")
+    assert environment["PIP_NO_INDEX"] == "1"
+    assert (temp_root / "build-tracker").is_dir()
+    assert (temp_root / "cache").is_dir()
+
+
+def test_failed_build_removes_only_its_attempt_directory(
+    tmp_path: Path, monkeypatch
+) -> None:
+    python = tmp_path / "runtime" / "python.exe"
+    python.parent.mkdir()
+    python.write_bytes(b"python")
+    python.with_name("pyinstaller.exe").write_bytes(b"pyinstaller")
+    preserved = tmp_path / ".work" / "Development" / "previous"
+    preserved.mkdir(parents=True)
+    (preserved / "keep.txt").write_text("keep", encoding="utf-8")
+
+    monkeypatch.setattr(build_version, "validate_build_version", lambda *_args: None)
+    monkeypatch.setattr(build_version, "validate_clean_source", lambda *_args: "a" * 40)
+    monkeypatch.setattr(build_version, "portable_release_tools", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(build_version.secrets, "token_hex", lambda _size: "failed")
+    monkeypatch.setattr(build_version.sys, "executable", str(python))
+
+    def fail_build(*_args, **_kwargs) -> None:
+        raise subprocess.CalledProcessError(1, "pyinstaller")
+
+    monkeypatch.setattr(build_version.subprocess, "run", fail_build)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        build_version.build_version(tmp_path, CORE_VERSION, portable_runtime=False)
+
+    attempt = version_build_paths(
+        tmp_path,
+        CORE_VERSION,
+        channel="development",
+        release_version=build_version.release_identity_version("development"),
+        attempt_id="failed",
+    )
+    assert not attempt.work.exists()
+    assert (preserved / "keep.txt").read_text(encoding="utf-8") == "keep"
+
+
+def test_keep_work_preserves_failed_build_attempt(
+    tmp_path: Path, monkeypatch
+) -> None:
+    python = tmp_path / "runtime" / "python.exe"
+    python.parent.mkdir()
+    python.write_bytes(b"python")
+    python.with_name("pyinstaller.exe").write_bytes(b"pyinstaller")
+    monkeypatch.setattr(build_version, "validate_build_version", lambda *_args: None)
+    monkeypatch.setattr(build_version, "validate_clean_source", lambda *_args: "a" * 40)
+    monkeypatch.setattr(build_version, "portable_release_tools", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(build_version.secrets, "token_hex", lambda _size: "kept")
+    monkeypatch.setattr(build_version.sys, "executable", str(python))
+    def fail_build(*_args, **_kwargs) -> None:
+        raise subprocess.CalledProcessError(1, "pyinstaller")
+
+    monkeypatch.setattr(build_version.subprocess, "run", fail_build)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        build_version.build_version(
+            tmp_path,
+            CORE_VERSION,
+            portable_runtime=False,
+            keep_work=True,
+        )
+
+    attempt = version_build_paths(
+        tmp_path,
+        CORE_VERSION,
+        channel="development",
+        release_version=build_version.release_identity_version("development"),
+        attempt_id="kept",
+    )
+    assert attempt.work.is_dir()

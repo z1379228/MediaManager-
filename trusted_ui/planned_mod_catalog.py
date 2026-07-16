@@ -28,22 +28,6 @@ class PlannedMod:
 # its security/integrity tests exist.
 PLANNED_MODS = (
     PlannedMod(
-        "ani-gamer-offline",
-        "動畫瘋單集離線",
-        "P1",
-        "動畫瘋附加 MOD（預設停用）",
-        "使用者先在官方目錄選定單集，再保存作品資料、封面與官方允許的離線媒體",
-        "集數選擇契約；DRM、登入、付費、地區或廣告限制一律 fail-closed",
-    ),
-    PlannedMod(
-        "direct-transfer",
-        "Direct Transfer",
-        "P2",
-        "直接傳輸 MOD",
-        "有界 HTTP(S) 直連、分檔、續傳與佇列優先級",
-        "SSRF／重新導向邊界、協定合約、來源驗證與傳輸工具選型",
-    ),
-    PlannedMod(
         "gopeed-transfer",
         "Gopeed Bridge",
         "P2",

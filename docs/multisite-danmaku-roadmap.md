@@ -57,8 +57,13 @@ providers.
   not enabled. The UI validates bounded official video URLs, opens them in the
   system browser and links to Meta's official data-export instructions.
 - `instagram`: feasibility completed in 1.7.2 with the same official-tool-only
-  boundary. Posts, Reels and IGTV pages can be opened after local URL
+  boundary. It is now a parent MOD with separate official-page and data-export
+  child controls. Posts, Reels and IGTV pages can be opened after local URL
   validation; MediaManager does not import sessions, cookies or stories.
+- `twitter`: X/Twitter is a separate parent MOD with official-post and
+  account-archive child controls. X explicitly prohibits non-API website
+  automation, so its hosts are excluded from `generic-ytdlp`; only locally
+  validated official URLs are opened after an explicit click.
 - `threads`: feasibility completed in 1.7.3. The current web host is
   `threads.com`, the previous `threads.net` host is canonicalized to it, and
   bounded post pages plus Meta's official Threads-data export help can be
@@ -125,7 +130,7 @@ path. See `docs/ani-gamer-feasibility.md` for the evidence and decision record.
 3. Shared format/subtitle/thumbnail result contract. **Complete.** Discovery,
    playlist and media-option contracts are versioned and transport-neutral.
 4. `generic-ytdlp` provider with a tested site matrix. **Initial Beta complete
-   in 1.5.0.** Vimeo, Dailymotion, SoundCloud, TikTok, Twitch and X/Twitter use
+   in 1.5.0.** Vimeo, Dailymotion, SoundCloud, TikTok and Twitch use
    an explicit host allowlist, separate generic-network permission and offline
    extractor/contract tests. It remains disabled by default; live smoke status
    must be recorded before any site graduates from Beta.
@@ -140,10 +145,14 @@ path. See `docs/ani-gamer-feasibility.md` for the evidence and decision record.
    media plus sidecars on failure.
 7. Bahamut Anime Crazy feasibility. **Complete in 1.7.1.** The result is an
    official-playback bridge only; no download or danmaku provider is created.
-8. Facebook and Instagram feasibility. **Complete in 1.7.2.** Both remain
-   official-page and official-export bridges; automated download is excluded.
+8. Facebook and Instagram feasibility. **Complete in 1.7.2.** Instagram is now
+   an official-page and official-export parent/child group; automated download
+   remains excluded. Facebook download remains a separate Testing capability.
 9. Threads public-content feasibility. **Complete in 1.7.3.** The result is an
    official-page and official-export bridge only, with no download provider.
+10. X/Twitter feasibility. **Complete in development 11.2.** Non-API website
+    automation and generic download ownership are removed. The result is an
+    official-post and official-account-archive parent/child group.
 
 ## Optional post-download MODs
 

@@ -7,6 +7,7 @@ from core.conversion.models import (
     ConversionTask,
 )
 from core.conversion.service import ConversionService
+from core.conversion.feature import MediaAdTrimFeature
 
 __all__ = [
     "ConversionPlan",
@@ -14,4 +15,5 @@ __all__ = [
     "ConversionService",
     "ConversionState",
     "ConversionTask",
+    "MediaAdTrimFeature",
 ]

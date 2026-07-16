@@ -59,6 +59,7 @@ def test_youtube_workspace_accepts_only_exact_official_https_hosts() -> None:
         "https://m.youtube.com/watch?v=three": "YouTube 行動版",
         "https://music.youtube.com/watch?v=four": "YouTube Music",
         "https://youtu.be/five": "youtu.be",
+        "https://www.youtube-nocookie.com/embed/six": "YouTube 隱私嵌入",
     }
     for url, label in accepted.items():
         assert is_official_youtube_url(url)
@@ -70,6 +71,7 @@ def test_youtube_workspace_accepts_only_exact_official_https_hosts() -> None:
         "https://user@music.youtube.com/watch?v=one",
         "https://youtu.be:443/one",
         "https://youtube.com",
+        "https://www.youtube-nocookie.com/watch?v=one",
         "https://www.youtube.com/watch?v=one\nhttps://evil.test",
     ):
         assert not is_official_youtube_url(url)
@@ -294,10 +296,24 @@ def test_youtube_workspace_uses_one_source_and_only_prefills_selected_urls(
 
     def federated_search(query: str, **options: object) -> FederatedSearchResult:
         calls.append({"query": query, **options})
+        if options.get("cursor"):
+            return FederatedSearchResult(
+                (
+                    items[1],
+                    _item(
+                        "three",
+                        "https://www.youtube.com/watch?v=three",
+                        "第三首",
+                    ),
+                ),
+                (),
+                ("youtube-search", "youtube-search"),
+            )
         return FederatedSearchResult(
             items,
             (),
             ("youtube-search", "youtube-search"),
+            (("youtube-search", "next-token"),),
         )
 
     discovery = SimpleNamespace(
@@ -334,9 +350,18 @@ def test_youtube_workspace_uses_one_source_and_only_prefills_selected_urls(
                 "provider_ids": ("youtube-search",),
                 "limit": 24,
                 "content_type": "all",
+                "cursor": "",
             }
         ]
         assert workspace.table.rowCount() == 2
+        assert workspace.more_button.isEnabled()
+        workspace.table.selectRow(0)
+        workspace.load_more()
+        _wait_until(app, lambda: not workspace.busy)
+        assert workspace.table.rowCount() == 3
+        assert not workspace.more_button.isEnabled()
+        assert calls[1]["cursor"] == "next-token"
+        assert workspace.selected_urls() == (items[0].url,)
         assert workspace.table.item(0, 4).text() == "YouTube"
         assert workspace.table.item(1, 3).text() == "1:01:01"
         assert workspace.table.item(1, 4).text() == "YouTube Music"
@@ -357,7 +382,7 @@ def test_youtube_workspace_uses_one_source_and_only_prefills_selected_urls(
         workspace.query.setText("https://youtu.be/direct")
         workspace.search()
         assert added[-1] == ("https://youtu.be/direct",)
-        assert len(calls) == 1
+        assert len(calls) == 2
     finally:
         workspace.shutdown()
         workspace.close()
@@ -417,6 +442,77 @@ def test_youtube_workspace_cancel_discards_late_results(monkeypatch) -> None:
         assert workspace.table.rowCount() == 0
         assert workspace.results == ()
         assert workspace.status.text() == "YouTube 搜尋已取消。"
+    finally:
+        release.set()
+        workspace.shutdown()
+        workspace.close()
+        workspace.deleteLater()
+        app.processEvents()
+
+
+def test_youtube_workspace_cancel_load_more_preserves_existing_results(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    started = threading.Event()
+    release = threading.Event()
+
+    def federated_search(*_args: object, **_kwargs: object) -> FederatedSearchResult:
+        started.set()
+        release.wait(1.0)
+        return FederatedSearchResult(
+            (
+                _item(
+                    "late",
+                    "https://www.youtube.com/watch?v=late",
+                    "不應附加",
+                ),
+            ),
+            (),
+            ("youtube-search",),
+        )
+
+    discovery = SimpleNamespace(
+        statuses=lambda: (
+            ProviderStatus("youtube-search", "YouTube Search", True),
+        ),
+        is_enabled=lambda provider_id: provider_id == "youtube-search",
+        federated_search=federated_search,
+    )
+    context = SimpleNamespace(
+        discovery=discovery,
+        download_providers=SimpleNamespace(
+            is_enabled=lambda provider_id: provider_id == "youtube"
+        ),
+        events=None,
+        audit=None,
+    )
+    workspace = create_youtube_workspace(context, lambda _urls: None)
+    existing = _item(
+        "existing",
+        "https://www.youtube.com/watch?v=existing",
+        "保留結果",
+    )
+    try:
+        workspace.results = (existing,)
+        workspace.last_query = "續頁取消測試"
+        workspace.next_cursor = "next-token"
+        workspace.populate_results()
+        workspace.load_more()
+        assert started.wait(1.0)
+        workspace.cancel_search()
+        release.set()
+        _wait_until(app, lambda: not workspace.busy)
+
+        assert workspace.results == (existing,)
+        assert workspace.table.rowCount() == 1
+        assert workspace.next_cursor == "next-token"
+        assert workspace.status.text() == "已取消載入更多；原搜尋結果仍保留。"
     finally:
         release.set()
         workspace.shutdown()

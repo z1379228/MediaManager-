@@ -9,10 +9,11 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
+import time
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Mapping
 
 from core.version import (
     BUILD_CHANNEL,
@@ -82,6 +83,40 @@ def validate_build_version(root: Path, version: str) -> None:
         )
 
 
+def validate_clean_source(root: Path) -> str:
+    """Return the exact Git revision, rejecting uncommitted release sources."""
+
+    if shutil.which("git") is None:
+        raise FileNotFoundError("Git is required to verify the release source")
+    status = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    if status.stdout.strip():
+        raise RuntimeError(
+            "release source is dirty; commit or intentionally remove every listed "
+            "change before packaging"
+        )
+    revision = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise RuntimeError("release source revision is invalid")
+    return revision
+
+
 def portable_release_tools(root: Path, *, enabled: bool) -> dict[str, Path]:
     if not enabled:
         return {}
@@ -121,6 +156,64 @@ def wheel_build_command(python: Path, wheel_output: Path) -> list[str]:
     ]
 
 
+def wheel_build_environment(
+    environment: Mapping[str, str], temp_root: Path
+) -> dict[str, str]:
+    """Keep every pip-created wheel artifact inside the current build attempt."""
+
+    temp_root.mkdir(parents=True, exist_ok=True)
+    tracker = temp_root / "build-tracker"
+    cache = temp_root / "cache"
+    tracker.mkdir()
+    cache.mkdir()
+    result = dict(environment)
+    result.update(
+        {
+            "TEMP": str(temp_root),
+            "TMP": str(temp_root),
+            "PIP_BUILD_TRACKER": str(tracker),
+            "PIP_CACHE_DIR": str(cache),
+            "PIP_NO_INDEX": "1",
+            "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+        }
+    )
+    return result
+
+
+def remove_build_tree(path: Path, *, attempts: int = 3) -> None:
+    """Remove one build-owned directory without touching release output."""
+
+    if attempts < 1:
+        raise ValueError("cleanup attempts must be positive")
+    for attempt in range(1, attempts + 1):
+        if not path.exists():
+            return
+        try:
+            shutil.rmtree(path)
+            return
+        except OSError:
+            if attempt == attempts:
+                raise
+            time.sleep(0.1 * attempt)
+
+
+def _record_cleanup_failure(
+    failure: BaseException | None,
+    errors: list[tuple[Path, OSError]],
+) -> None:
+    if not errors:
+        return
+    details = "; ".join(f"{path}: {error}" for path, error in errors)
+    message = (
+        "build temporary cleanup failed; close processes using these paths and run "
+        f"the project cleanup tool after restart: {details}"
+    )
+    if failure is not None:
+        failure.add_note(message)
+        return
+    raise OSError(message) from errors[0][1]
+
+
 def build_version(
     root: Path,
     version: str = CORE_VERSION,
@@ -136,6 +229,7 @@ def build_version(
             "stable packaging requires explicit user confirmation"
         )
     validate_build_version(root, version)
+    validate_clean_source(root)
     public_version = release_identity_version(channel)
     paths = version_build_paths(
         root,
@@ -145,65 +239,72 @@ def build_version(
         attempt_id=secrets.token_hex(4),
     )
     portable_tools = portable_release_tools(root, enabled=portable_runtime)
-    paths.temp.mkdir(parents=True, exist_ok=True)
-    build_environment = os.environ.copy()
-    build_environment["TEMP"] = str(paths.temp)
-    build_environment["TMP"] = str(paths.temp)
-    pyinstaller = Path(sys.executable).with_name("pyinstaller.exe")
-    if not pyinstaller.is_file():
-        raise FileNotFoundError(f"PyInstaller executable is missing: {pyinstaller}")
-    paths.work.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        [
-            str(pyinstaller),
-            "--clean",
-            "--noconfirm",
-            "--workpath",
-            str(paths.pyinstaller_work),
-            "--distpath",
-            str(paths.executable_output),
-            str(root / "MediaManager.spec"),
-        ],
-        cwd=root,
-        check=True,
-        env=build_environment,
-    )
-    if paths.wheel_output.exists():
-        shutil.rmtree(paths.wheel_output)
-    paths.wheel_output.mkdir(parents=True)
-    wheel_environment = build_environment.copy()
-    wheel_environment["PIP_NO_INDEX"] = "1"
-    wheel_environment["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
-    wheel_temp = Path(tempfile.mkdtemp(prefix="mediamanager-wheel-"))
-    wheel_environment["TEMP"] = str(wheel_temp)
-    wheel_environment["TMP"] = str(wheel_temp)
+    failure: BaseException | None = None
     try:
+        paths.temp.mkdir(parents=True, exist_ok=True)
+        build_environment = os.environ.copy()
+        build_environment["TEMP"] = str(paths.temp)
+        build_environment["TMP"] = str(paths.temp)
+        pyinstaller = Path(sys.executable).with_name("pyinstaller.exe")
+        if not pyinstaller.is_file():
+            raise FileNotFoundError(
+                f"PyInstaller executable is missing: {pyinstaller}"
+            )
+        paths.work.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            [
+                str(pyinstaller),
+                "--clean",
+                "--noconfirm",
+                "--workpath",
+                str(paths.pyinstaller_work),
+                "--distpath",
+                str(paths.executable_output),
+                str(root / "MediaManager.spec"),
+            ],
+            cwd=root,
+            check=True,
+            env=build_environment,
+        )
+        if paths.wheel_output.exists():
+            remove_build_tree(paths.wheel_output)
+        paths.wheel_output.mkdir(parents=True)
+        wheel_environment = wheel_build_environment(
+            build_environment, paths.temp / "pip-wheel"
+        )
         subprocess.run(
             wheel_build_command(Path(sys.executable), paths.wheel_output),
             cwd=root,
             check=True,
             env=wheel_environment,
         )
+        executable = paths.executable_output / "MediaManager.exe"
+        wheel = paths.wheel_output / f"mediamanager-{version}-py3-none-any.whl"
+        return stage_version(
+            root,
+            version=version,
+            release_version=public_version,
+            executable=executable,
+            wheel=wheel,
+            portable_tools=portable_tools,
+            channel=channel,
+            confirm_stable=confirm_stable,
+        )
+    except BaseException as exc:
+        failure = exc
+        raise
     finally:
-        shutil.rmtree(wheel_temp, ignore_errors=True)
-    executable = paths.executable_output / "MediaManager.exe"
-    wheel = paths.wheel_output / f"mediamanager-{version}-py3-none-any.whl"
-    target = stage_version(
-        root,
-        version=version,
-        release_version=public_version,
-        executable=executable,
-        wheel=wheel,
-        portable_tools=portable_tools,
-        channel=channel,
-        confirm_stable=confirm_stable,
-    )
-    if not keep_work:
-        shutil.rmtree(paths.work)
-    for residue in (root / "build", root / "mediamanager.egg-info"):
-        if residue.is_dir() and residue.parent == root:
-            shutil.rmtree(residue)
-    return target
+        cleanup_errors: list[tuple[Path, OSError]] = []
+        cleanup_targets = [] if keep_work else [paths.work]
+        cleanup_targets.extend((root / "build", root / "mediamanager.egg-info"))
+        for target in cleanup_targets:
+            if target.parent not in {root, root / ".work" / release_track(channel)}:
+                continue
+            try:
+                remove_build_tree(target)
+            except OSError as exc:
+                cleanup_errors.append((target, exc))
+        _record_cleanup_failure(failure, cleanup_errors)
 
 
 def main() -> int:

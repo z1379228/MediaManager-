@@ -5,16 +5,19 @@
 
 ## 目前可確認的來源基線
 
-- 目前來源顯示為開發版 11.1，核心相容版本 11.1.0；它是 11.0 系列測試檔案，
-  開發與測試流程仍維持 `SAFE_MODE`。
-- GitHub 的 `test-v1.0.0` 是較早 revision 的不可覆寫測試附件。目前來源新增動畫瘋
-  目錄、封面與集數導覽後尚未重新封裝，因此來源與已發布附件不能視為同一候選成品。
-- 網站父子生命週期、工作區、網址路由與搜尋來源分離；目前共有 19 個內建 MOD、
-  5 個網站群組及每組 4 個語言檔。
-- Ruff、MOD 群組稽核與文字污染檢查通過；Pytest 719 項通過，另有 2 項 Windows
+- 目前來源顯示為開發版 16.1，核心相容版本 16.1.0；最新完整成品仍是
+  `Version/Development/16.0`，16.1 尚未封裝，開發與測試流程維持 `SAFE_MODE`。
+- GitHub 的 `test-v1.0.0` 是較早 revision 的不可覆寫測試附件。目前來源已再新增
+  其後的網站父子 MOD、樹狀管理與動畫瘋番劇儲存，因此來源與已發布附件不能
+  視為同一候選成品。
+- 網站父子生命週期、工作區、網址路由與搜尋來源分離；目前共有 31 個內建 MOD、
+  8 個網站群組及每組 4 個語言檔。
+- Ruff、MOD 群組稽核與文字污染檢查通過；Pytest 848 項通過，另有 2 項 Windows
   symlink 測試因帳戶權限跳過。
-- 開發版 11.1 的 EXE、`release-info.json`、`SHA256SUMS.txt`、copied-folder smoke
-  與發布後雜湊只證明測試附件一致，不能取代 Stable 的 production 簽章及候選證據。
+- 開發版 16.0 已建立 EXE、`release-info.json` 與 `SHA256SUMS.txt`，copied-folder
+  三種 CLI 與 GUI smoke 通過；封裝 provider smoke 為 7/7。這些仍只證明 Development
+  成品一致，不能取代 Stable 的 production 簽章及候選證據。動畫瘋官方頁目前可能要求
+  Cloudflare 瀏覽器驗證，14.2 已提供不繞過驗證的官方作品／單集網址貼入降級流程。
 
 ## 仍然阻擋 Stable 1.0 的項目
 
@@ -22,8 +25,10 @@
 2. `MediaManager.exe` 的 Windows Authenticode 狀態仍為 `NotSigned`。
 3. 必須從最終來源 revision 重建新的 Testing 候選，並讓 evidence 綁定成品 digest、
    產生時間與發布工具版本；既有 `test-v1.0.0` 不可覆寫或冒充新候選。
-4. 尚未完成最新候選的升級、回退、MOD 接線、網址 smoke、完整 copied-folder 驗證及
-   上傳前後 SHA-256 比對。
+4. 16.0 Development 已完成成品驗證；16.1 必須先從最終提交 revision 建立可重現
+   Development 成品，之後才可建立新的 Testing 候選。Development 的 copied-folder
+   與本機 SHA-256 不能取代該候選的升級、
+   回退、全綠網址 smoke 與上傳前後 SHA-256 比對。
 5. `generic-ytdlp` 仍是預設停用的舊 Beta 多網域相容 provider；它不影響 YouTube／
    Bilibili 工作區隔離，但正式版前仍應評估是否保留或逐站遷移。
 

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "locale": "zh-CN",
+  "group_name": "Instagram",
+  "workspace": {
+    "title": "Instagram 官方工具",
+    "subtitle": "仅验证并打开官方公开媒体页面，或前往 Meta 官方账号资料导出说明；不自动抓取内容。",
+    "enable": "启用 Instagram 主 MOD",
+    "url_label": "Instagram 官方媒体网址",
+    "placeholder": "https://www.instagram.com/reel/...",
+    "initial_preview": "启用对应子 MOD 后，可打开官方媒体页面或资料导出说明。",
+    "wrong_site": "仅接受 instagram.com 官方贴文、Reel 或 IGTV 网址。"
+  },
+  "ui": {
+    "boundary": "此 MOD 不自动解析、收集或下载 Instagram 内容，也不读取 Cookie。",
+    "open_page": "打开官方媒体页面",
+    "open_export": "打开官方资料导出说明",
+    "page_disabled": "请先启用“官方媒体页面”子 MOD。",
+    "export_disabled": "请先启用“资料导出”子 MOD。",
+    "invalid_url": "网址不是允许的 Instagram 官方公开媒体页面。",
+    "opened_page": "已交由系统浏览器打开 Instagram 官方页面。",
+    "opened_export": "已打开 Meta 官方 Instagram 资料导出说明。",
+    "browser_failed": "系统无法打开浏览器。"
+  },
+  "modules": {
+    "instagram": {"name": "Instagram 主 MOD", "purpose": "管理 Instagram 官方工具及其子 MOD", "control_location": "MOD 管理 → Instagram"},
+    "instagram-page": {"name": "官方媒体页面", "purpose": "验证官方公开贴文、Reel 或 IGTV 网址后交由浏览器打开", "control_location": "Instagram 官方工具 → 打开官方页面"},
+    "instagram-export": {"name": "资料导出", "purpose": "打开 Meta 官方 Instagram 资料导出说明", "control_location": "Instagram 官方工具 → 官方资料导出"}
+  }
+}

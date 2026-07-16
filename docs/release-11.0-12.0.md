@@ -36,5 +36,94 @@
   `Version/Development/11.1`，並在 GitHub 標為 Pre-release「測試檔案」。
 - 既有 `test-v1.0.0` 與所有舊附件保持不變，不得宣稱它們已包含上述變更。
 
-後續 11.x 內容會繼續附加在本文件，不另建立零散 release 檔。正式封裝時必須同步
-版本事實、測試證據、`release-info.json` 與 `SHA256SUMS.txt`。
+## 11.2（尚未封裝的來源更新）
+
+- MOD 管理改成網站父節點樹狀介面。展開 YouTube 後會顯示「批量下載」主 MOD；
+  主 MOD 啟用時才列出搜尋器、影片試看、搜尋紀錄、失效替代、相似內容及自動切割
+  子 MOD。Bilibili、動畫瘋、Facebook、MEGA、Instagram 與 X/Twitter 使用相同
+  父子生命週期，不再把不同網域功能攤平成任意開關。
+- 新增預設停用的 `instagram` 父 MOD，以及 `instagram-page`、`instagram-export`
+  子 MOD。工作區只接受經本機白名單驗證的 Instagram 官方貼文、Reel、IGTV 網址，
+  並可明確開啟 Meta 官方帳號資料匯出說明；不讀 Cookie、不自動擷取或下載。
+- 新增預設停用的 `twitter` 父 MOD，以及 `twitter-page`、`twitter-export` 子 MOD。
+  工作區把 `twitter.com` 官方貼文正規化到 `x.com`，並提供 X 官方帳號資料封存說明；
+  不使用瀏覽器腳本、爬蟲或其他非 API 自動化。
+- X/Twitter 從 `generic-ytdlp` 網域白名單及公開 smoke matrix 移除，避免一般下載器
+  靜默接管專屬網域。未來如加入下載，必須使用獲授權的官方 API 與獨立能力審查。
+- 內建 MOD 總數增為 25、網站父群組增為 7；Bootstrap、固定 SHA-256、依賴快照、
+  官方工具工作區與父關閉時的子 MOD 連鎖停用測試同步更新。
+- Ruff、MOD 群組稽核、保留版本雜湊稽核與 774 項測試通過；2 項 Windows
+  symlink 測試因目前帳戶權限跳過。
+- 第一批子網域路由補齊：YouTube 隱私嵌入 `www.youtube-nocookie.com/embed/<id>`
+  回到 YouTube 父 MOD；Bilibili 官方 `search.bilibili.com/all?keyword=...` 只回到
+  搜尋子 MOD且不可加入下載；Instagram 行動頁與 X 行動頁分別正規化到官方主網址。
+- 搜尋結果來源判定改共用中央網域／路徑路由，不再於 UI 維護第二份鬆散主機清單；
+  下載工作區也會要求 route 的下載 owner 相符，避免搜尋頁被當成可下載媒體。
+- YouTube 與 Bilibili 專屬搜尋工作區接通既有 provider 分頁游標，新增手動「載入更多」。
+  結果以正規媒體識別去重並限制為 200 筆；載入下一頁會保留目前選取及 Bilibili
+  UP 主篩選，取消或失敗時保留已顯示頁面，不使用無限捲動或背景自動請求。
+- YouTube 與 Bilibili 下載新增 H.264/AAC 1080p 相容來源選取、Opus 160k 及 FLAC
+  編碼選項。可信 UI 會顯示格式用途與轉碼限制；FLAC 明確標示不會提升原始來源音質。
+  Facebook、MEGA 與通用 Beta provider 不宣告這些未驗證能力。
+- 畫質選項擴充至 1440p 與 2160p（4K），但既有「自動相容」仍以 1080p 為上限，
+  避免升級後無預警增加流量及容量。音訊另加入 AAC/M4A 256k、MP3 320k 與 WAV PCM；
+  高位元率、FLAC 與 WAV 都明確說明不會還原有損來源，WAV 另提示大容量用途。
+- 本節只描述開發版 11.2 來源；尚未建立 `Version/Development/11.2`、EXE、
+  `release-info.json` 或 GitHub Release，也未變更任何既有公開附件。
+
+## 11.3（尚未封裝的來源更新）
+
+- 媒體格式分析契約向後相容加入 HDR／SDR 動態範圍，下載工作區會合併顯示解析度、
+  FPS、動態範圍、影音編碼、來源格式、預估容量與音軌／字幕摘要。
+- YouTube 與 Bilibili 新增獨立容器選項：自動、MP4、MKV、WebM。MP4／WebM 必須先
+  讀取影片資訊，再依實際來源副檔名與影音編碼驗證；不相容時阻擋加入工作並顯示
+  建議容器，不會靜默轉碼或改變選擇。
+- MKV 保持通用安全封裝，Bilibili 的 ASS 彈幕可繼續明確選擇嵌入 MKV；音訊預設
+  仍由 M4A、MP3、Opus、FLAC 或 WAV 決定輸出，不接受影片容器。
+- 指定容器會進入下載請求、佇列持久化、重複下載身分、確認畫面及輸出副檔名；
+  YouTube／Bilibili provider 依容器使用有界格式選擇器。
+- Ruff、MOD 群組稽核、保留版本雜湊稽核與 780 項測試通過；2 項 Windows
+  symlink 測試因目前帳戶權限跳過。
+- 本節只描述開發版 11.3 來源；尚未建立 `Version/Development/11.3`、EXE、
+  `release-info.json` 或 GitHub Release，也未變更任何既有公開附件。
+
+## 11.4（尚未封裝的來源更新）
+
+- YouTube 分開回報人工字幕與自動字幕語言，可信 UI 會在指定字幕欄位顯示兩種來源，
+  不再把所有字幕混成無法判斷的單一清單。
+- 新增明確選用的媒體資訊、來源縮圖與章節寫入；三個選項經有界
+  `provider_options` 傳入 provider，預設全部關閉。
+- YouTube 與 Bilibili 可各自原子儲存網域下載設定；手動模式不覆寫已存設定，智慧模式
+  只在使用者選擇時套用格式、容器、字幕、優先級與輸出資料夾。
+- 播放清單、TXT／CSV 匯入與單片工作都使用相同 provider 設定，不會只在畫面顯示卻
+  遺漏於實際佇列。
+
+## 11.5（尚未封裝的來源更新）
+
+- Bilibili 展開 UP 主或分 P 清單後，可依標題、UP 主名稱或分段 ID 做本機篩選；順序、
+  可用狀態與 50 項 UP 主解析上限維持不變。
+- 人工字幕、自動字幕與彈幕可用狀態分開顯示；彈幕仍只由
+  `bilibili-danmaku` 子 MOD 控制 XML、ASS 與 MKV。
+- 新增標準 3 次與韌性 8 次兩種官方來源重試設定；不切換未知 CDN、不借用第三方下載站。
+
+## 11.6（尚未封裝的來源更新）
+
+- MEGA 公開資料夾由「只辨識」提升為可選的整個資料夾下載，仍只呼叫官方
+  `mega-get`，不自行解析解密內容。
+- 完成結果允許單一檔案或單一根資料夾；資料夾樹限制 10,000 項、禁止符號連結，且
+  provider 與核心會再次驗證輸出仍位於指定資料夾內。
+- MEGA UI 會分別計算公開檔案與資料夾，資料夾及批量工作禁止指定單一檔名；影音格式、
+  字幕、播放清單與試聽控制仍不會混入 MEGA 工作區。
+
+## 11.7（尚未封裝的來源更新）
+
+- Instagram 與 X 的官方資料匯出子 MOD 新增本機 ZIP 預覽與媒體匯入；只有使用者選擇
+  本機檔案後才執行，不會背景登入、下載或上傳。
+- ZIP 匯入會限制檔案大小、20,000 項、64 GiB 解壓總量及壓縮比，拒絕路徑穿越、
+  加密項目、符號連結與大小寫重複路徑。
+- 只解出圖片與影片；Cookie、腳本及帳號中繼資料不會被執行或匯入。成功後建立有界的
+  `media-index.json`，失敗時回復本輪已建立的媒體檔。
+
+11.x 的內容集中保留於本文件，不另建立零散次版本 release 檔。12.0 起改記錄於
+`release-12.0-13.0.md`。正式封裝時仍須同步測試證據、`release-info.json` 與
+`SHA256SUMS.txt`。

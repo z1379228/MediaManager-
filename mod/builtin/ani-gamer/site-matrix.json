@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "provider_id": "ani-gamer",
+  "last_live_check": "2026-07-16",
+  "workflow": {
+    "identify": "supported",
+    "discover": "browser-mediated",
+    "analyze": "browser-mediated",
+    "preview": "browser-mediated",
+    "queue": "not-applicable",
+    "cancel": "supported",
+    "complete": "conditional"
+  },
+  "ui_capabilities": [
+    "search", "thumbnail", "official-page", "offline-archive", "cancel"
+  ],
+  "features": [
+    {"feature_id": "official-catalog", "support_status": "browser-mediated-official"},
+    {"feature_id": "canonical-series-url", "support_status": "offline-contract"},
+    {"feature_id": "canonical-episode-url", "support_status": "offline-contract"},
+    {"feature_id": "official-cover", "support_status": "browser-mediated-official"},
+    {"feature_id": "local-media-archive", "support_status": "offline-contract"},
+    {"feature_id": "local-archive-sha256", "support_status": "offline-contract"}
+  ],
+  "boundaries": [
+    "No cookie import or automated login and no Cloudflare verification bypass",
+    "No region, payment, DRM or membership bypass",
+    "No advertisement bypass, stream extraction or private-content access",
+    "Playback remains on the official page"
+  ]
+}

@@ -22,7 +22,14 @@ SITE_MOD_CHILDREN = {
         "youtube-auto-split",
     ),
     "bilibili": ("bilibili-search", "bilibili-danmaku"),
-    "ani-gamer": ("ani-gamer-search", "ani-gamer-episodes"),
+    "ani-gamer": (
+        "ani-gamer-search",
+        "ani-gamer-episodes",
+        "ani-gamer-offline",
+    ),
+    "instagram": ("instagram-page", "instagram-export"),
+    "threads": ("threads-page", "threads-export"),
+    "twitter": ("twitter-page", "twitter-export"),
     "facebook": (),
     "mega": (),
 }

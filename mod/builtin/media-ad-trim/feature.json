@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "provider_id": "media-ad-trim",
+  "display_name": "Local Ad Segment Trim",
+  "kind": "local-feature",
+  "default_enabled": false,
+  "parent_provider_id": "media-convert",
+  "permissions": [
+    "storage.user-selected.read",
+    "storage.user-selected.write",
+    "process.ffmpeg"
+  ]
+}

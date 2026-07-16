@@ -7,7 +7,7 @@ import re
 from urllib.parse import parse_qsl, urlsplit
 
 
-YOUTUBE_HOSTS = frozenset(
+YOUTUBE_STANDARD_HOSTS = frozenset(
     {
         "youtube.com",
         "www.youtube.com",
@@ -16,7 +16,9 @@ YOUTUBE_HOSTS = frozenset(
         "youtu.be",
     }
 )
-BILIBILI_HOSTS = frozenset(
+YOUTUBE_EMBED_HOSTS = frozenset({"www.youtube-nocookie.com"})
+YOUTUBE_HOSTS = YOUTUBE_STANDARD_HOSTS | YOUTUBE_EMBED_HOSTS
+BILIBILI_MEDIA_HOSTS = frozenset(
     {
         "bilibili.com",
         "www.bilibili.com",
@@ -25,6 +27,8 @@ BILIBILI_HOSTS = frozenset(
         "b23.tv",
     }
 )
+BILIBILI_SEARCH_HOSTS = frozenset({"search.bilibili.com"})
+BILIBILI_HOSTS = BILIBILI_MEDIA_HOSTS | BILIBILI_SEARCH_HOSTS
 FACEBOOK_HOSTS = frozenset(
     {
         "facebook.com",
@@ -75,6 +79,17 @@ def _youtube_route(host: str, path: str, query: str) -> SiteRoute | None:
         return None
     video_id = (values.get("v") or ("",))[0]
     playlist_id = (values.get("list") or ("",))[0]
+    if host in YOUTUBE_EMBED_HOSTS:
+        parts = tuple(part for part in path.split("/") if part)
+        if (
+            len(parts) == 2
+            and parts[0] == "embed"
+            and not video_id
+            and not playlist_id
+            and _valid_token(parts[1], maximum=64)
+        ):
+            return SiteRoute("youtube", "video", "youtube", "youtube-search")
+        return None
     if host == "youtu.be":
         parts = tuple(part for part in path.split("/") if part)
         if len(parts) != 1 or playlist_id or not _valid_token(parts[0], maximum=64):
@@ -103,7 +118,21 @@ def _youtube_route(host: str, path: str, query: str) -> SiteRoute | None:
     return None
 
 
-def _bilibili_route(host: str, path: str) -> SiteRoute | None:
+def _bilibili_route(host: str, path: str, query: str) -> SiteRoute | None:
+    if host in BILIBILI_SEARCH_HOSTS:
+        values = _query_values(query)
+        keyword = (values.get("keyword") or ("",))[0] if values is not None else ""
+        if (
+            path != "/all"
+            or values is None
+            or set(values) != {"keyword"}
+            or len(values["keyword"]) != 1
+            or not 1 <= len(keyword) <= 200
+            or not keyword.strip()
+            or any(ord(character) < 32 or ord(character) == 127 for character in keyword)
+        ):
+            return None
+        return SiteRoute("bilibili", "search-page", None, "bilibili-search")
     parts = tuple(part for part in path.split("/") if part)
     if host == "b23.tv" and len(parts) == 1 and _valid_token(parts[0], maximum=64):
         kind = "short-link"
@@ -181,17 +210,17 @@ def _ani_gamer_route(path: str, query: str) -> SiteRoute | None:
         return None
     if path == "/animeRef.php":
         kind = "series"
-        download_provider = None
+        provider_id = "ani-gamer-search"
     elif path == "/animeVideo.php":
         kind = "episode"
-        download_provider = "ani-gamer-offline"
+        provider_id = "ani-gamer-episodes"
     else:
         return None
     return SiteRoute(
         "ani-gamer",
         kind,
-        download_provider,
-        "ani-gamer-search",
+        None,
+        provider_id,
     )
 
 
@@ -225,7 +254,7 @@ def classify_site_url(value: object) -> SiteRoute | None:
     if host in YOUTUBE_HOSTS:
         return _youtube_route(host, parsed.path, parsed.query)
     if host in BILIBILI_HOSTS:
-        return _bilibili_route(host, parsed.path)
+        return _bilibili_route(host, parsed.path, parsed.query)
     if host in FACEBOOK_HOSTS:
         return _facebook_route(host, parsed.path, parsed.query)
     if host in ANI_GAMER_HOSTS:

@@ -42,14 +42,6 @@
       "support_status": "verified-public-analysis",
       "last_live_check": "2026-07-14",
       "hosts": ["twitch.tv", "www.twitch.tv", "m.twitch.tv", "clips.twitch.tv"]
-    },
-    {
-      "site_id": "twitter",
-      "display_name": "X / Twitter",
-      "extractor_prefix": "twitter",
-      "support_status": "verified-public-analysis",
-      "last_live_check": "2026-07-14",
-      "hosts": ["x.com", "www.x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com"]
     }
   ],
   "excluded": [
@@ -64,6 +56,10 @@
     {
       "site_id": "facebook-instagram-threads",
       "reason": "Excluded from automated access; official-page bridges remain separate"
+    },
+    {
+      "site_id": "x-twitter",
+      "reason": "Excluded from non-API website automation; official-page tools remain separate"
     }
   ]
 }

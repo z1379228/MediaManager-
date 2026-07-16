@@ -48,6 +48,29 @@ def test_ani_gamer_ui_strings_are_complete_in_all_four_mod_locales() -> None:
     assert all(set(group.ui) == expected for group in groups)
 
 
+@pytest.mark.parametrize("group_id", ("instagram", "threads", "twitter"))
+def test_official_social_ui_strings_are_complete_in_all_four_locales(
+    group_id: str,
+) -> None:
+    groups = tuple(
+        load_builtin_mod_group(group_id, locale=locale)
+        for locale in SUPPORTED_LOCALE_CODES
+    )
+    expected = {
+        "boundary",
+        "open_page",
+        "open_export",
+        "page_disabled",
+        "export_disabled",
+        "invalid_url",
+        "opened_page",
+        "opened_export",
+        "browser_failed",
+    }
+
+    assert all(set(group.ui) == expected for group in groups)
+
+
 def test_site_group_rejects_incomplete_selected_translation(tmp_path: Path) -> None:
     builtin_root = tmp_path / "builtin"
     shutil.copytree(BUILTIN_ROOT / "youtube", builtin_root / "youtube")

@@ -1,4 +1,4 @@
-"""Status and enable controls for MODs bundled with MediaManager."""
+"""Status and hierarchical enable controls for bundled MODs."""
 
 from __future__ import annotations
 
@@ -7,11 +7,13 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from core.builtin_mod_catalog import (
+    BUILTIN_MOD_CHILDREN,
     BUILTIN_MOD_CATALOG,
     BUILTIN_MOD_IDS as BUILTIN_MOD_IDS,
+    BUILTIN_MOD_PARENT,
 )
 from core.mod_groups import (
-    SITE_MOD_PARENT,
+    SITE_MOD_CHILDREN,
     BuiltinModGroup,
     BuiltinModGroupError,
     load_builtin_mod_groups,
@@ -95,7 +97,7 @@ def builtin_mod_rows(
                 bool(status.enabled) if status is not None and available else False,
                 reason,
                 group_name,
-                SITE_MOD_PARENT.get(provider_id, ""),
+                BUILTIN_MOD_PARENT.get(provider_id, ""),
                 module.module_id if module is not None else "",
             )
         )
@@ -107,13 +109,14 @@ def create_builtin_mod_panel(context: object, parent: object = None) -> object:
     from PySide6.QtGui import QColor
     from PySide6.QtWidgets import (
         QAbstractItemView,
+        QCheckBox,
         QHBoxLayout,
         QHeaderView,
         QLabel,
         QMessageBox,
         QPushButton,
-        QTableWidget,
-        QTableWidgetItem,
+        QTreeWidget,
+        QTreeWidgetItem,
         QVBoxLayout,
         QWidget,
     )
@@ -128,10 +131,9 @@ def create_builtin_mod_panel(context: object, parent: object = None) -> object:
     page.setSpacing(10)
 
     intro = QLabel(
-        "內建 MOD 隨核心發布並通過固定雜湊驗證；可在此統一開關，"
-        "也會同步對應工作區。網站主 MOD 啟用後才顯示其子 MOD；"
-        "停用主 MOD 會同步停用子 MOD並取消它目前的工作。"
-        "表尾的「製作中」是已確立的排程，尚未安裝、不可啟用，也不代表已支援。"
+        "網站功能已依父 MOD 與子 MOD 分組。點擊網站名稱展開；先啟用主 MOD，"
+        "才會顯示搜尋、批量下載、預覽等子 MOD。停用主 MOD 會同步停用子 MOD，"
+        "並取消它目前的工作。表尾的「製作中」尚不可啟用，也不代表已支援。"
     )
     intro.setObjectName("sectionSubtitle")
     intro.setWordWrap(True)
@@ -142,41 +144,44 @@ def create_builtin_mod_panel(context: object, parent: object = None) -> object:
     page.addWidget(summary)
 
     feature_guide = QLabel(
-        "選用功能使用說明：啟用 Media Convert 後到主畫面同名分頁轉檔（需要 FFmpeg）；"
-        "啟用 Speech to Text 後到同名分頁匯入本機模型並轉錄（需要 whisper-cli）；"
-        "啟用 Automation 後到 Automation 分頁建立規則。Automation 的轉檔／轉錄動作"
-        "還必須先啟用前兩個 MOD。"
+        "使用方式：Media Convert 需先安裝 FFmpeg；Speech to Text 需 whisper-cli "
+        "與語音模型；Automation 必須先啟用 Automation MOD，再到自動化頁建立規則。"
     )
     feature_guide.setObjectName("modUsageGuide")
     feature_guide.setWordWrap(True)
     page.addWidget(feature_guide)
 
-    table = QTableWidget(0, 5)
-    table.setObjectName("builtinModTable")
-    table.setAccessibleName("內建與製作中 MOD 狀態")
-    table.setHorizontalHeaderLabels(
-        ("MOD／規劃", "狀態", "用途／預定能力", "控制位置／尚缺", "啟用")
+    tree = QTreeWidget()
+    tree.setObjectName("builtinModTree")
+    tree.setAccessibleName("依網站分組的內建 MOD 清單")
+    tree.setColumnCount(5)
+    tree.setHeaderLabels(
+        ("MOD／網站", "狀態", "用途與能力", "控制位置／缺口", "啟用")
     )
-    table.verticalHeader().hide()
-    table.setAlternatingRowColors(True)
-    table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-    table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-    table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-    header = table.horizontalHeader()
+    tree.setAlternatingRowColors(True)
+    tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+    tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+    tree.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+    tree.setRootIsDecorated(True)
+    tree.setItemsExpandable(True)
+    tree.setExpandsOnDoubleClick(True)
+    header = tree.header()
     header.setStretchLastSection(False)
     header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
     header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-    table.setColumnWidth(0, 180)
-    table.setColumnWidth(1, 104)
-    table.setColumnWidth(2, 205)
-    table.setColumnWidth(4, 84)
-    page.addWidget(table, 1)
+    tree.setColumnWidth(0, 220)
+    tree.setColumnWidth(1, 112)
+    tree.setColumnWidth(2, 235)
+    tree.setColumnWidth(4, 104)
+    page.addWidget(tree, 1)
 
     controls = QHBoxLayout()
     controls.addStretch()
-    refresh = QPushButton("重新整理狀態")
+    refresh = QPushButton("重新整理 MOD 狀態")
     controls.addWidget(refresh)
     page.addLayout(controls)
+
+    expanded_groups: set[str] = set()
 
     def change_state(provider_id: str, enabled: bool) -> None:
         try:
@@ -184,13 +189,75 @@ def create_builtin_mod_panel(context: object, parent: object = None) -> object:
         except (KeyError, OSError, RuntimeError) as error:
             QMessageBox.critical(
                 panel,
-                "無法變更 MOD 狀態",
+                "無法切換 MOD 狀態",
                 f"{provider_id}\n{error}",
             )
+            QTimer.singleShot(0, populate)
             return
         if cancelled:
-            summary.setToolTip(f"停用 {provider_id} 時取消 {cancelled} 個工作")
+            summary.setToolTip(f"停用 {provider_id} 時取消了 {cancelled} 個工作")
         QTimer.singleShot(0, populate)
+
+    def state_text(row: BuiltinModRow) -> str:
+        if row.enabled:
+            return "已啟用"
+        if row.available:
+            return "已停用"
+        return "初始化失敗"
+
+    def state_color(row: BuiltinModRow) -> QColor:
+        return QColor(
+            COLORS["success"]
+            if row.enabled
+            else COLORS["muted"]
+            if row.available
+            else COLORS["danger"]
+        )
+
+    def add_mod_item(parent_item: QTreeWidgetItem | None, row: BuiltinModRow) -> None:
+        item = QTreeWidgetItem(
+            (
+                f"{row.display_name}\n{row.provider_id}",
+                state_text(row),
+                row.purpose,
+                row.control_location,
+                "",
+            )
+        )
+        item.setData(0, Qt.ItemDataRole.UserRole, row.provider_id)
+        item.setForeground(1, state_color(row))
+        tooltip = "\n".join(
+            part
+            for part in (
+                f"{row.display_name} ({row.provider_id})",
+                row.purpose,
+                row.control_location,
+                f"原因：{row.unavailable_reason}" if row.unavailable_reason else "",
+            )
+            if part
+        )
+        for column in range(5):
+            item.setToolTip(column, tooltip)
+        if parent_item is None:
+            tree.addTopLevelItem(item)
+        else:
+            parent_item.addChild(item)
+
+        toggle = QCheckBox("啟用")
+        toggle.setObjectName(f"builtinModToggle-{row.provider_id}")
+        toggle.setAccessibleName(f"{row.display_name} 啟用狀態")
+        toggle.setChecked(row.enabled)
+        toggle.setEnabled(row.available)
+        if row.available:
+            toggle.setToolTip("勾選啟用；取消勾選會停止此 MOD 的新工作")
+        elif row.unavailable_reason:
+            toggle.setToolTip(f"MOD 初始化失敗：{row.unavailable_reason}")
+        else:
+            toggle.setToolTip("MOD 尚未正確載入；請重新整理或查看錯誤原因")
+        toggle.toggled.connect(
+            lambda checked, selected=row.provider_id: change_state(selected, checked)
+        )
+        tree.setItemWidget(item, 4, toggle)
 
     def populate() -> None:
         feature_source = getattr(context, "features", None)
@@ -201,31 +268,21 @@ def create_builtin_mod_panel(context: object, parent: object = None) -> object:
             getattr(context, "builtin_mod_errors", {}),
             locale=getattr(getattr(context, "settings", None), "language", "zh-TW"),
         )
-        parent_enabled = {
-            row.provider_id: row.enabled
-            for row in all_rows
-            if not row.parent_provider_id
-        }
-        rows = tuple(
-            row
-            for row in all_rows
-            if not row.parent_provider_id
-            or parent_enabled.get(row.parent_provider_id, False)
-        )
-        planned_rows = tuple(PLANNED_MODS)
+        rows_by_id = {row.provider_id: row for row in all_rows}
+        grouped_ids = frozenset(BUILTIN_MOD_CHILDREN).union(BUILTIN_MOD_PARENT)
         available_count = sum(row.available for row in all_rows)
         enabled_count = sum(row.enabled for row in all_rows)
         ready = available_count == len(all_rows)
         summary.setText(
-            f"內建 MOD {available_count}/{len(all_rows)} 已註冊 · "
-            f"{enabled_count} 個已啟用 · 目前顯示 {len(rows)} 個父／子 MOD"
-            f" · 製作中 {len(PLANNED_MODS)} 項"
+            f"內建 MOD {available_count}/{len(all_rows)} 已載入 · "
+            f"{enabled_count} 個已啟用 · {len(SITE_MOD_CHILDREN)} 個網站父 MOD"
+            f" · 規劃中 {len(PLANNED_MODS)} 個"
         )
         summary.setToolTip(
-            "製作中表示已確立但尚未成為可執行 MOD；P0／P1／P2 代表優先級。"
-            "Instagram、Threads 與動畫瘋保留官方橋接；Facebook、MEGA 已有獨立下載 MOD。"
+            "點擊網站父節點展開主 MOD；主 MOD 啟用後才顯示並允許管理其子 MOD。"
+            "Instagram、Threads 與 X 僅提供官方頁面及官方資料匯出工具，不會自動擷取網站內容。"
             + (
-                "\n初始化失敗：\n"
+                "\n初始化失敗原因：\n"
                 + "\n".join(
                     f"{row.provider_id}：{row.unavailable_reason}"
                     for row in all_rows
@@ -238,93 +295,70 @@ def create_builtin_mod_panel(context: object, parent: object = None) -> object:
         summary.setProperty("dependencyState", "ready" if ready else "warning")
         summary.style().unpolish(summary)
         summary.style().polish(summary)
-        table.setRowCount(len(rows) + len(planned_rows))
-        for index, row in enumerate(rows):
-            state_text = (
-                "已啟用"
-                if row.enabled
-                else "已停用"
-                if row.available
-                else "初始化失敗"
-            )
-            state = QTableWidgetItem(state_text)
-            state.setForeground(
-                QColor(
-                    COLORS["success"]
-                    if row.enabled
-                    else COLORS["muted"]
-                    if row.available
-                    else COLORS["danger"]
-                )
-            )
-            values = (
-                QTableWidgetItem(
-                    (
-                        f"{row.group_name} › {row.display_name}"
-                        if row.group_name
-                        else row.display_name
-                    )
-                    + f"\n{row.provider_id}"
-                ),
-                state,
-                QTableWidgetItem(row.purpose),
-                QTableWidgetItem(row.control_location),
-            )
-            for column, item in enumerate(values):
-                item.setToolTip(
-                    f"{item.text()}\n原因：{row.unavailable_reason}"
-                    if row.unavailable_reason
-                    else item.text()
-                )
-                table.setItem(index, column, item)
-            toggle = QPushButton("停用" if row.enabled else "啟用")
-            toggle.setObjectName(f"builtinModToggle-{row.provider_id}")
-            toggle.setEnabled(row.available)
-            toggle.setAccessibleName(
-                (
-                    f"{row.group_name} › {row.display_name}"
-                    if row.group_name
-                    else row.display_name
-                )
-                + " 啟用狀態"
-            )
-            toggle.setToolTip(
-                "立即啟用或停用此內建 MOD"
-                if row.available
-                else (
-                    f"這個內建 MOD 初始化失敗：{row.unavailable_reason}"
-                    if row.unavailable_reason
-                    else "這個內建 MOD 尚未註冊；請重新啟動或重新安裝 MediaManager。"
-                )
-            )
-            toggle.clicked.connect(
-                lambda _checked=False, selected=row.provider_id, enabled=not row.enabled: change_state(
-                    selected, enabled
-                )
-            )
-            table.setCellWidget(index, 4, toggle)
-            table.setRowHeight(index, 52)
 
-        for offset, planned in enumerate(planned_rows, start=len(rows)):
-            state = QTableWidgetItem(f"{planned.state} · {planned.priority}")
-            state.setForeground(QColor(COLORS["warning"]))
-            unavailable = QTableWidgetItem("尚不可用")
-            unavailable.setForeground(QColor(COLORS["muted"]))
-            values = (
-                QTableWidgetItem(f"{planned.display_name}\n{planned.provider_id}"),
-                state,
-                QTableWidgetItem(
-                    f"{planned.kind}：{planned.planned_capabilities}"
-                ),
-                QTableWidgetItem(f"尚缺：{planned.implementation_gap}"),
-                unavailable,
+        tree.blockSignals(True)
+        tree.clear()
+        for group_id, children in BUILTIN_MOD_CHILDREN.items():
+            parent_row = rows_by_id.get(group_id)
+            if parent_row is None:
+                continue
+            visible_children = (
+                tuple(rows_by_id[child] for child in children if child in rows_by_id)
+                if parent_row.enabled
+                else ()
             )
-            for column, item in enumerate(values):
-                item.setToolTip(item.text())
-                table.setItem(offset, column, item)
-            table.setRowHeight(offset, 68)
+            group = QTreeWidgetItem(
+                (
+                    parent_row.group_name or parent_row.display_name,
+                    "主 MOD 已啟用" if parent_row.enabled else "主 MOD 已停用",
+                    f"展開管理主功能與 {len(children)} 個子 MOD",
+                    "點擊左側箭頭展開",
+                    "",
+                )
+            )
+            group.setData(0, Qt.ItemDataRole.UserRole, f"group:{group_id}")
+            group.setForeground(1, state_color(parent_row))
+            tree.addTopLevelItem(group)
+            add_mod_item(group, parent_row)
+            for child_row in visible_children:
+                add_mod_item(group, child_row)
+            if group_id in expanded_groups:
+                group.setExpanded(True)
+
+        for row in all_rows:
+            if row.provider_id not in grouped_ids:
+                add_mod_item(None, row)
+
+        for planned in PLANNED_MODS:
+            item = QTreeWidgetItem(
+                (
+                    f"{planned.display_name}\n{planned.provider_id}",
+                    f"{planned.state} · {planned.priority}",
+                    f"{planned.kind}：{planned.planned_capabilities}",
+                    f"待補：{planned.implementation_gap}",
+                    "尚不可啟用",
+                )
+            )
+            item.setForeground(1, QColor(COLORS["warning"]))
+            item.setForeground(4, QColor(COLORS["muted"]))
+            for column in range(5):
+                item.setToolTip(column, item.text(column))
+            tree.addTopLevelItem(item)
+        tree.blockSignals(False)
+
+    def remember_expanded(item: QTreeWidgetItem) -> None:
+        value = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
+        if value.startswith("group:"):
+            expanded_groups.add(value.removeprefix("group:"))
+
+    def remember_collapsed(item: QTreeWidgetItem) -> None:
+        value = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
+        if value.startswith("group:"):
+            expanded_groups.discard(value.removeprefix("group:"))
 
     refresh.clicked.connect(populate)
+    tree.itemExpanded.connect(remember_expanded)
+    tree.itemCollapsed.connect(remember_collapsed)
     events = getattr(context, "events", None)
     if events is not None:
         events.subscribe("ui.language.changed", lambda _payload: populate())

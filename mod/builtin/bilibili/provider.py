@@ -29,10 +29,81 @@ class StderrLogger:
 
 PROVIDER_ID = "bilibili"
 DISPLAY_NAME = "Bilibili"
-_MEDIA_SUFFIXES = (".mp4", ".mkv", ".webm", ".m4a", ".mp3")
+_MEDIA_SUFFIXES = (
+    ".mp4",
+    ".mkv",
+    ".webm",
+    ".m4a",
+    ".mp3",
+    ".opus",
+    ".flac",
+    ".wav",
+)
 _BILIBILI_VIDEO_ID = re.compile(r"^(?:BV[0-9A-Za-z]+|av\d+)$", re.IGNORECASE)
 _VIEW_API = "https://api.bilibili.com/x/web-interface/view"
 _MAX_VIEW_RESPONSE_BYTES = 2 * 1024 * 1024
+_FORMAT_SELECTORS = {
+    "best": "b[height<=1080]/bv*[height<=1080]+ba/b",
+    "video-2160": (
+        "bv*[height<=2160][ext=mp4]+ba[ext=m4a]/"
+        "bv*[height<=2160]+ba/b[height<=2160]"
+    ),
+    "video-1440": (
+        "bv*[height<=1440][ext=mp4]+ba[ext=m4a]/"
+        "bv*[height<=1440]+ba/b[height<=1440]"
+    ),
+    "video-1080": "bv*[height<=1080]+ba/b[height<=1080]/b",
+    "video-h264-1080": (
+        "bv*[vcodec^=avc1][height<=1080]+ba[acodec^=mp4a]/"
+        "b[vcodec^=avc1][height<=1080][ext=mp4]"
+    ),
+    "video-720": "bv*[height<=720]+ba/b[height<=720]/b",
+    "video-480": "bv*[height<=480]+ba/b[height<=480]/b",
+    "audio-m4a": "ba[ext=m4a]/ba",
+    "audio-m4a-256": "ba[ext=m4a]/ba",
+    "audio-mp3": "ba[abr<=192]/ba",
+    "audio-mp3-320": "ba",
+    "audio-opus": "ba[acodec^=opus]/ba",
+    "audio-flac": "ba",
+    "audio-wav": "ba",
+}
+_AUDIO_OUTPUTS: dict[str, tuple[str, str | None]] = {
+    "audio-m4a": ("m4a", "128"),
+    "audio-m4a-256": ("m4a", "256"),
+    "audio-mp3": ("mp3", "192"),
+    "audio-mp3-320": ("mp3", "320"),
+    "audio-opus": ("opus", "160"),
+    "audio-flac": ("flac", None),
+    "audio-wav": ("wav", None),
+}
+_VIDEO_HEIGHTS = {
+    "best": 1080,
+    "video-2160": 2160,
+    "video-1440": 1440,
+    "video-1080": 1080,
+    "video-h264-1080": 1080,
+    "video-720": 720,
+    "video-480": 480,
+}
+
+
+def _container_format_selector(preset: str, container: str) -> str:
+    if container in {"auto", "mkv"} or preset.startswith("audio-"):
+        return _FORMAT_SELECTORS[preset]
+    maximum_height = _VIDEO_HEIGHTS[preset]
+    if container == "mp4":
+        if preset == "video-h264-1080":
+            return _FORMAT_SELECTORS[preset]
+        return (
+            f"bv*[height<={maximum_height}][ext=mp4]+ba[ext=m4a]/"
+            f"b[height<={maximum_height}][ext=mp4]"
+        )
+    if container == "webm" and preset != "video-h264-1080":
+        return (
+            f"bv*[height<={maximum_height}][ext=webm]+ba[ext=webm]/"
+            f"b[height<={maximum_height}][ext=webm]"
+        )
+    raise ValueError("format preset is incompatible with the selected container")
 
 
 class _OfficialApiRedirectHandler(url_request.HTTPRedirectHandler):
@@ -220,6 +291,9 @@ def format_summaries(info: dict[str, Any]) -> list[dict[str, Any]]:
         size = bounded_number("filesize", 16 * 1024**4) or bounded_number(
             "filesize_approx", 16 * 1024**4
         )
+        dynamic_range = str(raw.get("dynamic_range") or "unknown")[:32]
+        if not re.fullmatch(r"[A-Za-z0-9+._ -]+", dynamic_range):
+            dynamic_range = "unknown"
         values[format_id] = {
             "format_id": format_id,
             "extension": str(raw.get("ext") or "unknown")[:16],
@@ -233,6 +307,7 @@ def format_summaries(info: dict[str, Any]) -> list[dict[str, Any]]:
             "video_codec": str(raw.get("vcodec") or "none")[:80],
             "audio_codec": str(raw.get("acodec") or "none")[:80],
             "estimated_bytes": int(size) if size else None,
+            "dynamic_range": dynamic_range,
         }
     return sorted(
         values.values(),
@@ -263,10 +338,13 @@ def _content_kind(info: dict[str, Any], url: str) -> str:
     return "multipart" if isinstance(entries, list) and len(entries) > 1 else "video"
 
 
-def _subtitle_languages(info: dict[str, Any]) -> list[str]:
+def _subtitle_languages(
+    info: dict[str, Any], field: str | None = None
+) -> list[str]:
     values: set[str] = set()
-    for field in ("subtitles", "automatic_captions"):
-        raw = info.get(field)
+    fields = (field,) if field is not None else ("subtitles", "automatic_captions")
+    for field_name in fields:
+        raw = info.get(field_name)
         if isinstance(raw, dict):
             values.update(
                 str(language)[:32]
@@ -330,6 +408,23 @@ def analyze(request: dict[str, Any]) -> dict[str, Any]:
             }
         )
     entries = info.get("entries")
+    manual_subtitle_languages = [
+        value
+        for value in _subtitle_languages(info, "subtitles")
+        if value.casefold() != "danmaku"
+    ]
+    automatic_subtitle_languages = [
+        value
+        for value in _subtitle_languages(info, "automatic_captions")
+        if value.casefold() != "danmaku"
+    ]
+    subtitle_languages = sorted(
+        set(manual_subtitle_languages) | set(automatic_subtitle_languages)
+    )[:32]
+    danmaku_available = any(
+        value.casefold() == "danmaku"
+        for value in _subtitle_languages(info)
+    )
     return {
         "id": str(info.get("id") or "")[:100],
         "title": str(info.get("title") or "未命名媒體")[:300],
@@ -343,7 +438,10 @@ def analyze(request: dict[str, Any]) -> dict[str, Any]:
         "chapters": chapters,
         "description": str(info.get("description") or "")[:20_000],
         "content_kind": _content_kind(info, str(request["url"])),
-        "subtitle_languages": _subtitle_languages(info),
+        "subtitle_languages": subtitle_languages,
+        "manual_subtitle_languages": manual_subtitle_languages,
+        "automatic_subtitle_languages": automatic_subtitle_languages,
+        "danmaku_available": danmaku_available,
         "extractor": str(
             info.get("extractor_key") or info.get("extractor") or ""
         )[:100],
@@ -461,17 +559,9 @@ def playlist(request: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _media_options(
     request: dict[str, Any],
-) -> tuple[str, str, list[str], str, str]:
-    formats = {
-        "best": "b[height<=1080]/bv*[height<=1080]+ba/b",
-        "video-1080": "bv*[height<=1080]+ba/b[height<=1080]/b",
-        "video-720": "bv*[height<=720]+ba/b[height<=720]/b",
-        "video-480": "bv*[height<=480]+ba/b[height<=480]/b",
-        "audio-m4a": "ba[ext=m4a]/ba",
-        "audio-mp3": "ba[abr<=192]/ba",
-    }
+) -> tuple[str, str, list[str], str, str, str]:
     preset = request.get("format_preset", "best")
-    if preset not in formats:
+    if preset not in _FORMAT_SELECTORS:
         raise ValueError("format preset is invalid")
     subtitle_mode = request.get("subtitle_mode", "none")
     languages = request.get("subtitle_languages", [])
@@ -493,17 +583,26 @@ def _media_options(
         raise ValueError("subtitle options are invalid")
     if (
         timed_comment_mode not in {"none", "source", "ass"}
-        or container_preset not in {"auto", "mkv"}
+        or container_preset not in {"auto", "mp4", "mkv", "webm"}
         or (timed_comment_mode == "ass" and str(preset).startswith("audio-"))
-        or (container_preset == "mkv" and timed_comment_mode != "ass")
+        or (str(preset).startswith("audio-") and container_preset != "auto")
     ):
         raise ValueError("timed-comment or container options are invalid")
+    provider_options = request.get("provider_options", {})
+    if not isinstance(provider_options, dict):
+        raise ValueError("provider options are invalid")
+    if set(provider_options) - {"network_retry"}:
+        raise ValueError("unsupported Bilibili provider option")
+    network_retry = provider_options.get("network_retry", "standard")
+    if network_retry not in {"standard", "resilient"}:
+        raise ValueError("Bilibili network retry mode is invalid")
     return (
         str(preset),
         str(subtitle_mode),
         languages,
         str(timed_comment_mode),
         str(container_preset),
+        str(network_retry),
     )
 
 
@@ -707,18 +806,14 @@ def download(request: dict[str, Any]) -> str:
         languages,
         timed_comment_mode,
         container_preset,
+        network_retry,
     ) = _media_options(request)
-    formats = {
-        "best": "b[height<=1080]/bv*[height<=1080]+ba/b",
-        "video-1080": "bv*[height<=1080]+ba/b[height<=1080]/b",
-        "video-720": "bv*[height<=720]+ba/b[height<=720]/b",
-        "video-480": "bv*[height<=480]+ba/b[height<=480]/b",
-        "audio-m4a": "ba[ext=m4a]/ba",
-        "audio-mp3": "ba[abr<=192]/ba",
-    }
+    retry_count = 8 if network_retry == "resilient" else 3
     options: dict[str, Any] = {
-        "format": formats[preset],
-        "merge_output_format": "mkv" if container_preset == "mkv" else "mp4",
+        "format": _container_format_selector(preset, container_preset),
+        "merge_output_format": (
+            container_preset if container_preset != "auto" else "mp4"
+        ),
         "outtmpl": str(output_template),
         "windowsfilenames": True,
         "noplaylist": True,
@@ -728,9 +823,9 @@ def download(request: dict[str, Any]) -> str:
         "logger": StderrLogger(),
         "no_warnings": True,
         "socket_timeout": 20,
-        "retries": 3,
-        "fragment_retries": 3,
-        "extractor_retries": 3,
+        "retries": retry_count,
+        "fragment_retries": retry_count,
+        "extractor_retries": min(retry_count, 5),
         "continuedl": True,
         "nopart": False,
         "overwrites": False,
@@ -741,15 +836,15 @@ def download(request: dict[str, Any]) -> str:
     audio_only = request.get("audio_only") is True or preset.startswith("audio-")
     audio_suffix = None
     if audio_only:
-        codec = "mp3" if preset == "audio-mp3" else "m4a"
+        codec, quality = _AUDIO_OUTPUTS.get(preset, ("m4a", "128"))
         audio_suffix = f".{codec}"
-        options["postprocessors"] = [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": codec,
-                "preferredquality": "192" if codec == "mp3" else "128",
-            }
-        ]
+        postprocessor = {
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": codec,
+        }
+        if quality is not None:
+            postprocessor["preferredquality"] = quality
+        options["postprocessors"] = [postprocessor]
     effective_languages = list(languages)
     if timed_comment_mode != "none" and subtitle_mode != "all":
         effective_languages = list(dict.fromkeys((*effective_languages, "danmaku")))
@@ -767,7 +862,9 @@ def download(request: dict[str, Any]) -> str:
             # Public Bilibili videos commonly expose separate video/audio DASH
             # streams and no progressive `b` format. Keep the bounded preset
             # selector so FFmpeg can merge and cut the selected streams.
-            options["format"] = formats[preset]
+            options["format"] = _container_format_selector(
+                preset, container_preset
+            )
         options["download_ranges"] = download_range_func(
             None, [(start or 0.0, end or float("inf"))]
         )

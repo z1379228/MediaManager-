@@ -26,9 +26,10 @@
   `bilibili-danmaku`。停用彈幕子 MOD 時，下載仍可使用，但 XML、ASS 與 MKV
   控制會隱藏並清除，避免把額外能力誤當成主下載必要條件。
 - 動畫瘋的主 MOD 是 `ani-gamer`，子 MOD 為負責目錄／作品搜尋的
-  `ani-gamer-search` 與負責分頁集數導覽的 `ani-gamer-episodes`。主 MOD 未啟用時
-  不顯示子 MOD；搜尋子 MOD 關閉時不發出目錄或搜尋請求，集數子 MOD 關閉時不讀取
-  作品集數。官方播放頁仍由系統瀏覽器開啟。
+  `ani-gamer-search`、負責分頁集數導覽的 `ani-gamer-episodes`，以及只保存選取單集
+  公開索引、封面與使用者本機媒體的 `ani-gamer-offline`。主 MOD 未啟用時不顯示
+  子 MOD；搜尋子 MOD 關閉時不發出目錄或搜尋請求，集數子 MOD 關閉時不讀取作品
+  集數，番劇儲存子 MOD 關閉時保存與匯入按鈕不可用。官方播放仍由官網處理。
 - `facebook` 與 `mega` 是沒有子 MOD 的獨立主 MOD；兩者預設
   停用，啟用後才建立各自下載工作區。Facebook 不與 Instagram／Threads 共用下載
   provider；MEGA 也不經 `generic-ytdlp`。
@@ -38,9 +39,10 @@
 - YouTube／YouTube Music：影片、播放清單、格式、字幕、試聽／預覽及選用子功能。
 - Bilibili：影片、番劇、分 P 與字幕；彈幕下載及轉換由獨立子 MOD 管理。
 - Facebook：只處理使用者提供的公開影片頁，無音訊格式、字幕、分段或播放清單控制。
-- MEGA：只處理公開檔案傳輸與檔案種類辨識，不顯示影音格式、字幕、試聽或播放清單。
-- 動畫瘋：官方公開目錄、分類、搜尋、封面、分頁集數導覽與官方播放入口；不提供
-  下載、廣告處理、Cookie 匯入或串流擷取。
+- MEGA：只處理公開檔案／整個公開資料夾傳輸與種類辨識，不顯示影音格式、字幕、試聽或播放清單。
+- 動畫瘋：官方公開目錄、分類、搜尋、封面、分頁集數導覽、官方播放入口，以及選取
+  單集的公開索引／本機媒體保存；不提供網站串流下載、廣告處理、Cookie 匯入或
+  串流擷取。
 
 ## 網域隔離
 
@@ -51,3 +53,32 @@
   `python -m tools.audit_mod_groups --root .` 可快速檢查群組、語言與 provider 邊界。
 - `generic-ytdlp` 是 9.1 暫留且預設停用的舊 Beta 相容 provider，沒有 YouTube／
   Bilibili 工作區入口。其網站必須逐站遷移成獨立主 MOD；新網站禁止加入此聚合 provider。
+
+## 15.0 工作流能力矩陣
+
+- 每個內建網站父 MOD 必須在自己的目錄提供受雜湊保護的 schema v2
+  `site-matrix.json`，不可把網站能力硬塞入另一個父 MOD。
+- 矩陣逐一宣告辨識、發現、分析、預覽、排隊、取消與完成七個階段；只能使用
+  `supported`、`conditional`、`browser-mediated` 或 `not-applicable`。
+- `ui_capabilities` 決定搜尋、縮圖、影音預覽、批量、下載、彈幕、官方頁、樹狀預覽
+  與離線封存是否可顯示。沒有宣告的能力不得借用其他網站控制。
+- `features` 使用有界且唯一的 ID，並區分已驗證公開分析、離線契約、本機 FFmpeg 或
+  必須由官方瀏覽器處理的能力；`boundaries` 必須明列 Cookie、登入、地區、付費、
+  DRM、廣告與私人內容限制。
+- `python -m tools.site_quality_audit --root .` 只讀取這些固定 JSON，不連網、不啟動
+  provider，也不建立暫存檔；Self Check 顯示同一份稽核摘要。
+
+## 子網域路由
+
+- 子網域不建立重複父 MOD；只有經確認的官方精確主機名稱與路徑才回到既有父 MOD。
+- `music.youtube.com`、`m.youtube.com`、`youtu.be` 與只允許 `/embed/<id>` 的
+  `www.youtube-nocookie.com` 都屬於 YouTube；隱私嵌入網域不接受 watch、playlist、
+  shorts 或 live 等其他路徑。
+- `space.bilibili.com` 只負責 UP 主清單，`b23.tv` 只負責短網址；
+  `search.bilibili.com/all?keyword=...` 只歸屬 Bilibili 搜尋子 MOD，沒有下載 owner，
+  因此不能誤送到下載佇列。
+- Instagram 行動頁 `m.instagram.com` 正規化到 `www.instagram.com`；已確認的
+  `mobile.x.com` 與既有 `mobile.twitter.com` 正規化到 `x.com`。這些官方工具入口
+  不會因此自動取得下載能力。
+- 不使用萬用字元子網域，也不接受 HTTP、明示連接埠、內嵌帳密、相似字網域或任意
+  查詢欄位。新增子網域時必須同時補成功、錯誤網域及錯誤路徑測試。

@@ -122,12 +122,21 @@ def test_playlist_dialog_renders_entries_offscreen(monkeypatch) -> None:
         stop = dialog.findChild(QPushButton, "playlistStopPreview")
         video_preview = dialog.findChild(QPushButton, "playlistVideoPreview")
         stop_video = dialog.findChild(QPushButton, "playlistStopVideoPreview")
+        select_all = dialog.findChild(QPushButton, "playlistSelectAll")
+        clear_all = dialog.findChild(QPushButton, "playlistClearAll")
         assert preview is not None and preview.text() == "試聽 30 秒"
         assert stop is not None and stop.text() == "停止試聽"
         assert video_preview is not None and video_preview.text() == "影片預覽 60 秒"
         assert stop_video is not None and stop_video.text() == "停止影片預覽"
+        assert select_all is not None and select_all.text() == "全選可下載"
+        assert clear_all is not None and clear_all.text() == "全部取消"
         assert not stop.isEnabled()
         assert not stop_video.isEnabled()
+        assert table.item(0, 0).checkState() == Qt.CheckState.Unchecked
+        select_all.click()
+        assert table.item(0, 0).checkState() == Qt.CheckState.Checked
+        assert table.item(1, 0).checkState() == Qt.CheckState.Unchecked
+        clear_all.click()
         assert table.item(0, 0).checkState() == Qt.CheckState.Unchecked
         return QDialog.DialogCode.Rejected
 

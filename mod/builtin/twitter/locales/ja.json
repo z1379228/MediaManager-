@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "locale": "ja",
+  "group_name": "X / Twitter",
+  "workspace": {
+    "title": "X 公式ツール",
+    "subtitle": "X／Twitter の公式ポストを検証して開くか、X の公式アカウントアーカイブ案内を開きます。非 API の Web 自動化は行いません。",
+    "enable": "X 親 MOD を有効化",
+    "url_label": "X／Twitter 公式ポスト URL",
+    "placeholder": "https://x.com/user/status/...",
+    "initial_preview": "対応する子 MOD を有効にすると、公式ポストまたはアーカイブ案内を開けます。",
+    "wrong_site": "x.com または twitter.com の公式 status URL のみ受け付けます。"
+  },
+  "ui": {
+    "boundary": "この MOD は非 API の Web 自動化、ポストメディアのダウンロード、Cookie の読み取りを行いません。",
+    "open_page": "公式ポストを開く",
+    "open_export": "公式アカウントアーカイブ案内を開く",
+    "page_disabled": "先に「公式ポストページ」子 MOD を有効にしてください。",
+    "export_disabled": "先に「アカウントデータアーカイブ」子 MOD を有効にしてください。",
+    "invalid_url": "許可された X／Twitter 公式ポストページの URL ではありません。",
+    "opened_page": "X 公式ポストをシステムブラウザーで開きました。",
+    "opened_export": "X の公式アカウントアーカイブ案内を開きました。",
+    "browser_failed": "システムブラウザーを開けませんでした。"
+  },
+  "modules": {
+    "twitter": {"name": "X 親 MOD", "purpose": "X 公式ツールと子 MOD を管理", "control_location": "MOD 管理 → X / Twitter"},
+    "twitter-page": {"name": "公式ポストページ", "purpose": "X／Twitter 公式ポスト URL を検証してブラウザーで開く", "control_location": "X 公式ツール → 公式ポストを開く"},
+    "twitter-export": {"name": "アカウントデータアーカイブ", "purpose": "X の公式アカウントアーカイブ案内を開く", "control_location": "X 公式ツール → 公式データアーカイブ"}
+  }
+}

@@ -7,7 +7,7 @@ import json
 import re
 import sys
 from typing import Any
-from urllib import parse, request
+from urllib import error, parse, request
 
 
 SEARCH_URL = "https://ani.gamer.com.tw/search.php"
@@ -17,6 +17,7 @@ RECENT_QUERY = f"{HOME_URL}#recent"
 NEW_QUERY = f"{HOME_URL}#new"
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _RESULT_PATH = re.compile(r"/animeRef\.php\?sn=([0-9]{1,10})")
+BROWSER_VERIFICATION_ERROR = "ani-gamer-browser-verification-required"
 
 
 class _OfficialRedirectHandler(request.HTTPRedirectHandler):
@@ -205,10 +206,15 @@ def fetch_page(url: str) -> str:
         },
     )
     opener = request.build_opener(_OfficialRedirectHandler())
-    with opener.open(search_request, timeout=20) as response:
-        if not _is_safe_catalog_page(response.geturl()):
-            raise ValueError("AniGamer search redirected outside the official site")
-        payload = response.read(MAX_RESPONSE_BYTES + 1)
+    try:
+        with opener.open(search_request, timeout=20) as response:
+            if not _is_safe_catalog_page(response.geturl()):
+                raise ValueError("AniGamer search redirected outside the official site")
+            payload = response.read(MAX_RESPONSE_BYTES + 1)
+    except error.HTTPError as caught:
+        if caught.code == 403:
+            raise RuntimeError(BROWSER_VERIFICATION_ERROR) from caught
+        raise
     if len(payload) > MAX_RESPONSE_BYTES:
         raise ValueError("AniGamer search response is too large")
     return payload.decode("utf-8", errors="replace")
@@ -258,6 +264,24 @@ def search(raw_request: dict[str, Any]) -> dict[str, Any]:
     if raw_request.get("content_type", "all") not in {"all", "video"}:
         raise ValueError("AniGamer search content type is invalid")
     limit = max(1, min(int(raw_request.get("limit", 12)), 50))
+    direct_series = safe_result_url(query)
+    if direct_series is not None:
+        url, serial = direct_series
+        return {
+            "items": [
+                {
+                    "video_id": f"ani-{serial}",
+                    "url": url,
+                    "title": f"動畫瘋官方作品 {serial}",
+                    "artist": "巴哈姆特動畫瘋",
+                    "duration": None,
+                    "language": "",
+                    "category": "video",
+                    "thumbnail_url": "",
+                }
+            ],
+            "next_cursor": "",
+        }
     source = catalog_source(query)
     if source is None and query.startswith(("http://", "https://")):
         raise ValueError("AniGamer catalog URL is invalid")

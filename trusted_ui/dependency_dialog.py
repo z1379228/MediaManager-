@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from core.dependency_health import DependencyReport, check_dependencies
+from core.dependency_health import DependencyReport, DependencyStatus, check_dependencies
 from core.dependency_snapshot import DependencySnapshotService
 
 
@@ -14,7 +14,7 @@ def dependency_presentation(report: DependencyReport) -> tuple[str, str, str]:
     optional_total = len(report.optional_statuses)
     label = f"核心 {report.core_ready_count}/{core_total}"
     if optional_total:
-        label += f"｜選用 {report.optional_ready_count}/{optional_total}"
+        label += f"｜選用 MOD 工具 {report.optional_ready_count}/{optional_total}"
     if report.youtube_ready:
         return (
             label,
@@ -23,6 +23,37 @@ def dependency_presentation(report: DependencyReport) -> tuple[str, str, str]:
         )
     missing = core_total - report.core_ready_count
     return label, "warning", f"缺少 {missing} 項核心依賴，請開啟環境檢查。"
+
+
+_OPTIONAL_DEPENDENCY_MOD = {
+    "mega-get": "MEGA MOD",
+    "whisper-cli": "Speech to Text MOD",
+    "speech-model": "Speech to Text MOD",
+}
+
+
+def dependency_table_row(
+    status: DependencyStatus,
+    *,
+    is_core: bool,
+) -> tuple[str, str, str, str, str]:
+    """Return explicit table text without treating an optional miss as a fault."""
+
+    version_path = " · ".join(
+        value for value in (status.version, status.path) if value
+    ) or "尚未偵測到"
+    if is_core:
+        state = "可用" if status.available else "缺少（阻擋核心）"
+        detail = status.detail
+        scope = "核心"
+    else:
+        state = "可用" if status.available else "未安裝（不影響核心）"
+        mod_name = _OPTIONAL_DEPENDENCY_MOD.get(
+            status.dependency_id, "對應的選用 MOD"
+        )
+        detail = f"{mod_name}：{status.detail}"
+        scope = "選用 MOD"
+    return scope, status.label, state, version_path, detail
 
 
 def startup_dependency_prompt_required(report: DependencyReport) -> bool:
@@ -41,8 +72,10 @@ def create_dependency_dialog(
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import (
         QAbstractItemView,
+        QApplication,
         QDialog,
         QHBoxLayout,
+        QHeaderView,
         QLabel,
         QPushButton,
         QTableWidget,
@@ -53,7 +86,8 @@ def create_dependency_dialog(
 
     dialog = QDialog(parent)
     dialog.setWindowTitle("執行環境")
-    dialog.resize(860, 520)
+    dialog.resize(980, 560)
+    dialog.setMinimumSize(760, 480)
     page = QVBoxLayout(dialog)
     page.setContentsMargins(20, 18, 20, 16)
     page.setSpacing(12)
@@ -75,20 +109,28 @@ def create_dependency_dialog(
 
     table = QTableWidget(0, 5)
     table.setObjectName("dependencyTable")
-    table.setHorizontalHeaderLabels(("類別", "工具", "狀態", "版本／路徑", "說明"))
+    table.setHorizontalHeaderLabels(
+        ("需求範圍", "工具", "偵測結果", "完整版本／路徑", "影響範圍與說明")
+    )
     table.verticalHeader().setVisible(False)
     table.setAlternatingRowColors(True)
     table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
     table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-    table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-    table.horizontalHeader().setStretchLastSection(True)
-    table.setColumnWidth(0, 70)
-    table.setColumnWidth(1, 145)
-    table.setColumnWidth(2, 76)
-    table.setColumnWidth(3, 240)
+    table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+    table.setWordWrap(False)
+    header = table.horizontalHeader()
+    header.setStretchLastSection(False)
+    for column, width in ((0, 92), (1, 145), (2, 178)):
+        header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
+        table.setColumnWidth(column, width)
+    header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+    header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
     page.addWidget(table, 1)
 
     controls = QHBoxLayout()
+    copy_path = QPushButton("複製所選工具路徑")
+    copy_path.setEnabled(False)
+    controls.addWidget(copy_path)
     install_help = QPushButton("一鍵安裝與選用工具說明")
     controls.addWidget(install_help)
     controls.addStretch()
@@ -126,6 +168,23 @@ def create_dependency_dialog(
 
     install_help.clicked.connect(show_install_help)
 
+    def selected_path() -> str:
+        row = table.currentRow()
+        item = table.item(row, 3) if row >= 0 else None
+        value = item.data(Qt.ItemDataRole.UserRole) if item is not None else ""
+        return value if isinstance(value, str) else ""
+
+    def update_copy_state() -> None:
+        copy_path.setEnabled(bool(selected_path()))
+
+    def copy_selected_path() -> None:
+        path = selected_path()
+        if path:
+            QApplication.clipboard().setText(path)
+
+    table.itemSelectionChanged.connect(update_copy_state)
+    copy_path.clicked.connect(copy_selected_path)
+
     def populate(*, force: bool = False) -> None:
         report = (
             snapshot_service.refresh().report
@@ -142,20 +201,17 @@ def create_dependency_dialog(
         core_ids = {status.dependency_id for status in report.core_statuses}
         table.setRowCount(len(report.statuses))
         for row, status in enumerate(report.statuses):
-            version_path = "\n".join(
-                value for value in (status.version, status.path) if value
-            ) or "尚未偵測到"
-            values = (
-                QTableWidgetItem("核心" if status.dependency_id in core_ids else "選用"),
-                QTableWidgetItem(status.label),
-                QTableWidgetItem("可用" if status.available else "待處理"),
-                QTableWidgetItem(version_path),
-                QTableWidgetItem(status.detail),
+            texts = dependency_table_row(
+                status,
+                is_core=status.dependency_id in core_ids,
             )
+            values = tuple(QTableWidgetItem(value) for value in texts)
+            values[3].setData(Qt.ItemDataRole.UserRole, status.path)
             for column, item in enumerate(values):
                 item.setToolTip(item.text())
                 table.setItem(row, column, item)
-            table.setRowHeight(row, 58)
+            table.setRowHeight(row, 42)
+        update_copy_state()
 
     refresh.clicked.connect(lambda: populate(force=True))
     populate()

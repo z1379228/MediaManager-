@@ -1,36 +1,32 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "provider_id": "bilibili",
-  "last_live_check": "2026-07-14",
+  "last_live_check": "2026-07-16",
+  "workflow": {
+    "identify": "supported",
+    "discover": "supported",
+    "analyze": "supported",
+    "preview": "supported",
+    "queue": "supported",
+    "cancel": "supported",
+    "complete": "supported"
+  },
+  "ui_capabilities": [
+    "search", "thumbnail", "batch", "download", "danmaku", "pause", "cancel"
+  ],
   "features": [
-    {
-      "feature_id": "public-video-analysis",
-      "support_status": "verified-public-analysis"
-    },
-    {
-      "feature_id": "multipart-playlist",
-      "support_status": "offline-contract"
-    },
-    {
-      "feature_id": "bangumi-public-episode",
-      "support_status": "offline-contract"
-    },
-    {
-      "feature_id": "subtitles",
-      "support_status": "offline-contract"
-    },
-    {
-      "feature_id": "segment-download",
-      "support_status": "offline-contract"
-    },
-    {
-      "feature_id": "danmaku-xml-ass-mkv",
-      "support_status": "verified-local-ffmpeg"
-    }
+    {"feature_id": "public-video-analysis", "support_status": "verified-public-analysis"},
+    {"feature_id": "multipart-playlist", "support_status": "offline-contract"},
+    {"feature_id": "bangumi-public-episode", "support_status": "offline-contract"},
+    {"feature_id": "subtitles", "support_status": "offline-contract"},
+    {"feature_id": "segment-download", "support_status": "offline-contract"},
+    {"feature_id": "danmaku-xml-ass-mkv", "support_status": "verified-local-ffmpeg"},
+    {"feature_id": "creator-filter", "support_status": "offline-contract"}
   ],
   "boundaries": [
-    "No cookie import or automated sign-in",
+    "No cookie import or automated login",
     "No region, payment, DRM or membership bypass",
+    "No advertisement bypass or private-content extraction",
     "Unavailable and restricted content returns a precise failure"
   ]
 }

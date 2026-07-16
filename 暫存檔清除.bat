@@ -35,6 +35,8 @@ if "%APP_RUNNING%"=="1" (
 
 call :remove_dir "%ROOT%.work" ".work"
 call :remove_dir "%ROOT%.pytest_cache" ".pytest_cache"
+call :remove_dir "%ROOT%.pytest-agent-domain" ".pytest-agent-domain"
+call :remove_dir "%ROOT%pytest-temp-social" "pytest-temp-social"
 call :remove_dir "%ROOT%.ruff_cache" ".ruff_cache"
 call :remove_dir "%ROOT%.mypy_cache" ".mypy_cache"
 call :remove_dir "%ROOT%.hypothesis" ".hypothesis"

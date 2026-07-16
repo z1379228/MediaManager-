@@ -8,12 +8,22 @@ from pathlib import Path
 from typing import Literal
 
 from core.builtin_mod_catalog import (
+    BUILTIN_MOD_CHILDREN,
     BUILTIN_MOD_CATALOG,
+    BUILTIN_MOD_PARENT,
     OPTIONAL_WORKSPACE_IDS,
     builtin_mod_ids,
 )
-from core.mod_groups import SITE_MOD_PARENT
+from core.downloads.site_quality import audit_builtin_site_quality
+from core.downloads.direct_http_policy import direct_http_url_candidate
+from core.localization import SUPPORTED_LOCALE_CODES, normalized_core_locale
+from core.mod_groups import (
+    SITE_MOD_CHILDREN,
+    SITE_MOD_PARENT,
+    load_builtin_mod_groups,
+)
 from core.security.safe_mode import SecurityMode
+from core.site_routing import SiteRoute, classify_site_url
 from core.version import BUILD_CHANNEL, CORE_VERSION
 
 
@@ -176,7 +186,219 @@ def _release_item(application_root: Path) -> SelfCheckItem:
     )
 
 
-def run_self_check(context: object) -> SelfCheckReport:
+def _parent_child_state_item(context: object) -> SelfCheckItem:
+    states: dict[str, bool] = {}
+    for registry_name in ("download_providers", "discovery", "features"):
+        registry = getattr(context, registry_name, None)
+        try:
+            statuses = tuple(registry.statuses())
+        except (AttributeError, RuntimeError, TypeError):
+            continue
+        states.update(
+            (str(status.provider_id), bool(status.enabled)) for status in statuses
+        )
+    violations = tuple(
+        child_id
+        for parent_id, child_ids in BUILTIN_MOD_CHILDREN.items()
+        if parent_id in states and not states[parent_id]
+        for child_id in child_ids
+        if states.get(child_id, False)
+    )
+    return _item(
+        "state.parent_child",
+        "block" if violations else "pass",
+        "停用主 MOD 仍有啟用子 MOD" if violations else "主 MOD／子 MOD 狀態一致",
+        (
+            f"異常子 MOD：{', '.join(violations)}"
+            if violations
+            else f"已核對 {len(BUILTIN_MOD_PARENT)} 個子 MOD 的啟用狀態"
+        ),
+        "state.parent_child.reconcile" if violations else "",
+    )
+
+
+def _locale_item(context: object) -> SelfCheckItem:
+    raw_locale = getattr(getattr(context, "settings", None), "language", None)
+    selected_locale = normalized_core_locale(raw_locale)
+    plugin_locale = getattr(getattr(context, "plugin_ui", None), "locale", None)
+    problems: list[str] = []
+    if raw_locale not in SUPPORTED_LOCALE_CODES:
+        problems.append("核心語言設定不存在或不受支援")
+    if plugin_locale != selected_locale:
+        problems.append("外部 MOD 宣告式 UI 語言未跟隨核心")
+    try:
+        groups = load_builtin_mod_groups(selected_locale)
+    except (OSError, ValueError) as error:
+        problems.append(f"網站 MOD 語言資源無法讀取：{error}")
+        groups = ()
+    if groups and (
+        {group.group_id for group in groups} != set(SITE_MOD_CHILDREN)
+        or any(group.locale != selected_locale for group in groups)
+    ):
+        problems.append("網站 MOD 語言資源與核心選擇不一致")
+    return _item(
+        "localization.binding",
+        "block" if problems else "pass",
+        "核心與 MOD 語言綁定異常" if problems else "核心與 MOD 語言綁定正常",
+        "; ".join(problems)
+        if problems
+        else f"{selected_locale} 已套用至 {len(groups)} 個網站父 MOD",
+        "localization.binding.repair" if problems else "",
+    )
+
+
+def _site_routing_item() -> SelfCheckItem:
+    matrix = (
+        (
+            "https://music.youtube.com/watch?v=example&list=PL_example",
+            SiteRoute("youtube", "playlist-context", "youtube", "youtube-search"),
+        ),
+        (
+            "https://www.bilibili.com/video/BV1example",
+            SiteRoute("bilibili", "video", "bilibili", "bilibili-search"),
+        ),
+        (
+            "https://search.bilibili.com/all?keyword=example",
+            SiteRoute("bilibili", "search-page", None, "bilibili-search"),
+        ),
+        (
+            "https://www.facebook.com/reel/123456",
+            SiteRoute("facebook", "video-page", "facebook", None),
+        ),
+        (
+            "https://mega.nz/folder/AbCdEf12#abcdefghijklmnop",
+            SiteRoute("mega", "public-folder", "mega", None),
+        ),
+        (
+            "https://ani.gamer.com.tw/animeVideo.php?sn=123",
+            SiteRoute("ani-gamer", "episode", None, "ani-gamer-episodes"),
+        ),
+    )
+    failures = [
+        expected.site_family
+        for url, expected in matrix
+        if classify_site_url(url) != expected
+    ]
+    catalog_ids = {item.provider_id for item in BUILTIN_MOD_CATALOG}
+    for _, expected in matrix:
+        for provider_id in (
+            expected.download_provider_id,
+            expected.search_provider_id,
+        ):
+            if provider_id and provider_id not in catalog_ids:
+                failures.append(provider_id)
+    if classify_site_url("https://music.youtube.com.evil.test/watch?v=example"):
+        failures.append("spoofed-youtube")
+    if not direct_http_url_candidate("https://downloads.example.test/archive.zip"):
+        failures.append("direct-http-positive")
+    if direct_http_url_candidate("https://www.youtube.com/archive.zip"):
+        failures.append("direct-http-site-takeover")
+    unique_failures = tuple(dict.fromkeys(failures))
+    return _item(
+        "routing.site_matrix",
+        "block" if unique_failures else "pass",
+        "網站網址路由契約異常" if unique_failures else "網站網址路由契約正常",
+        (
+            f"失敗項目：{', '.join(unique_failures)}"
+            if unique_failures
+            else f"已核對 {len(matrix)} 條網域路由與 Direct HTTP 隔離"
+        ),
+        "routing.site_matrix.repair" if unique_failures else "",
+    )
+
+
+def _site_quality_item(application_root: Path) -> SelfCheckItem:
+    root = application_root.resolve()
+    if not (root / "mod" / "builtin").is_dir():
+        root = Path(__file__).resolve().parents[1]
+    report = audit_builtin_site_quality(root)
+    return _item(
+        "site.capability_matrix",
+        "pass" if report.valid else "block",
+        "網站工作流能力矩陣正常" if report.valid else "網站工作流能力矩陣異常",
+        (
+            f"已核對 {report.checked_sites} 個網站、{report.checked_features} 項功能與 "
+            f"{report.checked_workflows} 個工作流階段"
+            if report.valid
+            else "; ".join(report.errors[:12])
+        ),
+        "site.capability_matrix.repair" if not report.valid else "",
+    )
+
+
+def load_provider_smoke_report(path: Path) -> SelfCheckItem:
+    """Load one bounded manual smoke report without contacting any provider."""
+
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 512_000:
+            raise ValueError("smoke report is missing or unsafe")
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError, TypeError) as error:
+        return _item(
+            "smoke.latest",
+            "block",
+            "手動 smoke 報告無法讀取",
+            str(error)[:240],
+            "smoke.report.replace",
+        )
+    if not isinstance(document, dict):
+        return _item(
+            "smoke.latest",
+            "block",
+            "手動 smoke 報告格式錯誤",
+            "報告根節點必須是 JSON 物件",
+            "smoke.report.replace",
+        )
+    summary = document.get("summary")
+    cases = document.get("cases")
+    generated_at = document.get("generated_at")
+    valid_shape = (
+        document.get("schema_version") == 2
+        and document.get("mode") == "live-public-content"
+        and document.get("status") in {"PASS", "FAIL"}
+        and isinstance(summary, dict)
+        and set(summary) == {"passed", "failed", "temporary_upstream"}
+        and all(type(summary[key]) is int and 0 <= summary[key] <= 100 for key in summary)
+        and isinstance(cases, list)
+        and len(cases) <= 100
+        and isinstance(generated_at, str)
+        and 1 <= len(generated_at) <= 80
+    )
+    if not valid_shape:
+        return _item(
+            "smoke.latest",
+            "block",
+            "手動 smoke 報告格式錯誤",
+            "只接受 provider smoke matrix schema 2 的有界報告",
+            "smoke.report.replace",
+        )
+    passed = summary["passed"]
+    failed = summary["failed"]
+    temporary = summary["temporary_upstream"]
+    if passed + failed != len(cases) or temporary > failed:
+        return _item(
+            "smoke.latest",
+            "block",
+            "手動 smoke 報告計數不一致",
+            "summary 與 cases 數量不一致",
+            "smoke.report.replace",
+        )
+    successful = document["status"] == "PASS" and failed == 0
+    return _item(
+        "smoke.latest",
+        "pass" if successful else "warning",
+        "最近一次手動 provider smoke 通過" if successful else "最近一次手動 provider smoke 未全綠",
+        f"{generated_at}：通過 {passed}、失敗 {failed}、暫時上游 {temporary}",
+        "provider.smoke.review" if not successful else "",
+    )
+
+
+def run_self_check(
+    context: object,
+    *,
+    ui_items: tuple[SelfCheckItem, ...] = (),
+    smoke_item: SelfCheckItem | None = None,
+) -> SelfCheckReport:
     """Inspect warm in-memory state only; never refresh dependencies or start tools."""
 
     items: list[SelfCheckItem] = []
@@ -202,13 +424,21 @@ def run_self_check(context: object) -> SelfCheckReport:
             _registry_item("feature", tuple(context.features.statuses())),
         )
     )
+    items.append(_parent_child_state_item(context))
 
     parents = {
         item.provider_id: item.parent_provider_id
         for item in BUILTIN_MOD_CATALOG
         if item.parent_provider_id
     }
-    routing_ok = parents == SITE_MOD_PARENT
+    site_parents = {
+        child_id: parent_id
+        for child_id, parent_id in parents.items()
+        if parent_id in SITE_MOD_CHILDREN
+    }
+    routing_ok = (
+        parents == BUILTIN_MOD_PARENT and site_parents == SITE_MOD_PARENT
+    )
     items.append(
         _item(
             "routing.parent_child",
@@ -216,6 +446,19 @@ def run_self_check(context: object) -> SelfCheckReport:
             "主 MOD／子 MOD 路由一致" if routing_ok else "主 MOD／子 MOD 路由不一致",
             f"已核對 {len(parents)} 個子 MOD" if routing_ok else "編目與群組契約不同步",
             "routing.catalog.sync" if not routing_ok else "",
+        )
+    )
+    items.append(_locale_item(context))
+    items.append(_site_routing_item())
+    items.append(_site_quality_item(Path(context.paths.application)))
+    items.append(
+        smoke_item
+        or _item(
+            "smoke.latest",
+            "warning",
+            "尚未匯入最近一次手動 provider smoke",
+            "自檢不會連網；可在自檢頁匯入 tools.provider_smoke_matrix 產生的 JSON。",
+            "provider.smoke.import",
         )
     )
 
@@ -307,4 +550,16 @@ def run_self_check(context: object) -> SelfCheckReport:
         )
 
     items.append(_release_item(Path(context.paths.application)))
+    if len(ui_items) > 16 or len({item.check_id for item in ui_items}) != len(ui_items):
+        items.append(
+            _item(
+                "ui.probe",
+                "block",
+                "可信 UI 自檢輸入無效",
+                "UI 檢查項目重複或超出上限",
+                "ui.probe.repair",
+            )
+        )
+    else:
+        items.extend(ui_items)
     return SelfCheckReport(1, CORE_VERSION, BUILD_CHANNEL, tuple(items))

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "locale": "zh-CN",
+  "group_name": "X / Twitter",
+  "workspace": {
+    "title": "X 官方工具",
+    "subtitle": "仅验证并打开 X／Twitter 官方贴文，或前往 X 官方账号资料存档说明；不使用非 API 网页自动化。",
+    "enable": "启用 X 主 MOD",
+    "url_label": "X／Twitter 官方贴文网址",
+    "placeholder": "https://x.com/user/status/...",
+    "initial_preview": "启用对应子 MOD 后，可打开官方贴文或账号资料存档说明。",
+    "wrong_site": "仅接受 x.com 或 twitter.com 的官方 status 贴文网址。"
+  },
+  "ui": {
+    "boundary": "此 MOD 不使用非 API 网页自动化、不下载贴文媒体，也不读取 Cookie。",
+    "open_page": "打开官方贴文",
+    "open_export": "打开官方账号资料存档说明",
+    "page_disabled": "请先启用“官方贴文页面”子 MOD。",
+    "export_disabled": "请先启用“账号资料存档”子 MOD。",
+    "invalid_url": "网址不是允许的 X／Twitter 官方贴文页面。",
+    "opened_page": "已交由系统浏览器打开 X 官方贴文。",
+    "opened_export": "已打开 X 官方账号资料存档说明。",
+    "browser_failed": "系统无法打开浏览器。"
+  },
+  "modules": {
+    "twitter": {"name": "X 主 MOD", "purpose": "管理 X 官方工具及其子 MOD", "control_location": "MOD 管理 → X / Twitter"},
+    "twitter-page": {"name": "官方贴文页面", "purpose": "验证 X／Twitter 官方贴文网址后交由浏览器打开", "control_location": "X 官方工具 → 打开官方贴文"},
+    "twitter-export": {"name": "账号资料存档", "purpose": "打开 X 官方账号资料存档下载说明", "control_location": "X 官方工具 → 官方资料存档"}
+  }
+}

@@ -188,6 +188,44 @@ def test_download_accepts_nonempty_file_inside_output_directory(
     assert Path(result).read_bytes() == b"media"
 
 
+def test_mega_download_accepts_only_explicit_folder_result(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "mega"
+    provider = SubprocessDownloadProvider(root, application_root=tmp_path)
+    output = tmp_path / "out"
+    folder = output / "shared-folder"
+    folder.mkdir(parents=True)
+    (folder / "media.bin").write_bytes(b"data")
+    monkeypatch.setattr(provider, "_execute", lambda *_args, **_kwargs: str(folder))
+    request = DownloadRequest(
+        "https://mega.nz/folder/AbCdEf12#abcdefghijklmnop",
+        output,
+        source_category="mega-folder",
+    )
+
+    result = provider.download(request, lambda _: None, threading.Event())
+
+    assert Path(result) == folder.resolve()
+
+
+def test_mega_folder_result_requires_folder_category(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "mega"
+    provider = SubprocessDownloadProvider(root, application_root=tmp_path)
+    output = tmp_path / "out"
+    folder = output / "shared-folder"
+    folder.mkdir(parents=True)
+    monkeypatch.setattr(provider, "_execute", lambda *_args, **_kwargs: str(folder))
+    request = DownloadRequest(
+        "https://mega.nz/folder/AbCdEf12#abcdefghijklmnop", output
+    )
+
+    with pytest.raises(ProviderProtocolError, match="missing or outside"):
+        provider.download(request, lambda _: None, threading.Event())
+
+
 def test_download_forwards_media_and_bounded_provider_options(
     tmp_path: Path,
 ) -> None:

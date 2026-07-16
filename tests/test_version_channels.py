@@ -4,11 +4,11 @@ from core.version import display_version, release_identity_version, release_trac
 
 
 def test_development_display_and_release_tracks_are_explicit() -> None:
-    assert display_version() == "開發版 11.1"
+    assert display_version() == "開發版 16.1"
     assert release_track("development") == "Development"
     assert release_track("testing") == "Testing"
     assert release_track("stable") == "Stable"
-    assert release_identity_version("development") == "11.1.0"
+    assert release_identity_version("development") == "16.1.0"
     assert release_identity_version("testing") == "1.0.0"
     with pytest.raises(ValueError):
         release_track("preview")

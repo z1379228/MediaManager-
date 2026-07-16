@@ -19,12 +19,7 @@
     "twitch.tv",
     "www.twitch.tv",
     "m.twitch.tv",
-    "clips.twitch.tv",
-    "x.com",
-    "www.x.com",
-    "twitter.com",
-    "www.twitter.com",
-    "mobile.twitter.com"
+    "clips.twitch.tv"
   ],
   "permissions": [
     "network.generic",

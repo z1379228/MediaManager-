@@ -30,11 +30,14 @@ from core.downloads.playlist_batch import build_playlist_requests
 from core.downloads.playlist_transfer import import_playlist_entries
 from core.downloads.preflight import preflight_download_batch
 from core.downloads.preparation import (
+    advanced_format_summary,
     available_preset_ids,
     build_batch_preview,
+    container_compatibility,
     download_option_lines,
     estimate_preset_bytes,
     format_detail_lines,
+    format_preset_encoding_note,
     human_bytes,
     suggest_output_filename,
 )
@@ -46,9 +49,11 @@ from trusted_ui.batch_import_dialog import show_batch_import_dialog
 from trusted_ui.bilibili_workspace import (
     bilibili_url_kind_label,
     create_bilibili_workspace,
+    filter_bilibili_playlist_entries,
     merge_bilibili_download_urls,
 )
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
+from trusted_ui.download_profiles import DomainDownloadProfile, DownloadProfileStore
 from trusted_ui.empty_state import create_empty_state
 from trusted_ui.playlist_dialog import show_playlist_dialog
 from trusted_ui.recovery_dialog import show_recovery_dialog
@@ -140,8 +145,14 @@ def safe_task_output_path(task: DownloadTask) -> Path | None:
         output_path = Path(task.output_path).resolve()
         if (
             not output_path.is_relative_to(output_root)
-            or not output_path.is_file()
             or output_path.is_symlink()
+            or not (
+                output_path.is_file()
+                or (
+                    task.request.source_category == "mega-folder"
+                    and output_path.is_dir()
+                )
+            )
         ):
             return None
         return output_path
@@ -221,7 +232,7 @@ def create_download_panel(
         raise ValueError("download workspace site family is unsupported")
     provider_id = site_family
     site_label = site_labels[site_family]
-    from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
+    from PySide6.QtCore import QItemSelectionModel, QObject, Qt, QTimer, QUrl, Signal
     from PySide6.QtGui import QAction, QColor, QDesktopServices, QPainter, QPixmap
     from PySide6.QtWidgets import (
         QApplication,
@@ -285,10 +296,26 @@ def create_download_panel(
             self.analyzed_formats = ()
             self.analyzed_audio_languages = ()
             self.analyzed_subtitle_languages = ()
+            self.analyzed_manual_subtitle_languages = ()
+            self.analyzed_automatic_subtitle_languages = ()
+            self.profile_store = (
+                DownloadProfileStore(
+                    Path(context.paths.settings) / "download-profiles.json"
+                )
+                if site_family in {"youtube", "bilibili"}
+                else None
+            )
+            self.saved_profile = (
+                self.profile_store.load(site_family)
+                if self.profile_store is not None
+                else None
+            )
             self.filename_manually_edited = False
             self.thumbnail_generation = 0
             self.thumbnail_loader = (
-                create_thumbnail_loader(self) if site_family == "facebook" else None
+                create_thumbnail_loader(self)
+                if site_family in {"youtube", "bilibili", "facebook"}
+                else None
             )
             capability = context.download_providers.capability_for_provider(provider_id)
             self.capability = (
@@ -430,6 +457,25 @@ def create_download_panel(
                 site_family in {"youtube", "bilibili"}
             )
             input_layout.addWidget(self.url_classification)
+            playlist_filter_row = QHBoxLayout()
+            self.bilibili_playlist_filter_label = QLabel("清單篩選")
+            self.bilibili_playlist_filter_label.setObjectName("fieldLabel")
+            self.bilibili_playlist_filter_label.setVisible(
+                site_family == "bilibili"
+            )
+            playlist_filter_row.addWidget(self.bilibili_playlist_filter_label)
+            self.bilibili_playlist_filter = QLineEdit()
+            self.bilibili_playlist_filter.setAccessibleName(
+                "Bilibili UP 主或分段清單篩選"
+            )
+            self.bilibili_playlist_filter.setPlaceholderText(
+                "可依標題、UP 主或分 P ID 篩選展開結果"
+            )
+            self.bilibili_playlist_filter.setVisible(
+                site_family == "bilibili"
+            )
+            playlist_filter_row.addWidget(self.bilibili_playlist_filter, 1)
+            input_layout.addLayout(playlist_filter_row)
 
             self.official_bridge_notice = QWidget(self)
             self.official_bridge_notice.setObjectName("officialBridgeNotice")
@@ -460,7 +506,9 @@ def create_download_panel(
             self.thumbnail_preview.setAccessibleName(f"{site_label} 網址縮圖")
             self.thumbnail_preview.setFixedSize(104, 62)
             self.thumbnail_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.thumbnail_preview.setVisible(site_family == "facebook")
+            self.thumbnail_preview.setVisible(
+                site_family in {"youtube", "bilibili", "facebook"}
+            )
             self.set_thumbnail_placeholder()
             self.preview = QLabel(self.workspace_text["initial_preview"])
             self.preview.setObjectName("preview")
@@ -540,22 +588,45 @@ def create_download_panel(
 
             media_options = QHBoxLayout()
             media_options.setSpacing(8)
-            format_label = QLabel("下載格式")
-            format_label.setObjectName("fieldLabel")
-            media_options.addWidget(format_label)
+            self.format_label = QLabel("下載格式")
+            self.format_label.setObjectName("fieldLabel")
+            self.format_label.setVisible(site_family != "facebook")
+            media_options.addWidget(self.format_label)
             self.format_preset = QComboBox()
             self.format_preset.setAccessibleName("下載格式")
             for preset in FORMAT_PRESETS_V1:
                 self.format_preset.addItem(preset.label, preset.preset_id)
+            self.format_preset.setVisible(site_family != "facebook")
             media_options.addWidget(self.format_preset)
-            subtitle_label = QLabel("字幕")
-            subtitle_label.setObjectName("fieldLabel")
-            media_options.addWidget(subtitle_label)
+            self.container_label = QLabel("容器")
+            self.container_label.setObjectName("fieldLabel")
+            self.container_label.setVisible(
+                site_family in {"youtube", "bilibili"}
+            )
+            media_options.addWidget(self.container_label)
+            self.container_preset = QComboBox()
+            self.container_preset.setAccessibleName("輸出容器")
+            for label, container_id in (
+                ("自動", "auto"),
+                ("MP4", "mp4"),
+                ("MKV", "mkv"),
+                ("WebM", "webm"),
+            ):
+                self.container_preset.addItem(label, container_id)
+            self.container_preset.setVisible(
+                site_family in {"youtube", "bilibili"}
+            )
+            media_options.addWidget(self.container_preset)
+            self.subtitle_label = QLabel("字幕")
+            self.subtitle_label.setObjectName("fieldLabel")
+            self.subtitle_label.setVisible(site_family != "facebook")
+            media_options.addWidget(self.subtitle_label)
             self.subtitle_mode = QComboBox()
             self.subtitle_mode.setAccessibleName("字幕模式")
             self.subtitle_mode.addItem("不下載字幕", "none")
             self.subtitle_mode.addItem("指定語言", "selected")
             self.subtitle_mode.addItem("全部可用字幕", "all")
+            self.subtitle_mode.setVisible(site_family != "facebook")
             media_options.addWidget(self.subtitle_mode)
             self.subtitle_languages = QLineEdit()
             self.subtitle_languages.setPlaceholderText("語言，例如 zh-TW,en")
@@ -563,7 +634,8 @@ def create_download_panel(
             self.subtitle_languages.setVisible(False)
             self.subtitle_mode.currentIndexChanged.connect(
                 lambda: self.subtitle_languages.setVisible(
-                    self.subtitle_mode.currentData() == "selected"
+                    site_family != "facebook"
+                    and self.subtitle_mode.currentData() == "selected"
                 )
             )
             media_options.addWidget(self.subtitle_languages)
@@ -588,6 +660,9 @@ def create_download_panel(
                 "使用 FFmpeg 無重新編碼封裝；失敗時保留原影片、XML 與 ASS"
             )
             self.danmaku_mkv.setVisible(False)
+            self.danmaku_mkv.toggled.connect(
+                self.update_container_from_danmaku
+            )
             if site_family == "bilibili":
                 media_options.addWidget(self.danmaku_mkv)
             self.format_preset.currentIndexChanged.connect(
@@ -596,8 +671,101 @@ def create_download_panel(
             self.format_preset.currentIndexChanged.connect(
                 self.update_download_preparation
             )
+            self.format_preset.currentIndexChanged.connect(
+                self.update_container_compatibility
+            )
+            self.container_preset.currentIndexChanged.connect(
+                self.update_download_preparation
+            )
+            self.container_preset.currentIndexChanged.connect(
+                self.update_container_compatibility
+            )
+            self.container_preset.currentIndexChanged.connect(
+                self.update_danmaku_from_container
+            )
             media_options.addStretch()
             input_layout.addLayout(media_options)
+
+            postprocess_options = QHBoxLayout()
+            self.embed_metadata = QCheckBox("嵌入媒體資訊", self)
+            self.embed_metadata.setToolTip(
+                "使用 FFmpeg 寫入來源提供的標題、作者等資訊；不會建立遠端帳號資料。"
+            )
+            self.embed_thumbnail = QCheckBox("嵌入縮圖", self)
+            self.embed_thumbnail.setToolTip(
+                "下載來源縮圖並嵌入支援的輸出格式，會增加一次縮圖請求。"
+            )
+            self.embed_chapters = QCheckBox("保留章節", self)
+            self.embed_chapters.setToolTip(
+                "來源含章節資訊時寫入輸出檔；沒有章節時不會自行推測。"
+            )
+            for checkbox in (
+                self.embed_metadata,
+                self.embed_thumbnail,
+                self.embed_chapters,
+            ):
+                checkbox.setVisible(site_family == "youtube")
+                postprocess_options.addWidget(checkbox)
+            self.network_retry_label = QLabel("網路重試")
+            self.network_retry_label.setObjectName("fieldLabel")
+            self.network_retry_label.setVisible(site_family == "bilibili")
+            postprocess_options.addWidget(self.network_retry_label)
+            self.network_retry = QComboBox()
+            self.network_retry.setAccessibleName("Bilibili 網路重試模式")
+            self.network_retry.addItem("標準（3 次）", "standard")
+            self.network_retry.addItem("韌性（8 次）", "resilient")
+            self.network_retry.setToolTip(
+                "只增加官方來源連線與片段重試次數，不切換到未知下載站。"
+            )
+            self.network_retry.setVisible(site_family == "bilibili")
+            postprocess_options.addWidget(self.network_retry)
+            postprocess_options.addStretch()
+            input_layout.addLayout(postprocess_options)
+            self.encoding_hint = QLabel(
+                format_preset_encoding_note(
+                    str(self.format_preset.currentData() or "best")
+                )
+            )
+            self.encoding_hint.setObjectName("sectionSubtitle")
+            self.encoding_hint.setAccessibleName("下載編碼說明")
+            self.encoding_hint.setWordWrap(True)
+            self.encoding_hint.setVisible(site_family != "facebook")
+            input_layout.addWidget(self.encoding_hint)
+            self.format_preset.currentIndexChanged.connect(
+                self.update_encoding_hint
+            )
+            self.container_hint = QLabel(
+                "自動封裝可直接使用；讀取影片資訊後可判定其他容器。"
+            )
+            self.container_hint.setObjectName("sectionSubtitle")
+            self.container_hint.setAccessibleName("容器相容性說明")
+            self.container_hint.setWordWrap(True)
+            self.container_hint.setVisible(
+                site_family in {"youtube", "bilibili"}
+            )
+            input_layout.addWidget(self.container_hint)
+
+            profile_options = QHBoxLayout()
+            profile_label = QLabel("網域設定")
+            profile_label.setObjectName("fieldLabel")
+            profile_options.addWidget(profile_label)
+            self.profile_mode = QComboBox()
+            self.profile_mode.setAccessibleName("網域下載設定模式")
+            self.profile_mode.addItem("手動（只套用本次）", "manual")
+            self.profile_mode.addItem("智慧（套用已儲存設定）", "saved")
+            self.profile_mode.setVisible(self.profile_store is not None)
+            profile_label.setVisible(self.profile_store is not None)
+            profile_options.addWidget(self.profile_mode)
+            self.save_profile_button = QPushButton("儲存目前設定")
+            self.save_profile_button.setObjectName("ghost")
+            self.save_profile_button.setVisible(self.profile_store is not None)
+            self.save_profile_button.clicked.connect(self.save_download_profile)
+            profile_options.addWidget(self.save_profile_button)
+            self.profile_hint = QLabel()
+            self.profile_hint.setObjectName("sectionSubtitle")
+            self.profile_hint.setVisible(self.profile_store is not None)
+            profile_options.addWidget(self.profile_hint, 1)
+            input_layout.addLayout(profile_options)
 
             naming_options = QHBoxLayout()
             naming_label = QLabel("輸出檔名")
@@ -653,7 +821,7 @@ def create_download_panel(
                 ["標題 / 網址", "狀態", "進度", "速度", "剩餘", "優先級"]
             )
             self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-            self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+            self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
             self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
             self.table.setAlternatingRowColors(True)
             self.table.setShowGrid(False)
@@ -706,12 +874,22 @@ def create_download_panel(
             self.pause_button.clicked.connect(self.toggle_pause_selected)
             batch_control = QPushButton("批次控制")
             batch_menu = QMenu(batch_control)
+            self.select_all_action = QAction("全選任務", batch_menu)
+            self.select_all_action.triggered.connect(self.table.selectAll)
+            batch_menu.addAction(self.select_all_action)
+            self.clear_selection_action = QAction("取消選取", batch_menu)
+            self.clear_selection_action.triggered.connect(self.table.clearSelection)
+            batch_menu.addAction(self.clear_selection_action)
+            batch_menu.addSeparator()
             self.pause_all_action = QAction("全部暫停", batch_menu)
             self.pause_all_action.triggered.connect(self.pause_all_tasks)
             batch_menu.addAction(self.pause_all_action)
             self.resume_all_action = QAction("全部繼續", batch_menu)
             self.resume_all_action.triggered.connect(self.resume_all_tasks)
             batch_menu.addAction(self.resume_all_action)
+            self.cancel_all_action = QAction("取消全部未結束任務", batch_menu)
+            self.cancel_all_action.triggered.connect(self.cancel_all_tasks)
+            batch_menu.addAction(self.cancel_all_action)
             batch_menu.addSeparator()
             export_archive = QAction("匯出下載封存 ID…", batch_menu)
             export_archive.triggered.connect(self.export_archive_file)
@@ -720,12 +898,12 @@ def create_download_panel(
             import_archive.triggered.connect(self.import_archive_file)
             batch_menu.addAction(import_archive)
             batch_control.setMenu(batch_menu)
-            self.cancel_button = QPushButton("取消任務")
+            self.cancel_button = QPushButton("取消所選任務")
             self.cancel_button.setObjectName("danger")
             self.cancel_button.clicked.connect(self.cancel_selected)
             open_folder = QPushButton("開啟下載資料夾")
             open_folder.clicked.connect(self.open_output)
-            self.clear_button = QPushButton("清除已結束紀錄")
+            self.clear_button = QPushButton("清除已結束列表")
             self.clear_button.setObjectName("ghost")
             self.clear_button.clicked.connect(self.clear_finished)
             actions.addWidget(self.retry_button)
@@ -756,14 +934,28 @@ def create_download_panel(
                 events.subscribe("ui.language.changed", self.apply_site_language)
             self.update_available_presets()
             self.update_available_subtitles()
+            if self.saved_profile is not None:
+                self.profile_mode.setCurrentIndex(
+                    self.profile_mode.findData("saved")
+                )
+                self.apply_download_profile(self.saved_profile)
+            else:
+                self.profile_hint.setText("尚未儲存此網域的下載設定。")
+            self.profile_mode.currentIndexChanged.connect(
+                self.change_profile_mode
+            )
             self.update_site_options()
 
         def set_thumbnail_placeholder(self, kind: str = "") -> None:
-            if self.site_family != "facebook":
+            styles = {
+                "youtube": ("YT", QColor("#FF0033")),
+                "bilibili": ("BILI", QColor("#00A1D6")),
+                "facebook": ("FB", QColor("#1877F2")),
+            }
+            if self.site_family not in styles:
                 self.thumbnail_preview.clear()
                 return
-            label = "FB"
-            color = QColor("#1877F2")
+            label, color = styles[self.site_family]
             pixmap = QPixmap(96, 54)
             pixmap.fill(color)
             painter = QPainter(pixmap)
@@ -771,13 +963,24 @@ def create_download_panel(
             painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, label)
             painter.end()
             self.thumbnail_preview.setPixmap(pixmap)
-            self.thumbnail_preview.setToolTip("本機預設縮圖")
+            self.thumbnail_preview.setToolTip(f"{site_label} 本機預設縮圖")
+
+        def load_analyzed_thumbnail(self) -> None:
+            self.set_thumbnail_placeholder()
+            thumbnail_url = str(self.analyzed_info.get("thumbnail") or "")
+            if self.thumbnail_loader is None or not thumbnail_url:
+                return
+            analyzed_url = self.analyzed_url
+            self.thumbnail_loader.load(
+                thumbnail_url,
+                lambda pixmap, url=analyzed_url: self.apply_thumbnail(url, pixmap),
+            )
 
         def apply_thumbnail(self, url: str, pixmap: object | None) -> None:
             if url != self.analyzed_url or pixmap is None:
                 return
             self.thumbnail_preview.setPixmap(pixmap)
-            self.thumbnail_preview.setToolTip("Facebook 公開影片縮圖")
+            self.thumbnail_preview.setToolTip(f"{site_label} 公開媒體縮圖")
 
         def apply_site_language(self, payload: object = None) -> None:
             locale = (
@@ -914,14 +1117,33 @@ def create_download_panel(
             self.update_available_presets()
             self.update_available_subtitles()
             self.update_download_preparation()
+            self.load_analyzed_thumbnail()
             if self.media_preview_controls is not None:
                 self.media_preview_controls.refresh()
 
         def update_action_state(self) -> None:
-            task = self.selected_task()
+            selected_tasks = self.selected_tasks()
+            task = selected_tasks[0] if len(selected_tasks) == 1 else None
             state = task.state if task is not None else None
-            self.task_detail_card.setVisible(task is not None)
-            if task is not None:
+            self.task_detail_card.setVisible(bool(selected_tasks))
+            if len(selected_tasks) > 1:
+                active_count = sum(
+                    item.state
+                    in {
+                        DownloadState.QUEUED,
+                        DownloadState.RUNNING,
+                        DownloadState.PAUSED,
+                    }
+                    for item in selected_tasks
+                )
+                self.task_detail_text.setText(
+                    f"已選 {len(selected_tasks)} 個任務；其中 {active_count} 個可取消。"
+                )
+                self.task_detail_text.setToolTip("")
+                self.task_detail_text.setProperty("taskState", "active")
+                self.task_detail_text.style().unpolish(self.task_detail_text)
+                self.task_detail_text.style().polish(self.task_detail_text)
+            elif task is not None:
                 self.task_detail_text.setText(task_detail_summary(task))
                 self.task_detail_text.setToolTip(task.error or task.output_path)
                 detail_state = (
@@ -964,13 +1186,19 @@ def create_download_panel(
                 and not stop_requested
             )
             self.cancel_button.setEnabled(
-                state
-                in {
-                    DownloadState.QUEUED,
-                    DownloadState.RUNNING,
-                    DownloadState.PAUSED,
-                }
-                and not stop_requested
+                any(
+                    item.state
+                    in {
+                        DownloadState.QUEUED,
+                        DownloadState.RUNNING,
+                        DownloadState.PAUSED,
+                    }
+                    and not (
+                        item.state is DownloadState.RUNNING
+                        and item.cancel_event.is_set()
+                    )
+                    for item in selected_tasks
+                )
             )
             recovery_available = (
                 state is DownloadState.FAILED
@@ -994,6 +1222,8 @@ def create_download_panel(
                 )
             )
             tasks = context.download_queue.snapshots()
+            self.select_all_action.setEnabled(bool(tasks))
+            self.clear_selection_action.setEnabled(bool(selected_tasks))
             self.pause_all_action.setEnabled(
                 any(
                     item.state in {DownloadState.QUEUED, DownloadState.RUNNING}
@@ -1003,6 +1233,17 @@ def create_download_panel(
             )
             self.resume_all_action.setEnabled(
                 any(item.state is DownloadState.PAUSED for item in tasks)
+            )
+            self.cancel_all_action.setEnabled(
+                any(
+                    item.state
+                    in {
+                        DownloadState.QUEUED,
+                        DownloadState.RUNNING,
+                        DownloadState.PAUSED,
+                    }
+                    for item in tasks
+                )
             )
 
         def update_provider_badge(self) -> None:
@@ -1071,7 +1312,7 @@ def create_download_panel(
             ]
             routes = tuple(classify_site_url(url) for url in urls)
             wrong_site = any(
-                route is None or route.site_family != self.site_family
+                route is None or route.download_provider_id != self.provider_id
                 for route in routes
             )
             bilibili_creator = (
@@ -1081,11 +1322,13 @@ def create_download_panel(
                 and routes[0].resource_kind == "creator"
             )
             provider_enabled = self.any_download_provider_enabled()
+            compatibility = self.current_container_compatibility()
             self.add_download.setEnabled(
                 provider_enabled
                 and bool(urls)
                 and not wrong_site
                 and not bilibili_creator
+                and compatibility.compatible
             )
             if wrong_site:
                 self.preview.setText(self.workspace_text["wrong_site"])
@@ -1180,12 +1423,16 @@ def create_download_panel(
                 self.preparation_preview.setText("尚未取得實際格式與容量資訊")
                 return
             preset_id = str(self.format_preset.currentData())
+            container_id = str(
+                self.container_preset.currentData() or "auto"
+            )
             if not self.filename_manually_edited:
                 self.output_filename.setText(
                     suggest_output_filename(
                         str(self.analyzed_info.get("title") or "media"),
                         str(self.analyzed_info.get("id") or ""),
                         preset_id,
+                        container_id,
                     )
                 )
             estimated = estimate_preset_bytes(self.analyzed_formats, preset_id)
@@ -1195,6 +1442,7 @@ def create_download_panel(
             audio_label = ", ".join(self.analyzed_audio_languages) or "未標示"
             subtitle_label = ", ".join(self.analyzed_subtitle_languages) or "無"
             self.preparation_preview.setText(
+                f"{advanced_format_summary(self.analyzed_formats, preset_id)} · "
                 f"實際格式 {len(self.analyzed_formats)} 種 · "
                 f"含容量資訊 {known_sizes} 種 · 音軌 {audio_label} · "
                 f"字幕 {subtitle_label} · 此預設估計 {human_bytes(estimated)}"
@@ -1203,6 +1451,58 @@ def create_download_panel(
                 "\n".join(format_detail_lines(self.analyzed_formats))
                 or "來源未提供格式細節"
             )
+
+        def update_encoding_hint(self) -> None:
+            preset_id = str(self.format_preset.currentData() or "best")
+            try:
+                message = format_preset_encoding_note(preset_id)
+            except ValueError:
+                message = "此下載 MOD 未提供可用的編碼說明。"
+            self.encoding_hint.setText(message)
+
+        def current_container_compatibility(self):
+            preset_id = str(self.format_preset.currentData() or "best")
+            container_id = str(
+                self.container_preset.currentData() or "auto"
+            )
+            return container_compatibility(
+                self.analyzed_formats, preset_id, container_id
+            )
+
+        def update_container_compatibility(self) -> None:
+            preset_id = str(self.format_preset.currentData() or "best")
+            if (
+                preset_id.startswith("audio-")
+                and self.container_preset.currentData() != "auto"
+            ):
+                self.container_preset.blockSignals(True)
+                self.container_preset.setCurrentIndex(
+                    self.container_preset.findData("auto")
+                )
+                self.container_preset.blockSignals(False)
+            compatibility = self.current_container_compatibility()
+            prefix = "容器可用：" if compatibility.compatible else "容器不相容："
+            self.container_hint.setText(prefix + compatibility.message)
+            self.container_hint.setProperty(
+                "compatibility",
+                "ok" if compatibility.compatible else "error",
+            )
+            self.container_hint.style().unpolish(self.container_hint)
+            self.container_hint.style().polish(self.container_hint)
+            self.update_site_options()
+
+        def update_container_from_danmaku(self, checked: bool) -> None:
+            if checked:
+                index = self.container_preset.findData("mkv")
+                if index >= 0:
+                    self.container_preset.setCurrentIndex(index)
+
+        def update_danmaku_from_container(self) -> None:
+            if (
+                self.danmaku_mkv.isChecked()
+                and self.container_preset.currentData() != "mkv"
+            ):
+                self.danmaku_mkv.setChecked(False)
 
         def update_available_presets(self) -> None:
             current = str(self.format_preset.currentData() or "best")
@@ -1218,6 +1518,8 @@ def create_download_panel(
             self.format_preset.setCurrentIndex(max(0, index))
             self.format_preset.blockSignals(False)
             self.update_danmaku_options()
+            self.update_encoding_hint()
+            self.update_container_compatibility()
 
         def update_available_subtitles(self) -> None:
             current = str(self.subtitle_mode.currentData() or "none")
@@ -1244,6 +1546,22 @@ def create_download_panel(
             self.subtitle_languages.setVisible(
                 self.subtitle_mode.currentData() == "selected"
             )
+            if self.analyzed_info:
+                manual = ", ".join(self.analyzed_manual_subtitle_languages) or "無"
+                automatic = (
+                    ", ".join(self.analyzed_automatic_subtitle_languages) or "無"
+                )
+                self.subtitle_languages.setPlaceholderText(
+                    f"人工：{manual}；自動：{automatic}"
+                )
+                self.subtitle_languages.setToolTip(
+                    f"人工字幕：{manual}\n自動字幕：{automatic}"
+                )
+            else:
+                self.subtitle_languages.setPlaceholderText(
+                    "語言，例如 zh-TW,en"
+                )
+                self.subtitle_languages.setToolTip("")
 
         def update_danmaku_options(self) -> None:
             xml_active = (
@@ -1272,7 +1590,7 @@ def create_download_panel(
 
         def accepts_url(self, url: str) -> bool:
             route = classify_site_url(url)
-            return route is not None and route.site_family == self.site_family
+            return route is not None and route.download_provider_id == self.provider_id
 
         def reject_wrong_site_urls(self, urls: list[str]) -> bool:
             if all(self.accepts_url(url) for url in urls):
@@ -1317,6 +1635,8 @@ def create_download_panel(
             self.analyzed_formats = ()
             self.analyzed_audio_languages = ()
             self.analyzed_subtitle_languages = ()
+            self.analyzed_manual_subtitle_languages = ()
+            self.analyzed_automatic_subtitle_languages = ()
             self.thumbnail_generation += 1
             self.set_thumbnail_placeholder()
             self.filename_manually_edited = False
@@ -1359,10 +1679,20 @@ def create_download_panel(
                 self.analyzed_subtitle_languages = parse_media_languages(
                     data.get("subtitle_languages", [])
                 )
+                self.analyzed_manual_subtitle_languages = parse_media_languages(
+                    data.get("manual_subtitle_languages", [])
+                )
+                self.analyzed_automatic_subtitle_languages = (
+                    parse_media_languages(
+                        data.get("automatic_subtitle_languages", [])
+                    )
+                )
             except MediaAnalysisContractError as format_error:
                 self.analyzed_formats = ()
                 self.analyzed_audio_languages = ()
                 self.analyzed_subtitle_languages = ()
+                self.analyzed_manual_subtitle_languages = ()
+                self.analyzed_automatic_subtitle_languages = ()
                 self.preparation_preview.setText(f"格式資訊無效：{format_error}")
             duration = data.get("duration")
             duration_text = (
@@ -1374,20 +1704,20 @@ def create_download_panel(
                 f"{data.get('title', '未知標題')}  ·  "
                 f"{data.get('uploader', '未知作者')}  ·  {duration_text}"
             )
-            if self.site_family == "facebook":
-                thumbnail_url = str(data.get("thumbnail") or "")
-                if self.thumbnail_loader is not None and thumbnail_url:
-                    analyzed_url = self.analyzed_url
-                    self.thumbnail_loader.load(
-                        thumbnail_url,
-                        lambda pixmap, url=analyzed_url: self.apply_thumbnail(
-                            url, pixmap
-                        ),
-                    )
+            self.load_analyzed_thumbnail()
             part_count = data.get("part_count")
             if isinstance(part_count, int) and part_count > 1:
                 self.preview.setText(
                     f"{self.preview.text()}  ·  {part_count} 個分段"
+                )
+            if self.site_family == "bilibili":
+                danmaku_text = (
+                    "來源回報可用"
+                    if data.get("danmaku_available") is True
+                    else "來源未回報，下載時再確認"
+                )
+                self.preview.setText(
+                    f"{self.preview.text()}  ·  彈幕：{danmaku_text}"
                 )
             split_available = (
                 bool(duration)
@@ -1466,6 +1796,23 @@ def create_download_panel(
                     self, "展開播放清單", "播放清單沒有可顯示的項目。"
                 )
                 return
+            original_count = len(entries)
+            if self.site_family == "bilibili":
+                entries = filter_bilibili_playlist_entries(
+                    entries, self.bilibili_playlist_filter.text()
+                )
+                if not entries:
+                    QMessageBox.information(
+                        self,
+                        "展開播放清單",
+                        "目前的清單篩選找不到項目，請縮短關鍵字後重試。",
+                    )
+                    return
+                if len(entries) != original_count:
+                    self.preview.setText(
+                        f"Bilibili 清單篩選保留 {len(entries)} / "
+                        f"{original_count} 項。"
+                    )
             preview_provider = None
             video_preview_provider = None
             if self.site_family == "youtube":
@@ -1513,6 +1860,7 @@ def create_download_panel(
                     subtitle_languages=subtitle_languages,
                     timed_comment_mode=timed_comment_mode,
                     container_preset=container_preset,
+                    provider_options=self.selected_provider_options(),
                 )
                 if not self.confirm_requests(tuple(requests)):
                     return
@@ -1736,6 +2084,88 @@ def create_download_panel(
                 self.output.setText(folder)
 
         @staticmethod
+        def set_combo_value(combo: object, value: object) -> bool:
+            index = combo.findData(value)
+            if index < 0:
+                return False
+            combo.setCurrentIndex(index)
+            return True
+
+        def apply_download_profile(self, profile: DomainDownloadProfile) -> None:
+            self.set_combo_value(self.format_preset, profile.format_preset)
+            self.set_combo_value(self.container_preset, profile.container_preset)
+            self.set_combo_value(self.subtitle_mode, profile.subtitle_mode)
+            self.set_combo_value(self.priority, profile.priority)
+            self.subtitle_languages.setText(
+                ",".join(profile.subtitle_languages)
+            )
+            if profile.output_dir:
+                self.output.setText(profile.output_dir)
+            self.embed_metadata.setChecked(profile.embed_metadata)
+            self.embed_thumbnail.setChecked(profile.embed_thumbnail)
+            self.embed_chapters.setChecked(profile.embed_chapters)
+            self.set_combo_value(self.network_retry, profile.network_retry)
+            self.subtitle_languages.setVisible(
+                self.subtitle_mode.currentData() == "selected"
+            )
+            self.profile_hint.setText(
+                "已套用此網域的儲存設定；修改後可再次儲存。"
+            )
+            self.update_download_preparation()
+            self.update_container_compatibility()
+
+        def change_profile_mode(self, _index: int = -1) -> None:
+            if self.profile_mode.currentData() != "saved":
+                self.profile_hint.setText("手動模式不會自動覆寫已儲存設定。")
+                return
+            if self.profile_store is None:
+                return
+            profile = self.profile_store.load(self.site_family)
+            if profile is None:
+                self.profile_hint.setText("尚未儲存此網域的下載設定。")
+                self.profile_mode.blockSignals(True)
+                self.profile_mode.setCurrentIndex(
+                    self.profile_mode.findData("manual")
+                )
+                self.profile_mode.blockSignals(False)
+                return
+            self.saved_profile = profile
+            self.apply_download_profile(profile)
+
+        def save_download_profile(self) -> None:
+            if self.profile_store is None:
+                return
+            try:
+                subtitle_mode, subtitle_languages = self.selected_media_options()
+                profile = DomainDownloadProfile(
+                    format_preset=str(self.format_preset.currentData() or "best"),
+                    container_preset=str(
+                        self.container_preset.currentData() or "auto"
+                    ),
+                    subtitle_mode=subtitle_mode,
+                    subtitle_languages=subtitle_languages,
+                    priority=int(self.priority.currentData()),
+                    output_dir=self.output.text().strip(),
+                    embed_metadata=self.embed_metadata.isChecked(),
+                    embed_thumbnail=self.embed_thumbnail.isChecked(),
+                    embed_chapters=self.embed_chapters.isChecked(),
+                    network_retry=str(
+                        self.network_retry.currentData() or "standard"
+                    ),
+                )
+                self.profile_store.save(self.site_family, profile)
+            except (OSError, TypeError, ValueError) as error:
+                QMessageBox.warning(self, "無法儲存下載設定", str(error))
+                return
+            self.saved_profile = profile
+            self.profile_mode.blockSignals(True)
+            self.profile_mode.setCurrentIndex(
+                self.profile_mode.findData("saved")
+            )
+            self.profile_mode.blockSignals(False)
+            self.profile_hint.setText("已安全儲存並套用此網域的下載設定。")
+
+        @staticmethod
         def seconds(value: str) -> float | None:
             value = value.strip()
             return float(value) if value else None
@@ -1753,11 +2183,41 @@ def create_download_panel(
                 subtitle_languages = ()
             return subtitle_mode, subtitle_languages
 
+        def selected_provider_options(self) -> tuple[tuple[str, str], ...]:
+            if self.site_family == "bilibili":
+                return (
+                    (
+                        "network_retry",
+                        str(self.network_retry.currentData() or "standard"),
+                    ),
+                )
+            if self.site_family == "youtube":
+                return (
+                (
+                    "embed_metadata",
+                    "true" if self.embed_metadata.isChecked() else "false",
+                ),
+                (
+                    "embed_thumbnail",
+                    "true" if self.embed_thumbnail.isChecked() else "false",
+                ),
+                (
+                    "embed_chapters",
+                    "true" if self.embed_chapters.isChecked() else "false",
+                ),
+                )
+            return ()
+
         def selected_timed_comment_options(self) -> tuple[str, str]:
+            compatibility = self.current_container_compatibility()
+            if not compatibility.compatible:
+                raise ValueError(compatibility.message)
+            container = str(self.container_preset.currentData() or "auto")
             if self.danmaku_xml.isHidden() or not self.danmaku_xml.isChecked():
-                return "none", "auto"
+                return "none", container
             mode = "ass" if self.danmaku_ass.isChecked() else "source"
-            container = "mkv" if self.danmaku_mkv.isChecked() else "auto"
+            if self.danmaku_mkv.isChecked():
+                container = "mkv"
             return mode, container
 
         def import_batch_file(self) -> None:
@@ -1829,6 +2289,7 @@ def create_download_panel(
                     subtitle_languages=subtitle_languages,
                     timed_comment_mode=timed_comment_mode,
                     container_preset=container_preset,
+                    provider_options=self.selected_provider_options(),
                 )
                 if not self.confirm_requests(tuple(requests)):
                     return
@@ -1900,6 +2361,7 @@ def create_download_panel(
                             subtitle_languages=subtitle_languages,
                             timed_comment_mode=timed_comment_mode,
                             container_preset=container_preset,
+                            provider_options=self.selected_provider_options(),
                         )
                     )
                 estimated = (
@@ -1962,7 +2424,7 @@ def create_download_panel(
             return answer == QMessageBox.StandardButton.Yes
 
         def refresh(self) -> None:
-            selected_task_id = self.selected_task_id()
+            selected_task_ids = set(self.selected_task_ids())
             tasks = context.download_queue.snapshots()
             refresh_interval = download_refresh_interval(
                 tasks, visible=self.isVisible()
@@ -2005,6 +2467,7 @@ def create_download_panel(
             try:
                 if rebuild:
                     self.table.setRowCount(len(tasks))
+                    self.table.clearSelection()
                 self.task_stack.setCurrentWidget(
                     self.table if tasks else self.task_empty
                 )
@@ -2065,8 +2528,13 @@ def create_download_panel(
                             task.request.priority, str(task.request.priority)
                         )
                     )
-                    if task.task_id == selected_task_id:
-                        self.table.selectRow(row)
+                    if task.task_id in selected_task_ids:
+                        selection_model = self.table.selectionModel()
+                        selection_model.select(
+                            self.table.model().index(row, 0),
+                            QItemSelectionModel.SelectionFlag.Select
+                            | QItemSelectionModel.SelectionFlag.Rows,
+                        )
                 self.rendered_task_ids = task_ids
             finally:
                 self.table.blockSignals(previous_signal_state)
@@ -2090,10 +2558,28 @@ def create_download_panel(
                 self.timer.setInterval(HIDDEN_REFRESH_INTERVAL_MS)
             super().hideEvent(event)
 
+        def selected_task_ids(self) -> tuple[str, ...]:
+            task_ids: list[str] = []
+            for index in self.table.selectionModel().selectedRows(0):
+                item = self.table.item(index.row(), 0)
+                task_id = item.data(Qt.ItemDataRole.UserRole) if item else None
+                if isinstance(task_id, str) and task_id:
+                    task_ids.append(task_id)
+            return tuple(task_ids)
+
         def selected_task_id(self) -> str | None:
-            row = self.table.currentRow()
-            item = self.table.item(row, 0) if row >= 0 else None
-            return item.data(Qt.ItemDataRole.UserRole) if item else None
+            task_ids = self.selected_task_ids()
+            return task_ids[0] if len(task_ids) == 1 else None
+
+        def selected_tasks(self) -> tuple[DownloadTask, ...]:
+            task_ids = set(self.selected_task_ids())
+            if not task_ids:
+                return ()
+            return tuple(
+                task
+                for task in context.download_queue.snapshots()
+                if task.task_id in task_ids
+            )
 
         def selected_task(self) -> DownloadTask | None:
             task_id = self.selected_task_id()
@@ -2231,20 +2717,61 @@ def create_download_panel(
                 QMessageBox.warning(self, "無法儲存同時工作數", str(error))
 
         def cancel_selected(self) -> None:
-            task_id = self.selected_task_id()
-            if task_id:
-                try:
-                    changed = context.download_queue.cancel(task_id)
-                except (OSError, RuntimeError) as error:
-                    QMessageBox.warning(self, "取消任務失敗", str(error))
+            task_ids = self.selected_task_ids()
+            if not task_ids:
+                return
+            if len(task_ids) > 1:
+                answer = QMessageBox.question(
+                    self,
+                    "取消所選任務",
+                    f"確定取消所選的 {len(task_ids)} 個任務？已結束任務會保留。",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if answer != QMessageBox.StandardButton.Yes:
                     return
-                if not changed:
-                    QMessageBox.information(
-                        self,
-                        "取消任務",
-                        "工作狀態已改變，請重新選擇後再試。",
-                    )
-                self.refresh()
+            try:
+                changed = sum(
+                    context.download_queue.cancel(task_id) for task_id in task_ids
+                )
+            except (OSError, RuntimeError) as error:
+                QMessageBox.warning(self, "取消任務失敗", str(error))
+                return
+            if not changed:
+                QMessageBox.information(
+                    self,
+                    "取消任務",
+                    "所選工作都已結束或狀態已改變。",
+                )
+            self.refresh()
+
+        def cancel_all_tasks(self) -> None:
+            active_count = sum(
+                task.state
+                in {
+                    DownloadState.QUEUED,
+                    DownloadState.RUNNING,
+                    DownloadState.PAUSED,
+                }
+                for task in context.download_queue.snapshots()
+            )
+            if not active_count:
+                return
+            answer = QMessageBox.question(
+                self,
+                "取消全部未結束任務",
+                f"確定取消目前 {active_count} 個未結束任務？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                context.download_queue.cancel_all()
+            except (OSError, RuntimeError) as error:
+                QMessageBox.warning(self, "取消全部任務失敗", str(error))
+                return
+            self.refresh()
 
         def clear_finished(self) -> None:
             try:

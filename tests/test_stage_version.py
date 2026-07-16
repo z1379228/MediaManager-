@@ -6,9 +6,21 @@ from pathlib import Path
 
 import pytest
 
-from core.security.release_layout import DEFAULT_RELEASE_FILES, SOURCE_RELEASE_FILES
+from core.security.release_layout import (
+    DEFAULT_RELEASE_FILES,
+    PINNED_BUILTIN_RELEASE_FILES,
+    SOURCE_RELEASE_FILES,
+)
 from tools import stage_version as stage_module
 from tools.stage_version import stage_version, version_folder_name
+
+
+def test_release_layout_includes_every_pinned_builtin_mod_file() -> None:
+    release_mod_files = {
+        path for path in SOURCE_RELEASE_FILES if path.startswith("mod/builtin/")
+    }
+
+    assert release_mod_files == set(PINNED_BUILTIN_RELEASE_FILES)
 
 
 def _prepare_source(root: Path, version: str = "1.2.3") -> None:

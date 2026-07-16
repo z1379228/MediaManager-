@@ -19,6 +19,53 @@ that range to yt-dlp and asks FFmpeg to force keyframes at cuts. MediaManager
 does not bypass DRM or access controls; users are responsible for downloading
 only content they are authorized to save.
 
+## Encoding presets
+
+The trusted YouTube and Bilibili workspaces expose bounded quality and encoding
+presets:
+
+- **1440p** and **2160p (4K)** select source streams no higher than the chosen
+  resolution. The automatic default remains capped at 1080p so upgrades do not
+  unexpectedly increase bandwidth, merge time, or disk use.
+- **H.264/AAC 1080p** selects compatible AVC/AAC source streams and muxes them
+  into MP4. It does not perform a video transcode.
+- **AAC/M4A 256k** and **MP3 320k** provide explicit high-bitrate FFmpeg
+  outputs. Raising bitrate cannot recover detail absent from the source.
+- **Opus 160k** extracts the selected audio through FFmpeg as Opus at about
+  160 kbps.
+- **FLAC** converts the selected audio to FLAC. A lossy web source remains
+  lossy; this option does not restore or improve missing source quality.
+- **WAV PCM** creates an uncompressed, large audio file. It is intended for
+  editing compatibility and likewise does not improve a lossy source.
+
+The UI shows the applicable note next to the selected format. Codec-specific
+video choices appear after analysis only when compatible streams are reported.
+High-resolution segmented downloads retain bounded video/audio stream
+selection before FFmpeg merges the requested range. These presets are declared
+by the dedicated YouTube and Bilibili MODs only;
+Facebook, MEGA and the generic Beta provider keep their narrower capabilities.
+
+## Advanced format and container checks
+
+YouTube and Bilibili analysis may report width, height, frame rate, dynamic
+range, source extension, video/audio codecs and estimated bytes. Older provider
+responses without `dynamic_range` remain valid and display it as unknown.
+
+The trusted UI offers Auto, MP4, MKV and WebM for video requests. Auto remains
+the default. MKV is the general fallback; explicit MP4 or WebM requires an
+analysis result containing compatible source tracks:
+
+- MP4 accepts bounded MP4 video using H.264/AVC, H.265/HEVC or AV1, plus
+  M4A/MP4 AAC-compatible audio.
+- WebM accepts bounded WebM VP8, VP9 or AV1 video plus Opus/Vorbis audio.
+- Audio-only presets keep their codec-owned extension and reject video
+  container choices.
+
+An incompatible explicit choice blocks queue insertion with a suggested
+container. The application does not silently transcode codecs or change the
+user's selected container. The selected container is persisted with the queue,
+included in duplicate-download identity and reflected in generated filenames.
+
 ## Opt-in live diagnostic
 
 Run the following command from the repository root after building a new Testing
@@ -85,13 +132,12 @@ format and subtitle options.
 ## Generic yt-dlp Beta
 
 The separately switchable `generic-ytdlp` download MOD is disabled by default
-and currently routes only explicit Vimeo, Dailymotion,
-SoundCloud, TikTok, Twitch and X/Twitter hosts. YouTube remains owned by its
-dedicated MOD; Bilibili and social-site feasibility candidates are deliberately
-excluded from this provider. Facebook and Instagram remain official-page and
-official-export bridges because Meta's terms require prior permission for
-automated access or collection. Threads completed the same review and also
-remains an official-page and official-export bridge.
+and currently routes only explicit Vimeo, Dailymotion, SoundCloud, TikTok and
+Twitch hosts. YouTube remains owned by its dedicated MOD; Bilibili and social
+sites are deliberately excluded from this provider. Facebook remains a
+separate Testing download MOD. Instagram, Threads and X/Twitter are separate
+official-tools parent MODs without download providers; X additionally prohibits
+non-API website automation.
 
 The generic MOD uses `network.generic` rather than YouTube permission, rejects
 URLs containing embedded credentials and exposes the shared analyze, playlist,

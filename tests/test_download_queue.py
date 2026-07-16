@@ -546,6 +546,20 @@ def test_clear_finished_keeps_active_tasks(tmp_path: Path) -> None:
     assert len(restored.snapshots()) == 1
 
 
+def test_cancel_all_cancels_every_non_terminal_task(tmp_path: Path) -> None:
+    downloads = DownloadQueue(RecordingBackend(), state_path=tmp_path / "queue.json")
+    for index in range(3):
+        downloads.add(DownloadRequest(f"https://youtu.be/{index}", tmp_path))
+    snapshots = downloads.snapshots()
+    assert downloads.pause(snapshots[0].task_id)
+
+    assert downloads.cancel_all() == 3
+    assert all(
+        task.state is DownloadState.CANCELLED for task in downloads.snapshots()
+    )
+    assert downloads.cancel_all() == 0
+
+
 def test_clear_finished_rolls_back_when_persistence_fails(
     tmp_path: Path, monkeypatch
 ) -> None:

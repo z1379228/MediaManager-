@@ -17,6 +17,9 @@ def test_youtube_and_music_share_one_family_with_strict_resource_kinds() -> None
     assert classify_site_url(
         "https://youtu.be/ynUkJsLxStI"
     ).resource_kind == "video"
+    assert classify_site_url(
+        "https://www.youtube-nocookie.com/embed/ynUkJsLxStI"
+    ) == SiteRoute("youtube", "video", "youtube", "youtube-search")
 
 
 def test_youtube_route_rejects_ambiguous_or_spoofed_urls() -> None:
@@ -31,6 +34,9 @@ def test_youtube_route_rejects_ambiguous_or_spoofed_urls() -> None:
         "https://music.youtube.com:443/watch?v=one",
         "https://music.youtube.com.evil.test/watch?v=one",
         "https://youtu.be/one?list=PL_example",
+        "https://www.youtube-nocookie.com/watch?v=one",
+        "https://youtube-nocookie.com/embed/one",
+        "https://www.youtube-nocookie.com.evil.test/embed/one",
     ):
         assert classify_site_url(url) is None
 
@@ -39,6 +45,12 @@ def test_other_sites_get_distinct_families_and_provider_roles() -> None:
     assert classify_site_url(
         "https://www.bilibili.com/video/BV1example"
     ) == SiteRoute("bilibili", "video", "bilibili", "bilibili-search")
+    assert classify_site_url(
+        "https://www.bilibili.com/video/BV1example?spm_id_from=333.1007"
+    ).resource_kind == "video"
+    assert classify_site_url(
+        "https://search.bilibili.com/all?keyword=%E5%B9%BB%E6%9C%88%E7%92%B0"
+    ) == SiteRoute("bilibili", "search-page", None, "bilibili-search")
     assert classify_site_url(
         "https://www.facebook.com/reel/123456"
     ) == SiteRoute("facebook", "video-page", "facebook", None)
@@ -56,8 +68,8 @@ def test_other_sites_get_distinct_families_and_provider_roles() -> None:
     ) == SiteRoute(
         "ani-gamer",
         "episode",
-        "ani-gamer-offline",
-        "ani-gamer-search",
+        None,
+        "ani-gamer-episodes",
     )
 
 
@@ -67,6 +79,21 @@ def test_non_media_pages_do_not_claim_a_download_owner() -> None:
         "https://www.bilibili.com/",
         "https://ani.gamer.com.tw/animeRef.php",
         "https://ani.gamer.com.tw/animeVideo.php?sn=not-digits",
+    ):
+        assert classify_site_url(url) is None
+
+
+def test_bilibili_search_subdomain_rejects_non_search_or_ambiguous_urls() -> None:
+    for url in (
+        "https://search.bilibili.com/",
+        "https://search.bilibili.com/all",
+        "https://search.bilibili.com/all?keyword=",
+        "https://search.bilibili.com/all?keyword=%20%20",
+        "https://search.bilibili.com/all?keyword=one%7Ftwo",
+        "https://search.bilibili.com/all?keyword=one&keyword=two",
+        "https://search.bilibili.com/all?keyword=one&page=2",
+        "https://search.bilibili.com/video/BV1example?keyword=one",
+        "https://search.bilibili.com.evil.test/all?keyword=one",
     ):
         assert classify_site_url(url) is None
 

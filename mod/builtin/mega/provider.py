@@ -1,4 +1,4 @@
-"""MEGA public file adapter backed only by the official mega-get client."""
+"""MEGA public file/folder adapter backed only by the official mega-get client."""
 
 from __future__ import annotations
 
@@ -271,8 +271,8 @@ def _safe_output_filename(value: object) -> str:
     return filename
 
 
-def _file_snapshot(output: Path) -> dict[str, tuple[int, int]]:
-    values: dict[str, tuple[int, int]] = {}
+def _entry_snapshot(output: Path) -> dict[str, tuple[str, int, int]]:
+    values: dict[str, tuple[str, int, int]] = {}
     try:
         entries = tuple(output.iterdir())
     except OSError:
@@ -281,32 +281,56 @@ def _file_snapshot(output: Path) -> dict[str, tuple[int, int]]:
         raise ValueError("output directory contains too many items")
     for item in entries:
         try:
-            if item.is_file() and not item.is_symlink():
+            if not item.is_symlink() and (item.is_file() or item.is_dir()):
                 stat = item.stat()
-                values[item.name] = (stat.st_size, stat.st_mtime_ns)
+                kind = "file" if item.is_file() else "folder"
+                values[item.name] = (kind, stat.st_size, stat.st_mtime_ns)
         except OSError:
             continue
     return values
 
 
-def _completed_file(
+def _verify_folder_tree(folder: Path) -> None:
+    pending = [folder]
+    visited = 0
+    while pending:
+        current = pending.pop()
+        entries = tuple(current.iterdir())
+        visited += len(entries)
+        if visited > 10_000:
+            raise ValueError("MEGA folder output exceeds the 10,000-entry limit")
+        for entry in entries:
+            if entry.is_symlink():
+                raise ValueError("MEGA folder output contains a symbolic link")
+            if entry.is_dir():
+                pending.append(entry)
+            elif not entry.is_file():
+                raise ValueError("MEGA folder output contains an unsupported entry")
+
+
+def _completed_entry(
     output: Path,
-    before: dict[str, tuple[int, int]],
+    before: dict[str, tuple[str, int, int]],
 ) -> Path:
     candidates: list[Path] = []
     for item in output.iterdir():
         try:
-            if item.is_symlink() or not item.is_file() or item.stat().st_size <= 0:
+            if item.is_symlink() or not (item.is_file() or item.is_dir()):
                 continue
             stat = item.stat()
-            if before.get(item.name) != (stat.st_size, stat.st_mtime_ns):
+            kind = "file" if item.is_file() else "folder"
+            if item.is_file() and stat.st_size <= 0:
+                continue
+            if before.get(item.name) != (kind, stat.st_size, stat.st_mtime_ns):
                 resolved = item.resolve()
                 if resolved.is_relative_to(output):
+                    if resolved.is_dir():
+                        _verify_folder_tree(resolved)
                     candidates.append(resolved)
         except OSError:
             continue
     if len(candidates) != 1:
-        raise RuntimeError("MEGAcmd did not create exactly one verifiable output file")
+        raise RuntimeError("MEGAcmd did not create exactly one verifiable output entry")
     return candidates[0]
 
 
@@ -315,8 +339,6 @@ def download(request: dict[str, Any]) -> str:
     if parsed is None:
         raise ValueError("unsupported MEGA public share URL")
     resource_kind, _share_id = parsed
-    if resource_kind != "file":
-        raise ValueError("Development 9.2 recognizes MEGA folders but downloads files only")
     executable = _mega_get_path(request)
     if executable is None:
         raise RuntimeError("official MEGAcmd mega-get is not installed or not detected")
@@ -325,7 +347,9 @@ def download(request: dict[str, Any]) -> str:
     if output.is_symlink() or not output.is_dir():
         raise ValueError("output directory is unsafe")
     output_filename = _safe_output_filename(request.get("output_filename"))
-    before = _file_snapshot(output)
+    if resource_kind == "folder" and output_filename:
+        raise ValueError("MEGA folder downloads do not accept an output filename")
+    before = _entry_snapshot(output)
     _apply_transfer_options(request)
     emit({"type": "progress", "title": "Preparing official MEGA download"})
     startupinfo, creationflags = _hidden_process_options()
@@ -363,14 +387,16 @@ def download(request: dict[str, Any]) -> str:
     returncode = process.wait()
     if returncode != 0:
         raise RuntimeError(f"official MEGAcmd failed with exit code {returncode}")
-    completed = _completed_file(output, before)
+    completed = _completed_entry(output, before)
     if output_filename:
         target = (output / output_filename).resolve()
         if not target.is_relative_to(output) or target.exists():
             raise ValueError("requested output filename is already in use")
         completed.replace(target)
         completed = target
-    category = classify_mega_filename(completed.name)
+    category = (
+        "folder" if completed.is_dir() else classify_mega_filename(completed.name)
+    )
     emit(
         {
             "type": "progress",

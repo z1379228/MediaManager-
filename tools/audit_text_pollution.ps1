@@ -14,10 +14,24 @@ $toolArtifacts = @(
 )
 $issues = [System.Collections.Generic.List[string]]::new()
 
-$relativePaths = & git -c core.quotepath=false -C $rootPath `
-    ls-files --cached --others --exclude-standard
-if ($LASTEXITCODE -ne 0) {
-    throw "git ls-files failed"
+$gitUtf8 = [System.Text.UTF8Encoding]::new($false)
+$previousConsoleEncoding = [Console]::OutputEncoding
+$previousOutputEncoding = $OutputEncoding
+try {
+    # Windows PowerShell otherwise decodes Git's UTF-8 path output with the
+    # active OEM code page. Chinese file names then become literal question
+    # marks and are no longer valid paths for ReadAllBytes.
+    [Console]::OutputEncoding = $gitUtf8
+    $OutputEncoding = $gitUtf8
+    $relativePaths = & git -c core.quotepath=false -C $rootPath `
+        ls-files --cached --others --exclude-standard
+    if ($LASTEXITCODE -ne 0) {
+        throw "git ls-files failed"
+    }
+}
+finally {
+    [Console]::OutputEncoding = $previousConsoleEncoding
+    $OutputEncoding = $previousOutputEncoding
 }
 
 foreach ($relativePath in $relativePaths) {

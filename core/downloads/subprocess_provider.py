@@ -18,6 +18,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from core.downloads.models import DownloadRequest
+from core.downloads.direct_http_policy import direct_http_url_candidate
 from core.downloads.windows_job import ProviderJob
 from contracts.discovery_v1 import DiscoveryItemV1
 from contracts.history_v1 import HistoryEventV1, HistoryPreferencesV1
@@ -237,6 +238,10 @@ class SubprocessDownloadProvider:
                 "storage.downloads.write",
                 "process.megacmd",
             },
+            "direct-http": {
+                "network.direct-http",
+                "storage.downloads.write",
+            },
             "test": {
                 "network.youtube",
                 "storage.downloads.write",
@@ -309,6 +314,8 @@ class SubprocessDownloadProvider:
         return environment
 
     def supports(self, url: str) -> bool:
+        if self.provider_id == "direct-http":
+            return direct_http_url_candidate(url)
         try:
             parsed = urlparse(url)
             parsed.port
@@ -335,6 +342,7 @@ class SubprocessDownloadProvider:
             "bilibili": "network.bilibili",
             "facebook": "network.facebook",
             "mega": "network.mega",
+            "direct-http": "network.direct-http",
         }.get(self.provider_id, "network.youtube")
         self._require_permissions(permission)
 
@@ -888,11 +896,16 @@ class SubprocessDownloadProvider:
             raise ProviderProtocolError("provider download result is invalid")
         output_root = request.output_dir.resolve()
         output_path = Path(result).resolve()
+        valid_file = output_path.is_file() and output_path.stat().st_size > 0
+        valid_mega_folder = (
+            self.provider_id == "mega"
+            and request.source_category == "mega-folder"
+            and output_path.is_dir()
+        )
         if (
             not output_path.is_relative_to(output_root)
-            or not output_path.is_file()
+            or not (valid_file or valid_mega_folder)
             or output_path.is_symlink()
-            or output_path.stat().st_size <= 0
         ):
             raise ProviderProtocolError(
                 "provider download result is missing or outside the output directory"

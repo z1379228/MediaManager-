@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "locale": "ja",
+  "group_name": "Threads",
+  "workspace": {
+    "title": "Threads 公式ツール",
+    "subtitle": "Threads の公式投稿を検証して開くか、Meta の公式データエクスポート案内を開きます。自動取得は行いません。",
+    "enable": "Threads 親 MOD を有効化",
+    "url_label": "Threads 公式投稿 URL",
+    "placeholder": "https://www.threads.com/@user/post/...",
+    "initial_preview": "子 MOD を有効にすると、公式投稿またはデータエクスポート案内を開けます。",
+    "wrong_site": "threads.com または旧 threads.net の公式投稿 URL のみ受け付けます。"
+  },
+  "ui": {
+    "boundary": "この MOD は Threads の内容を自動解析、収集、ダウンロードせず、Cookie も読み取りません。",
+    "open_page": "公式投稿を開く",
+    "open_export": "公式データエクスポート案内を開く",
+    "page_disabled": "先に「公式投稿」子 MOD を有効にしてください。",
+    "export_disabled": "先に「データエクスポート」子 MOD を有効にしてください。",
+    "invalid_url": "許可された Threads 公式投稿ページではありません。",
+    "opened_page": "Threads 公式投稿をシステムブラウザーで開きました。",
+    "opened_export": "Meta の Threads 公式データエクスポート案内を開きました。",
+    "browser_failed": "システムブラウザーを開けませんでした。"
+  },
+  "modules": {
+    "threads": {"name": "Threads 親 MOD", "purpose": "Threads 公式ツールと子 MOD を管理", "control_location": "MOD 管理 → Threads"},
+    "threads-page": {"name": "公式投稿", "purpose": "Threads 公式投稿 URL を検証してブラウザーで開く", "control_location": "Threads 公式ツール → 公式投稿を開く"},
+    "threads-export": {"name": "データエクスポート", "purpose": "Meta の Threads 公式データエクスポート案内を開く", "control_location": "Threads 公式ツール → 公式データエクスポート"}
+  }
+}

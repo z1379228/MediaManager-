@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "locale": "ja",
+  "group_name": "Instagram",
+  "workspace": {
+    "title": "Instagram 公式ツール",
+    "subtitle": "公式の公開メディアページを検証して開くか、Meta の公式データエクスポート案内を開きます。自動収集は行いません。",
+    "enable": "Instagram 親 MOD を有効化",
+    "url_label": "Instagram 公式メディア URL",
+    "placeholder": "https://www.instagram.com/reel/...",
+    "initial_preview": "対応する子 MOD を有効にすると、公式ページまたはエクスポート案内を開けます。",
+    "wrong_site": "instagram.com の公式投稿、Reel、IGTV URL のみ受け付けます。"
+  },
+  "ui": {
+    "boundary": "この MOD は Instagram コンテンツを自動解析、収集、ダウンロードせず、Cookie も読み取りません。",
+    "open_page": "公式メディアページを開く",
+    "open_export": "公式データエクスポート案内を開く",
+    "page_disabled": "先に「公式メディアページ」子 MOD を有効にしてください。",
+    "export_disabled": "先に「データエクスポート」子 MOD を有効にしてください。",
+    "invalid_url": "許可された Instagram 公式公開メディアページの URL ではありません。",
+    "opened_page": "Instagram 公式ページをシステムブラウザーで開きました。",
+    "opened_export": "Meta の Instagram 公式データエクスポート案内を開きました。",
+    "browser_failed": "システムブラウザーを開けませんでした。"
+  },
+  "modules": {
+    "instagram": {"name": "Instagram 親 MOD", "purpose": "Instagram 公式ツールと子 MOD を管理", "control_location": "MOD 管理 → Instagram"},
+    "instagram-page": {"name": "公式メディアページ", "purpose": "公開投稿、Reel、IGTV の URL を検証してブラウザーで開く", "control_location": "Instagram 公式ツール → 公式ページを開く"},
+    "instagram-export": {"name": "データエクスポート", "purpose": "Meta の Instagram 公式データエクスポート案内を開く", "control_location": "Instagram 公式ツール → 公式データエクスポート"}
+  }
+}

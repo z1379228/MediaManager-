@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import runpy
-from urllib import parse
+from urllib import error, parse
 
 import pytest
 
@@ -82,6 +82,29 @@ def test_ani_gamer_search_rejects_noncanonical_result_urls() -> None:
     assert safe_result_url("animeRef.php?sn=123&extra=1") is None
 
 
+def test_ani_gamer_accepts_canonical_official_series_url_without_network(
+    monkeypatch,
+) -> None:
+    namespace = provider_namespace()
+    search = namespace["search"]
+    monkeypatch.setitem(
+        search.__globals__,
+        "fetch_page",
+        lambda _url: pytest.fail("direct series URL must not contact AniGamer"),
+    )
+    result = search(
+        {
+            "query": "https://ani.gamer.com.tw/animeRef.php?sn=114096",
+            "limit": 12,
+            "content_type": "video",
+            "cursor": "",
+        }
+    )
+    assert result["next_cursor"] == ""
+    assert result["items"][0]["video_id"] == "ani-114096"
+    assert result["items"][0]["url"].endswith("animeRef.php?sn=114096")
+
+
 def test_ani_gamer_rejects_unsupported_music_scope_without_network(monkeypatch) -> None:
     namespace = provider_namespace()
     search = namespace["search"]
@@ -132,6 +155,32 @@ def test_ani_gamer_request_is_limited_to_official_search(monkeypatch) -> None:
     parsed = parse.urlsplit(seen[0])
     assert parsed.scheme == "https" and parsed.hostname == "ani.gamer.com.tw"
     assert parse.parse_qs(parsed.query)["keyword"] == ["test query"]
+
+
+def test_ani_gamer_search_maps_cloudflare_403_to_browser_verification(
+    monkeypatch,
+) -> None:
+    namespace = provider_namespace()
+    fetch_html = namespace["fetch_html"]
+    request_module = namespace["request"]
+
+    class Opener:
+        def open(self, outgoing, *, timeout: int):
+            assert timeout == 20
+            raise error.HTTPError(
+                outgoing.full_url,
+                403,
+                "Forbidden",
+                {"cf-mitigated": "challenge"},
+                None,
+            )
+
+    monkeypatch.setattr(request_module, "build_opener", lambda _handler: Opener())
+    with pytest.raises(
+        RuntimeError,
+        match="ani-gamer-browser-verification-required",
+    ):
+        fetch_html("test query")
 
 
 def test_ani_gamer_catalog_queries_filter_home_sections(monkeypatch) -> None:

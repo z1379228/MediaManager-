@@ -294,24 +294,19 @@ def analyze(request: dict[str, Any]) -> dict[str, Any]:
 
 def _media_options(request: dict[str, Any]) -> tuple[str, str, list[str]]:
     preset = request.get("format_preset", "best")
-    if preset not in {"best", "video-1080", "video-720", "video-480", "audio-m4a", "audio-mp3"}:
+    if preset not in {"best", "video-1080", "video-720", "video-480"}:
         raise ValueError("format preset is invalid")
     mode = request.get("subtitle_mode", "none")
     languages = request.get("subtitle_languages", [])
     if (
-        mode not in {"none", "selected", "all"}
+        mode != "none"
         or not isinstance(languages, list)
-        or len(languages) > 8
-        or len(languages) != len(set(languages))
-        or not all(
-            isinstance(item, str)
-            and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,15}", item)
-            for item in languages
-        )
-        or (mode == "selected" and not languages)
-        or (mode != "selected" and languages)
+        or languages
+        or request.get("audio_only") is True
+        or request.get("start_time") is not None
+        or request.get("end_time") is not None
     ):
-        raise ValueError("subtitle options are invalid")
+        raise ValueError("Facebook MOD supports public full-video downloads only")
     return str(preset), str(mode), languages
 
 

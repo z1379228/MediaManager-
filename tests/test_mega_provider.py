@@ -58,12 +58,53 @@ def test_filename_classification_covers_non_video_files(
     assert load_provider().classify_mega_filename(filename) == expected
 
 
-def test_folder_is_recognized_but_download_fails_closed(tmp_path: Path) -> None:
+def test_folder_is_recognized_and_downloaded_as_verified_tree(
+    tmp_path: Path, monkeypatch
+) -> None:
     provider = load_provider()
     url = "https://mega.nz/folder/AbCdEf12#abcdefghijklmnop"
     assert provider.analyze({"url": url})["resource_kind"] == "public-folder"
-    with pytest.raises(ValueError, match="downloads files only"):
-        provider.download({"url": url, "output_dir": str(tmp_path)})
+    executable = tmp_path / "mega-get.exe"
+    executable.write_bytes(b"test executable placeholder")
+    output = tmp_path / "downloads"
+
+    class Process:
+        def __init__(self, arguments, **_kwargs):
+            destination = Path(arguments[2])
+            folder = destination / "shared-folder"
+            folder.mkdir(parents=True)
+            (folder / "episode.mp4").write_bytes(b"media")
+            self.stdout = StringIO("100%\n")
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(provider.subprocess, "Popen", Process)
+    result = provider.download(
+        {
+            "url": url,
+            "output_dir": str(output),
+            "external_tools": {"mega-get": str(executable)},
+        }
+    )
+
+    assert Path(result).is_dir()
+    assert (Path(result) / "episode.mp4").read_bytes() == b"media"
+
+
+def test_folder_rejects_file_rename(tmp_path: Path) -> None:
+    provider = load_provider()
+    executable = tmp_path / "mega-get.exe"
+    executable.write_bytes(b"test executable placeholder")
+    with pytest.raises(ValueError, match="do not accept"):
+        provider.download(
+            {
+                "url": "https://mega.nz/folder/AbCdEf12#abcdefghijklmnop",
+                "output_dir": str(tmp_path / "downloads"),
+                "output_filename": "renamed.zip",
+                "external_tools": {"mega-get": str(executable)},
+            }
+        )
 
 
 def test_public_file_requires_explicit_official_mega_get(tmp_path: Path) -> None:

@@ -1,5 +1,7 @@
 """Files that must be present in a complete MediaManager release."""
 
+from core.downloads.builtin_integrity import BUILTIN_PROVIDER_HASHES
+
 SOURCE_RELEASE_FILES = (
     "MediaManager.exe",
     "LICENSE",
@@ -72,6 +74,18 @@ SOURCE_RELEASE_FILES = (
     "mod/builtin/youtube-similar/provider.json",
     "mod/builtin/youtube-auto-split/provider.py",
     "mod/builtin/youtube-auto-split/provider.json",
+)
+
+# The integrity pins are the authoritative list of built-in MOD payloads. Keep
+# the historical explicit entries above stable, then append every newer pinned
+# file automatically so packaging cannot silently omit a newly registered MOD.
+PINNED_BUILTIN_RELEASE_FILES = tuple(
+    f"mod/builtin/{provider_id}/{relative_path}"
+    for provider_id, files in BUILTIN_PROVIDER_HASHES.items()
+    for relative_path in files
+)
+SOURCE_RELEASE_FILES += tuple(
+    path for path in PINNED_BUILTIN_RELEASE_FILES if path not in SOURCE_RELEASE_FILES
 )
 
 GENERATED_RELEASE_FILES = (

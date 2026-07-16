@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "locale": "en",
+  "group_name": "Threads",
+  "workspace": {
+    "title": "Threads Official Tools",
+    "subtitle": "Validate and open an official Threads post or Meta's official data-export help; content is never scraped automatically.",
+    "enable": "Enable Threads parent MOD",
+    "url_label": "Official Threads post URL",
+    "placeholder": "https://www.threads.com/@user/post/...",
+    "initial_preview": "Enable a child MOD to open an official post or data-export help.",
+    "wrong_site": "Only official threads.com or migrated threads.net post URLs are accepted."
+  },
+  "ui": {
+    "boundary": "This MOD does not parse, collect, or download Threads content and never reads cookies.",
+    "open_page": "Open official post",
+    "open_export": "Open official data-export help",
+    "page_disabled": "Enable the Official Post child MOD first.",
+    "export_disabled": "Enable the Data Export child MOD first.",
+    "invalid_url": "The URL is not an allowed official Threads post page.",
+    "opened_page": "The official Threads post was opened in the system browser.",
+    "opened_export": "Meta's official Threads data-export help was opened.",
+    "browser_failed": "The system browser could not be opened."
+  },
+  "modules": {
+    "threads": {"name": "Threads parent MOD", "purpose": "Manage Threads official tools and child MODs", "control_location": "MOD Manager → Threads"},
+    "threads-page": {"name": "Official post", "purpose": "Validate an official Threads post URL and open it in the browser", "control_location": "Threads Official Tools → Open official post"},
+    "threads-export": {"name": "Data export", "purpose": "Open Meta's official Threads data-export help", "control_location": "Threads Official Tools → Official data export"}
+  }
+}

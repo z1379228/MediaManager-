@@ -36,6 +36,7 @@ YOUTUBE_HOSTS = (
     "m.youtube.com",
     "music.youtube.com",
     "youtu.be",
+    "www.youtube-nocookie.com",
 )
 MUSIC_PLAYLIST_URL = (
     "https://music.youtube.com/watch?v=zqMOLz9q7Ig"
@@ -61,6 +62,7 @@ def test_youtube_download_mod_routes_only_exact_hosts_without_authority_tricks()
         "https://m.youtube.com/watch?v=example",
         MUSIC_PLAYLIST_URL,
         "https://youtu.be/example",
+        "https://www.youtube-nocookie.com/embed/example",
     ):
         assert provider.supports(url), url
 
@@ -87,6 +89,7 @@ def test_routed_youtube_mods_share_the_same_exact_host_contract() -> None:
         assert provider.hosts == frozenset(YOUTUBE_HOSTS)
         assert provider.supports(MUSIC_PLAYLIST_URL)
         assert provider.supports("https://m.youtube.com/watch?v=example")
+        assert provider.supports("https://www.youtube-nocookie.com/embed/example")
 
 
 def test_music_watch_playlist_is_forwarded_to_analysis_and_playlist(

@@ -185,3 +185,18 @@ def test_thumbnail_rejects_non_facebook_cdn() -> None:
     provider = load_provider()
     assert provider._thumbnail("https://example.com/preview.jpg") == ""
     assert provider._thumbnail("https://fbcdn.net.evil.test/preview.jpg") == ""
+
+
+@pytest.mark.parametrize(
+    "options",
+    (
+        {"format_preset": "audio-mp3"},
+        {"subtitle_mode": "all"},
+        {"audio_only": True},
+        {"start_time": 10},
+        {"end_time": 20},
+    ),
+)
+def test_facebook_rejects_non_video_or_partial_download_options(options) -> None:
+    with pytest.raises(ValueError, match="full-video|format preset"):
+        load_provider()._media_options(options)

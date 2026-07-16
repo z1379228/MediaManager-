@@ -17,6 +17,7 @@ from trusted_ui.media_preview_controls import (
     PreviewSource,
     create_media_preview_controls,
 )
+from trusted_ui.search_paging import merge_search_results, provider_next_cursor
 from trusted_ui.thumbnail_loader import create_thumbnail_loader
 
 
@@ -42,6 +43,7 @@ def youtube_host_label(url: str) -> str:
         "m.youtube.com": "YouTube 行動版",
         "music.youtube.com": "YouTube Music",
         "youtu.be": "youtu.be",
+        "www.youtube-nocookie.com": "YouTube 隱私嵌入",
     }.get(host, "—")
 
 
@@ -154,6 +156,9 @@ def create_youtube_workspace(
             self.cancelled_generations: set[int] = set()
             self.busy = False
             self.closing = False
+            self.last_query = ""
+            self.next_cursor = ""
+            self.loading_more = False
             self.thumbnail_loader = create_thumbnail_loader(self)
             self.bridge = SearchBridge()
             self.bridge.finished.connect(self.show_results)
@@ -259,6 +264,11 @@ def create_youtube_workspace(
             body_layout.addWidget(self.preview_controls)
 
             actions = QHBoxLayout()
+            self.more_button = QPushButton("載入更多")
+            self.more_button.setObjectName("ghost")
+            self.more_button.setAccessibleName("載入更多 YouTube 搜尋結果")
+            self.more_button.clicked.connect(self.load_more)
+            actions.addWidget(self.more_button)
             actions.addStretch()
             self.add_button = QPushButton("將選取結果加入網址清單")
             self.add_button.setObjectName("primary")
@@ -288,6 +298,14 @@ def create_youtube_workspace(
             }[selected]
             self.title.setText(f"{group.display_name} {module.display_name} {suffix}")
             self.subtitle.setText(module.purpose)
+            self.more_button.setText(
+                {
+                    "zh-TW": "載入更多",
+                    "zh-CN": "加载更多",
+                    "en": "Load more",
+                    "ja": "さらに読み込む",
+                }[selected]
+            )
 
         def toggle_body(self, expanded: bool) -> None:
             self.body.setVisible(expanded)
@@ -390,14 +408,39 @@ def create_youtube_workspace(
                 return
             if self.busy or self.closing:
                 return
+            self.last_query = query
+            self.next_cursor = ""
+            self.start_search(query, cursor="", append=False)
+
+        def load_more(self) -> None:
+            if (
+                self.busy
+                or self.closing
+                or not self.results
+                or not self.last_query
+                or not self.next_cursor
+            ):
+                return
+            self.start_search(
+                self.last_query,
+                cursor=self.next_cursor,
+                append=True,
+            )
+
+        def start_search(self, query: str, *, cursor: str, append: bool) -> None:
             self.generation += 1
             generation = self.generation
             self.active_generation = generation
             self.busy = True
-            self.results = ()
-            self.table.setRowCount(0)
+            self.loading_more = append
+            if not append:
+                self.results = ()
+                self.table.setRowCount(0)
             self.thumbnail_loader.cancel_pending()
-            self.status.setText("正在搜尋 YouTube…")
+            self.preview_controls.stop_all()
+            self.status.setText(
+                "正在載入更多 YouTube 結果…" if append else "正在搜尋 YouTube…"
+            )
             self.update_action_state()
 
             def worker() -> None:
@@ -407,6 +450,7 @@ def create_youtube_workspace(
                         provider_ids=(YOUTUBE_SEARCH_PROVIDER_ID,),
                         limit=24,
                         content_type="all",
+                        cursor=cursor,
                     )
                     error = ""
                 except Exception as caught:
@@ -434,24 +478,41 @@ def create_youtube_workspace(
         ) -> None:
             if self.closing or generation != self.active_generation:
                 return
+            append = self.loading_more
+            self.loading_more = False
             self.busy = False
             if generation in self.cancelled_generations:
                 self.cancelled_generations.discard(generation)
-                self.results = ()
-                self.table.setRowCount(0)
-                self.status.setText("YouTube 搜尋已取消。")
+                if not append:
+                    self.results = ()
+                    self.table.setRowCount(0)
+                    self.next_cursor = ""
+                self.status.setText(
+                    "已取消載入更多；原搜尋結果仍保留。"
+                    if append
+                    else "YouTube 搜尋已取消。"
+                )
                 self.refresh_availability()
                 return
             if error:
-                self.results = ()
-                self.table.setRowCount(0)
-                self.status.setText(f"YouTube 搜尋失敗：{error}")
+                if not append:
+                    self.results = ()
+                    self.table.setRowCount(0)
+                    self.next_cursor = ""
+                prefix = "載入更多失敗" if append else "YouTube 搜尋失敗"
+                self.status.setText(f"{prefix}：{error}")
                 self.refresh_availability()
                 return
             if not isinstance(response, FederatedSearchResult):
-                self.results = ()
-                self.table.setRowCount(0)
-                self.status.setText("YouTube 搜尋失敗：搜尋 MOD 回傳格式無效。")
+                if not append:
+                    self.results = ()
+                    self.table.setRowCount(0)
+                    self.next_cursor = ""
+                self.status.setText(
+                    "載入更多失敗：搜尋 MOD 回傳格式無效。"
+                    if append
+                    else "YouTube 搜尋失敗：搜尋 MOD 回傳格式無效。"
+                )
                 self.refresh_availability()
                 return
 
@@ -466,17 +527,35 @@ def create_youtube_workspace(
                     rejected += 1
                     continue
                 accepted.append(item)
-            self.results = tuple(accepted)
+            selected_urls = set(self.selected_urls()) if append else set()
+            previous_count = len(self.results) if append else 0
+            self.results = merge_search_results(
+                self.results if append else (),
+                accepted,
+            )
+            added_count = len(self.results) - previous_count
+            if not response.failures:
+                self.next_cursor = provider_next_cursor(
+                    response, YOUTUBE_SEARCH_PROVIDER_ID
+                )
             self.populate_results()
+            self.restore_selected_urls(selected_urls)
             if response.failures:
                 message = response.failures[0].message[:240]
                 self.status.setText(f"YouTube 搜尋失敗：{message}")
             elif self.results:
                 suffix = f"；已略過 {rejected} 筆非官方來源" if rejected else ""
-                self.status.setText(
-                    f"找到 {len(self.results)} 筆 YouTube 結果{suffix}；"
-                    "可按 Ctrl／Shift 多選。"
-                )
+                paging = "；可繼續載入" if self.next_cursor else "；已到結果尾端"
+                if append:
+                    self.status.setText(
+                        f"新增 {added_count} 筆，目前共 {len(self.results)} 筆"
+                        f" YouTube 結果{suffix}{paging}。"
+                    )
+                else:
+                    self.status.setText(
+                        f"找到 {len(self.results)} 筆 YouTube 結果{suffix}{paging}；"
+                        "可按 Ctrl／Shift 多選。"
+                    )
             else:
                 self.status.setText("找不到 YouTube 結果，請改用較短或不同關鍵字。")
             self.refresh_availability()
@@ -535,6 +614,15 @@ def create_youtube_workspace(
                 self.results[row].url for row in rows if 0 <= row < len(self.results)
             )
 
+        def restore_selected_urls(self, urls: set[str]) -> None:
+            for row, item in enumerate(self.results):
+                if item.url not in urls:
+                    continue
+                for column in range(self.table.columnCount()):
+                    cell = self.table.item(row, column)
+                    if cell is not None:
+                        cell.setSelected(True)
+
         def add_selected(self) -> None:
             urls = self.selected_urls()
             if not urls:
@@ -561,6 +649,9 @@ def create_youtube_workspace(
             self.search_button.setEnabled(enabled and not self.busy)
             self.cancel_button.setEnabled(self.busy and not cancelled)
             self.table.setEnabled(not self.busy)
+            self.more_button.setEnabled(
+                enabled and not self.busy and bool(self.results) and bool(self.next_cursor)
+            )
             self.add_button.setEnabled(not self.busy and bool(self.selected_urls()))
             self.preview_controls.setEnabled(not self.busy)
             self.preview_controls.refresh()

@@ -72,6 +72,37 @@ because there is no current official MEGA distribution or supported integration
 contract for it, MediaManager must not depend on it or direct users to an
 unverified installer.
 
+## AniGamer workflow references (2026-07-16)
+
+FileCentipede and iMyFone TopClipper are retained as UI/workflow references for
+the Development 16.0 AniGamer block. FileCentipede contributes the useful ideas
+of explicit task detail, bounded queue state, pause/resume visibility and
+completion statistics. TopClipper contributes a short staged flow: paste a URL,
+enable the next action only after recognition, choose bounded options, enqueue,
+then preview or open the completed local result.
+
+Only those interaction patterns are acceptable. MediaManager will not depend on
+either product and will not copy encrypted-stream capture, cookie/header import,
+private or member-only downloads, watermark removal, region bypass, ad skipping
+or broad browser interception. For AniGamer, the staged flow ends at official
+catalog/episode navigation, a local public-metadata index, or user-selected local
+media.
+
+## Download-type workflow reference (2026-07-16)
+
+iDownerGo is added as a download-input and queue workflow reference. Its useful
+patterns are separate entry points for one URL, multiple URLs and a playlist;
+bounded format, quality and destination choices; distinct downloading and
+completed views; and visible pause-all/resume controls. MediaManager keeps its
+own safer confirmation rule: analysis never starts a download automatically,
+playlist items remain unchecked by default, and the owning site MOD must accept
+the URL before options or queue actions are enabled.
+
+Cookie import for private videos, proxy credentials, built-in browser capture,
+protected streaming services and a generic “all sites” promise are not adopted.
+Local ad-segment removal is a separate disabled-by-default `media-ad-trim` MOD;
+it only edits user-selected local files and never removes website advertising.
+
 ## Reference groups
 
 Desktop applications are the primary product and workflow references:
@@ -90,6 +121,9 @@ Desktop applications are the primary product and workflow references:
 - Vuze
 - Deluge
 - Gopeed
+- FileCentipede (workflow reference only)
+- iMyFone TopClipper (workflow reference only)
+- iDownerGo (download-type workflow reference only)
 
 Web converters are secondary references for short interaction flows only:
 
@@ -195,6 +229,10 @@ Sources:
 - https://www.vuze.com/
 - https://deluge-torrent.org/
 - https://gopeed.com/docs
+- https://filecxx.com/
+- https://github.com/filecxx/FileCentipede
+- https://www.imyfone.com/crop-video/guide/
+- https://idownergo.com/guide/idownergo-video-downloader/
 
 ## Implemented download archive
 

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from core.builtin_mod_catalog import builtin_mod_descriptor, builtin_mod_ids
-from core.mod_groups import SITE_MOD_CHILDREN, SITE_MOD_PARENT
+from core.builtin_mod_catalog import (
+    BUILTIN_MOD_CHILDREN,
+    BUILTIN_MOD_PARENT,
+    builtin_mod_descriptor,
+    builtin_mod_ids,
+)
 
 
 DOWNLOAD_MOD_IDS = builtin_mod_ids("download")
@@ -47,7 +51,7 @@ def set_builtin_mod_enabled(
     """Persist a built-in MOD state and cancel work owned by a disabled MOD."""
 
     cancelled = 0
-    parent_id = SITE_MOD_PARENT.get(provider_id)
+    parent_id = BUILTIN_MOD_PARENT.get(provider_id)
     if enabled and parent_id is not None:
         try:
             parent_available, parent_enabled = _registered_state(context, parent_id)
@@ -86,8 +90,8 @@ def set_builtin_mod_enabled(
         raise KeyError(provider_id)
 
     cascaded_children: list[str] = []
-    if not enabled and provider_id in SITE_MOD_CHILDREN:
-        for child_id in SITE_MOD_CHILDREN[provider_id]:
+    if not enabled and provider_id in BUILTIN_MOD_CHILDREN:
+        for child_id in BUILTIN_MOD_CHILDREN[provider_id]:
             try:
                 available, child_enabled = _registered_state(context, child_id)
             except (AttributeError, KeyError, RuntimeError):

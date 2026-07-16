@@ -24,6 +24,7 @@ class ConversionRequest:
     start_time: float | None = None
     end_time: float | None = None
     hardware_acceleration: bool = False
+    remove_ranges: tuple[tuple[float, float], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

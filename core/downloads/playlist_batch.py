@@ -18,6 +18,7 @@ def build_playlist_requests(
     subtitle_languages: tuple[str, ...],
     timed_comment_mode: str = "none",
     container_preset: str = "auto",
+    provider_options: tuple[tuple[str, str], ...] = (),
 ) -> tuple[DownloadRequest, ...]:
     if not entries:
         raise ValueError("at least one playlist entry must be selected")
@@ -41,6 +42,7 @@ def build_playlist_requests(
             subtitle_languages=subtitle_languages,
             timed_comment_mode=timed_comment_mode,
             container_preset=container_preset,
+            provider_options=provider_options,
         )
         for entry in entries
     )

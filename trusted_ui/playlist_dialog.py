@@ -74,9 +74,12 @@ def show_playlist_dialog(
     search.setObjectName("playlistFilter")
     search.setPlaceholderText("依標題或作者篩選")
     search.setClearButtonEnabled(True)
-    select_visible = QPushButton("勾選可見項目")
-    clear_visible = QPushButton("清除可見項目")
-    invert_visible = QPushButton("反向勾選可見項目")
+    select_visible = QPushButton("全選可下載")
+    select_visible.setObjectName("playlistSelectAll")
+    clear_visible = QPushButton("全部取消")
+    clear_visible.setObjectName("playlistClearAll")
+    invert_visible = QPushButton("反向勾選篩選結果")
+    invert_visible.setObjectName("playlistInvertFiltered")
     export_checked = QPushButton("匯出所選 ID")
     tools.addWidget(search, 1)
     tools.addWidget(select_visible)
@@ -284,8 +287,9 @@ def show_playlist_dialog(
         update_summary()
         update_preview_state()
 
-    def set_visible(mode: str) -> None:
-        for entry in visible_entries:
+    def set_checked(mode: str) -> None:
+        target_entries = visible_entries if mode == "invert" else entries
+        for entry in target_entries:
             if not entry.available:
                 continue
             if mode == "select":
@@ -526,9 +530,9 @@ def show_playlist_dialog(
     search.textChanged.connect(populate)
     table.itemChanged.connect(checkbox_changed)
     table.currentCellChanged.connect(lambda *_args: update_preview_state())
-    select_visible.clicked.connect(lambda: set_visible("select"))
-    clear_visible.clicked.connect(lambda: set_visible("clear"))
-    invert_visible.clicked.connect(lambda: set_visible("invert"))
+    select_visible.clicked.connect(lambda: set_checked("select"))
+    clear_visible.clicked.connect(lambda: set_checked("clear"))
+    invert_visible.clicked.connect(lambda: set_checked("invert"))
     export_checked.clicked.connect(export_selection)
     preview_button.clicked.connect(prepare_audio_preview)
     stop_preview.clicked.connect(stop_audio_preview)

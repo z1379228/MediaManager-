@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from core.dependency_health import DependencyReport, DependencyStatus
 from trusted_ui.dependency_dialog import (
+    dependency_table_row,
     dependency_presentation,
     startup_dependency_prompt_required,
 )
@@ -42,8 +43,86 @@ def test_dependency_badge_separates_optional_mod_tools() -> None:
         DependencyStatus("speech-model", "Speech model", False, "", "", ""),
     )
     assert dependency_presentation(DependencyReport(statuses))[0] == (
-        "核心 4/4｜選用 0/3"
+        "核心 4/4｜選用 MOD 工具 0/3"
     )
+
+
+def test_dependency_rows_distinguish_missing_optional_tools_from_core_faults() -> None:
+    optional = DependencyStatus(
+        "whisper-cli",
+        "whisper-cli",
+        False,
+        "",
+        "",
+        "尚未偵測到 whisper-cli；Speech to Text 無法執行",
+    )
+    core = DependencyStatus(
+        "ffmpeg",
+        "FFmpeg",
+        False,
+        "",
+        "",
+        "尚未偵測到 FFmpeg",
+    )
+
+    assert dependency_table_row(optional, is_core=False) == (
+        "選用 MOD",
+        "whisper-cli",
+        "未安裝（不影響核心）",
+        "尚未偵測到",
+        "Speech to Text MOD：尚未偵測到 whisper-cli；Speech to Text 無法執行",
+    )
+    assert dependency_table_row(core, is_core=True)[2] == "缺少（阻擋核心）"
+
+
+def test_dependency_dialog_exposes_full_detected_path_and_copy_action(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import pytest
+
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QPushButton, QTableWidget
+
+    from trusted_ui.dependency_dialog import create_dependency_dialog
+
+    detected = str(tmp_path / "MEGAcmd" / "mega-get.bat")
+    statuses = _report((True, True, True, True)).statuses + (
+        DependencyStatus(
+            "mega-get",
+            "MEGAcmd mega-get",
+            True,
+            "",
+            detected,
+            "MEGA 公開檔案下載可用",
+        ),
+    )
+    app = QApplication.instance() or QApplication([])
+    dialog = create_dependency_dialog(
+        tmp_path,
+        report_factory=lambda _root: DependencyReport(statuses),
+    )
+    table = dialog.findChild(QTableWidget, "dependencyTable")
+    copy = next(
+        button
+        for button in dialog.findChildren(QPushButton)
+        if button.text() == "複製所選工具路徑"
+    )
+    try:
+        optional_row = table.rowCount() - 1
+        assert table.item(optional_row, 0).text() == "選用 MOD"
+        assert table.item(optional_row, 2).text() == "可用"
+        assert table.item(optional_row, 3).toolTip() == detected
+        table.selectRow(optional_row)
+        app.processEvents()
+        assert copy.isEnabled()
+        copy.click()
+        assert QApplication.clipboard().text() == detected
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
 
 
 def test_startup_dependency_prompt_only_appears_for_incomplete_support() -> None:

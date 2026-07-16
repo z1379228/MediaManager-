@@ -2,7 +2,9 @@
 
 Review date: 2026-07-16
 Current decision: MediaManager provides an official post and data-export bridge
-only. It does not enable a Threads download provider.
+only. Development 12.2 exposes those tools as a disabled-by-default Threads
+parent MOD with separate official-post and data-export child MODs. It does not
+enable a Threads download provider.
 
 ## Evidence
 
@@ -21,6 +23,9 @@ only. It does not enable a Threads download provider.
 
 ## Delivered scope
 
+- The MOD manager exposes `threads` as the parent. Its `threads-page` and
+  `threads-export` children are shown and can be enabled only while the parent
+  is enabled; disabling the parent also disables both children.
 - Blank input opens `https://www.threads.com/`.
 - A post must use HTTPS and match
   `/@<bounded-username>/post/<bounded-post-id>` on `threads.com` or the migrated
@@ -29,6 +34,8 @@ only. It does not enable a Threads download provider.
 - HTTP, credentials, explicit ports, fragments, queries, profiles, short share
   paths, encoded separators and lookalike hosts are rejected locally.
 - A separate explicit button opens Meta's Threads-data export instructions.
+- A user-selected official export ZIP can be inspected locally with bounded
+  archive checks and only recognized media can be copied into a local index.
 - Nothing connects before the user clicks. Sign-in, viewing and export remain
   in the system browser on Meta's official site.
 

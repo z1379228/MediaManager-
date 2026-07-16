@@ -5,7 +5,6 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from core.discovery.adapters import FederatedSearchResult
 from core.discovery.query_ranking import (
@@ -20,6 +19,7 @@ from core.mod_groups import (
     load_builtin_mod_groups,
 )
 from core.settings import normalized_language
+from core.site_routing import classify_site_url
 from trusted_ui.empty_state import create_empty_state
 from trusted_ui.builtin_mod_control import (
     builtin_mod_is_enabled,
@@ -93,36 +93,10 @@ def explicit_search_source_name(
 
 
 def search_source_for_url(url: object) -> str:
-    """Infer display provenance only from an exact supported result host."""
+    """Infer result provenance from the shared exact-host/path router."""
 
-    if not isinstance(url, str):
-        return ""
-    try:
-        parsed = urlsplit(url)
-        host = (parsed.hostname or "").lower()
-        port = parsed.port
-    except ValueError:
-        return ""
-    if (
-        parsed.scheme != "https"
-        or parsed.username is not None
-        or parsed.password is not None
-        or port is not None
-    ):
-        return ""
-    if host in {
-        "youtube.com",
-        "www.youtube.com",
-        "m.youtube.com",
-        "music.youtube.com",
-        "youtu.be",
-    }:
-        return "youtube-search"
-    if host in {"bilibili.com", "www.bilibili.com", "m.bilibili.com", "b23.tv"}:
-        return "bilibili-search"
-    if host == "ani.gamer.com.tw":
-        return "ani-gamer-search"
-    return ""
+    route = classify_site_url(url)
+    return route.search_provider_id if route is not None else ""
 
 
 def recent_history_queries(

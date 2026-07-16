@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import pytest
 
@@ -137,6 +137,36 @@ def test_feature_mod_toggle_uses_shared_event_and_reports_cancelled_work() -> No
             "enabled": False,
             "cancelled_tasks": 2,
         }
+    ]
+
+
+def test_feature_child_uses_generic_parent_gate_and_disable_cascade() -> None:
+    features = Mock()
+    features.statuses.return_value = (
+        FeatureStatus("media-convert", "Media Convert", False),
+        FeatureStatus("media-ad-trim", "Local Ad Segment Trim", False),
+    )
+    context = SimpleNamespace(
+        download_providers=Mock(),
+        download_queue=Mock(),
+        discovery=Mock(),
+        features=features,
+        audit=Mock(),
+        events=EventBus(),
+    )
+
+    with pytest.raises(RuntimeError, match="media-convert 主 MOD"):
+        set_builtin_mod_enabled(context, "media-ad-trim", True)
+
+    features.statuses.return_value = (
+        FeatureStatus("media-convert", "Media Convert", True),
+        FeatureStatus("media-ad-trim", "Local Ad Segment Trim", True),
+    )
+    features.set_enabled.return_value = 2
+    assert set_builtin_mod_enabled(context, "media-convert", False) == 4
+    assert features.set_enabled.call_args_list == [
+        call("media-convert", False),
+        call("media-ad-trim", False),
     ]
 
 

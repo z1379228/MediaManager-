@@ -23,6 +23,68 @@ class StderrLogger:
 
 PROVIDER_ID = "youtube"
 DISPLAY_NAME = "YouTube"
+_FORMAT_SELECTORS = {
+    "best": "b[height<=1080][ext=mp4]/b[height<=1080]/bv*[height<=1080]+ba/b",
+    "video-2160": (
+        "bv*[height<=2160][ext=mp4]+ba[ext=m4a]/"
+        "bv*[height<=2160]+ba/b[height<=2160]"
+    ),
+    "video-1440": (
+        "bv*[height<=1440][ext=mp4]+ba[ext=m4a]/"
+        "bv*[height<=1440]+ba/b[height<=1440]"
+    ),
+    "video-1080": "bv*[height<=1080]+ba/b[height<=1080]/b",
+    "video-h264-1080": (
+        "bv*[vcodec^=avc1][height<=1080]+ba[acodec^=mp4a]/"
+        "b[vcodec^=avc1][height<=1080][ext=mp4]"
+    ),
+    "video-720": "bv*[height<=720]+ba/b[height<=720]/b",
+    "video-480": "bv*[height<=480]+ba/b[height<=480]/b",
+    "audio-m4a": "ba[ext=m4a]/ba",
+    "audio-m4a-256": "ba[ext=m4a]/ba",
+    "audio-mp3": "ba[abr<=192]/ba",
+    "audio-mp3-320": "ba",
+    "audio-opus": "ba[acodec^=opus]/ba",
+    "audio-flac": "ba",
+    "audio-wav": "ba",
+}
+_AUDIO_OUTPUTS: dict[str, tuple[str, str | None]] = {
+    "audio-m4a": ("m4a", "128"),
+    "audio-m4a-256": ("m4a", "256"),
+    "audio-mp3": ("mp3", "192"),
+    "audio-mp3-320": ("mp3", "320"),
+    "audio-opus": ("opus", "160"),
+    "audio-flac": ("flac", None),
+    "audio-wav": ("wav", None),
+}
+_VIDEO_HEIGHTS = {
+    "best": 1080,
+    "video-2160": 2160,
+    "video-1440": 1440,
+    "video-1080": 1080,
+    "video-h264-1080": 1080,
+    "video-720": 720,
+    "video-480": 480,
+}
+
+
+def _container_format_selector(preset: str, container: str) -> str:
+    if container in {"auto", "mkv"} or preset.startswith("audio-"):
+        return _FORMAT_SELECTORS[preset]
+    maximum_height = _VIDEO_HEIGHTS[preset]
+    if container == "mp4":
+        if preset == "video-h264-1080":
+            return _FORMAT_SELECTORS[preset]
+        return (
+            f"bv*[height<={maximum_height}][ext=mp4]+ba[ext=m4a]/"
+            f"b[height<={maximum_height}][ext=mp4]"
+        )
+    if container == "webm" and preset != "video-h264-1080":
+        return (
+            f"bv*[height<={maximum_height}][ext=webm]+ba[ext=webm]/"
+            f"b[height<={maximum_height}][ext=webm]"
+        )
+    raise ValueError("format preset is incompatible with the selected container")
 
 
 def _thumbnail_url(info: dict[str, Any]) -> str:
@@ -98,6 +160,9 @@ def format_summaries(info: dict[str, Any]) -> list[dict[str, Any]]:
         size = bounded_number("filesize", 16 * 1024**4) or bounded_number(
             "filesize_approx", 16 * 1024**4
         )
+        dynamic_range = str(raw.get("dynamic_range") or "unknown")[:32]
+        if not re.fullmatch(r"[A-Za-z0-9+._ -]+", dynamic_range):
+            dynamic_range = "unknown"
         values[format_id] = {
             "format_id": format_id,
             "extension": str(raw.get("ext") or "unknown")[:16],
@@ -111,6 +176,7 @@ def format_summaries(info: dict[str, Any]) -> list[dict[str, Any]]:
             "video_codec": str(raw.get("vcodec") or "none")[:80],
             "audio_codec": str(raw.get("acodec") or "none")[:80],
             "estimated_bytes": int(size) if size else None,
+            "dynamic_range": dynamic_range,
         }
     return sorted(
         values.values(),
@@ -119,19 +185,26 @@ def format_summaries(info: dict[str, Any]) -> list[dict[str, Any]]:
     )[:40]
 
 
+def _subtitle_languages(info: dict[str, Any], field: str) -> list[str]:
+    tracks = info.get(field)
+    if not isinstance(tracks, dict):
+        return []
+    return sorted(
+        {
+            str(language)[:32]
+            for language, values in tracks.items()
+            if language
+            and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,31}", str(language))
+            and isinstance(values, list)
+            and values
+        }
+    )[:32]
+
+
 def media_languages(info: dict[str, Any]) -> tuple[list[str], list[str]]:
-    subtitles: set[str] = set()
-    for field in ("subtitles", "automatic_captions"):
-        tracks = info.get(field)
-        if isinstance(tracks, dict):
-            subtitles.update(
-                str(language)[:32]
-                for language, values in tracks.items()
-                if language
-                and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,31}", str(language))
-                and isinstance(values, list)
-                and values
-            )
+    manual_subtitles = _subtitle_languages(info, "subtitles")
+    automatic_subtitles = _subtitle_languages(info, "automatic_captions")
+    subtitles = set(manual_subtitles) | set(automatic_subtitles)
     audio = {
         str(item.get("language"))[:32]
         for item in (info.get("formats") or [])[:500]
@@ -143,6 +216,22 @@ def media_languages(info: dict[str, Any]) -> tuple[list[str], list[str]]:
         and str(item.get("acodec") or "none").casefold() != "none"
     }
     return sorted(audio)[:32], sorted(subtitles)[:32]
+
+
+def _postprocess_options(request: dict[str, Any]) -> tuple[bool, bool, bool]:
+    raw = request.get("provider_options", {})
+    if not isinstance(raw, dict):
+        raise ValueError("provider options are invalid")
+    allowed = {"embed_metadata", "embed_thumbnail", "embed_chapters"}
+    if set(raw) - allowed:
+        raise ValueError("unsupported YouTube provider option")
+    values: list[bool] = []
+    for key in ("embed_metadata", "embed_thumbnail", "embed_chapters"):
+        value = raw.get(key, "false")
+        if value not in {"true", "false"}:
+            raise ValueError("YouTube post-processing option is invalid")
+        values.append(value == "true")
+    return values[0], values[1], values[2]
 
 
 def analyze(request: dict[str, Any]) -> dict[str, Any]:
@@ -171,6 +260,10 @@ def analyze(request: dict[str, Any]) -> dict[str, Any]:
             }
         )
     audio_languages, subtitle_languages = media_languages(info)
+    manual_subtitle_languages = _subtitle_languages(info, "subtitles")
+    automatic_subtitle_languages = _subtitle_languages(
+        info, "automatic_captions"
+    )
     return {
         "id": info.get("id", ""),
         "title": info.get("title", ""),
@@ -182,6 +275,8 @@ def analyze(request: dict[str, Any]) -> dict[str, Any]:
         "formats": format_summaries(info),
         "audio_languages": audio_languages,
         "subtitle_languages": subtitle_languages,
+        "manual_subtitle_languages": manual_subtitle_languages,
+        "automatic_subtitle_languages": automatic_subtitle_languages,
     }
 
 
@@ -305,19 +400,11 @@ def download(request: dict[str, Any]) -> str:
         )
 
     format_preset = request.get("format_preset", "best")
-    formats = {
-        "best": (
-            "b[height<=1080][ext=mp4]/b[height<=1080]/"
-            "bv*[height<=1080]+ba/b"
-        ),
-        "video-1080": "bv*[height<=1080]+ba/b[height<=1080]/b",
-        "video-720": "bv*[height<=720]+ba/b[height<=720]/b",
-        "video-480": "bv*[height<=480]+ba/b[height<=480]/b",
-        "audio-m4a": "ba[ext=m4a]/ba",
-        "audio-mp3": "ba[abr<=192]/ba",
-    }
-    if format_preset not in formats:
+    if format_preset not in _FORMAT_SELECTORS:
         raise ValueError("format preset is invalid")
+    container_preset = request.get("container_preset", "auto")
+    if container_preset not in {"auto", "mp4", "mkv", "webm"}:
+        raise ValueError("container preset is invalid")
     subtitle_mode = request.get("subtitle_mode", "none")
     subtitle_languages = request.get("subtitle_languages", [])
     if (
@@ -334,10 +421,20 @@ def download(request: dict[str, Any]) -> str:
         or (subtitle_mode != "selected" and subtitle_languages)
     ):
         raise ValueError("subtitle options are invalid")
+    embed_metadata, embed_thumbnail, embed_chapters = _postprocess_options(
+        request
+    )
 
+    audio_only = request.get("audio_only") is True or format_preset.startswith(
+        "audio-"
+    )
+    if audio_only and container_preset != "auto":
+        raise ValueError("audio formats do not accept a video container")
     options: dict[str, Any] = {
-        "format": formats[format_preset],
-        "merge_output_format": "mp4",
+        "format": _container_format_selector(format_preset, container_preset),
+        "merge_output_format": (
+            container_preset if container_preset != "auto" else "mp4"
+        ),
         "outtmpl": str(output_template),
         "windowsfilenames": True,
         "noplaylist": True,
@@ -357,19 +454,35 @@ def download(request: dict[str, Any]) -> str:
     options.update(runtime_options(request))
     if request.get("ffmpeg_location"):
         options["ffmpeg_location"] = request["ffmpeg_location"]
-    audio_only = request.get("audio_only") is True or format_preset.startswith(
-        "audio-"
-    )
     if audio_only:
-        codec = "mp3" if format_preset == "audio-mp3" else "m4a"
-        options["format"] = formats.get(format_preset, "ba[ext=m4a]/ba")
-        options["postprocessors"] = [
+        codec, quality = _AUDIO_OUTPUTS.get(format_preset, ("m4a", "128"))
+        options["format"] = _FORMAT_SELECTORS.get(
+            format_preset, _FORMAT_SELECTORS["audio-m4a"]
+        )
+        postprocessor = {
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": codec,
+        }
+        if quality is not None:
+            postprocessor["preferredquality"] = quality
+        options["postprocessors"] = [postprocessor]
+    postprocessors = options.setdefault("postprocessors", [])
+    if embed_metadata or embed_chapters:
+        postprocessors.append(
             {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": codec,
-                "preferredquality": "192" if codec == "mp3" else "128",
+                "key": "FFmpegMetadata",
+                "add_metadata": embed_metadata,
+                "add_chapters": embed_chapters,
+                "add_infojson": False,
             }
-        ]
+        )
+    if embed_thumbnail:
+        options["writethumbnail"] = True
+        postprocessors.append(
+            {"key": "EmbedThumbnail", "already_have_thumbnail": False}
+        )
+    if not postprocessors:
+        options.pop("postprocessors", None)
     if subtitle_mode != "none":
         options.update(
             writesubtitles=True,
@@ -383,13 +496,28 @@ def download(request: dict[str, Any]) -> str:
     if start is not None or end is not None:
         # Segment mode uses a progressive stream to avoid a second merge download.
         if not audio_only:
-            maximum_height = {
-                "video-480": 480,
-                "video-720": 720,
-                "video-1080": 1080,
-                "best": 1080,
-            }[format_preset]
-            options["format"] = f"b[height<={maximum_height}]/b"
+            if container_preset != "auto":
+                options["format"] = _container_format_selector(
+                    format_preset, container_preset
+                )
+            elif format_preset == "video-h264-1080":
+                options["format"] = (
+                    "b[vcodec^=avc1][height<=1080][ext=mp4]/"
+                    "b[vcodec^=avc1][height<=1080]"
+                )
+            elif format_preset in {"video-1440", "video-2160"}:
+                # High-resolution sources normally use separate video/audio
+                # streams. Keep both streams height-bounded and let FFmpeg
+                # merge the requested time range.
+                options["format"] = _FORMAT_SELECTORS[format_preset]
+            else:
+                maximum_height = {
+                    "video-480": 480,
+                    "video-720": 720,
+                    "video-1080": 1080,
+                    "best": 1080,
+                }[format_preset]
+                options["format"] = f"b[height<={maximum_height}]/b"
         options["download_ranges"] = download_range_func(
             None, [(start or 0.0, end or float("inf"))]
         )
@@ -403,9 +531,8 @@ def download(request: dict[str, Any]) -> str:
             if requested.is_file():
                 return str(requested)
         if audio_only:
-            converted = prepared.with_suffix(
-                ".mp3" if format_preset == "audio-mp3" else ".m4a"
-            )
+            codec = _AUDIO_OUTPUTS.get(format_preset, ("m4a", "128"))[0]
+            converted = prepared.with_suffix(f".{codec}")
             if converted.is_file():
                 return str(converted)
         return str(prepared)

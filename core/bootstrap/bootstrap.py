@@ -7,7 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeVar
 
-from core.builtin_mod_catalog import builtin_default_enabled, builtin_mod_descriptor
+from core.builtin_mod_catalog import (
+    BUILTIN_MOD_CHILDREN,
+    builtin_default_enabled,
+    builtin_mod_descriptor,
+)
 from core.bootstrap.lifecycle import Lifecycle
 from core.bootstrap.startup_state import StartupPhase, StartupState
 from core.downloads.builtin import (
@@ -24,7 +28,7 @@ from core.downloads.queue import DownloadQueue
 from core.downloads.subprocess_provider import SubprocessDownloadProvider
 from core.events.event_bus import EventBus
 from core.features import DeclarativeFeatureGate, FeatureModRegistry
-from core.conversion import ConversionService
+from core.conversion import ConversionService, MediaAdTrimFeature
 from core.transcription import SpeechModelManager, TranscriptionService
 from core.automation import AutomationCandidate, AutomationDuplicate, AutomationRule, AutomationService
 from core.downloads.archive import DuplicateDownloadError
@@ -32,7 +36,6 @@ from core.downloads.models import DownloadRequest
 from core.logging.audit_log import AuditLog
 from core.logging.logger import configure_logging
 from core.library import LibraryService
-from core.mod_groups import SITE_MOD_CHILDREN
 from core.plugins.cleanup import PluginCleanupManager
 from core.plugins.installer import PluginInstaller
 from core.plugins.manager import PluginManager
@@ -62,7 +65,14 @@ from core.version import BUILD_CHANNEL
 _BUILTIN_DOWNLOAD_DETAILS = {
     "youtube": (
         "YouTube",
-        ("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"),
+        (
+            "youtube.com",
+            "www.youtube.com",
+            "m.youtube.com",
+            "music.youtube.com",
+            "youtu.be",
+            "www.youtube-nocookie.com",
+        ),
     ),
     "generic-ytdlp": (
         "其他網站 Beta",
@@ -84,11 +94,6 @@ _BUILTIN_DOWNLOAD_DETAILS = {
             "www.twitch.tv",
             "m.twitch.tv",
             "clips.twitch.tv",
-            "x.com",
-            "www.x.com",
-            "twitter.com",
-            "www.twitter.com",
-            "mobile.twitter.com",
         ),
     ),
     "bilibili": (
@@ -108,6 +113,10 @@ _BUILTIN_DOWNLOAD_DETAILS = {
     "mega": (
         "MEGA",
         ("mega.nz", "www.mega.nz"),
+    ),
+    "direct-http": (
+        "Direct HTTP",
+        ("direct-http.invalid",),
     ),
 }
 _BuiltinT = TypeVar("_BuiltinT")
@@ -369,6 +378,25 @@ class Bootstrap:
                 builtin_download_capability("mega")
             )
 
+        direct_http = load_builtin(
+            "direct-http",
+            lambda provider_root: SubprocessDownloadProvider(
+                provider_root,
+                application_root=paths.application,
+                expected_hashes=BUILTIN_PROVIDER_HASHES["direct-http"],
+                download_timeout=86_400,
+                idle_timeout=300,
+                runtime_home=paths.temp / "provider-runtime" / "direct-http",
+            ),
+        )
+        if direct_http is not None:
+            download_providers.register(
+                direct_http, enabled=builtin_default_enabled("direct-http")
+            )
+            download_providers.register_capability(
+                builtin_download_capability("direct-http")
+            )
+
         youtube_search = load_builtin(
             "youtube-search",
             lambda provider_root: SubprocessDownloadProvider(
@@ -430,17 +458,41 @@ class Bootstrap:
                 enabled=builtin_default_enabled("ani-gamer-episodes"),
             )
 
-        ani_gamer = load_builtin(
-            "ani-gamer",
-            lambda provider_root: DeclarativeFeatureGate.from_file(
-                provider_root / "feature.json"
-            ),
-        )
-        if ani_gamer is not None:
-            features.register(
-                ani_gamer,
-                enabled=builtin_default_enabled("ani-gamer"),
+        for feature_id in ("ani-gamer", "ani-gamer-offline"):
+            ani_gamer_feature = load_builtin(
+                feature_id,
+                lambda provider_root: DeclarativeFeatureGate.from_file(
+                    provider_root / "feature.json"
+                ),
             )
+            if ani_gamer_feature is not None:
+                features.register(
+                    ani_gamer_feature,
+                    enabled=builtin_default_enabled(feature_id),
+                )
+
+        for feature_id in (
+            "instagram",
+            "instagram-page",
+            "instagram-export",
+            "threads",
+            "threads-page",
+            "threads-export",
+            "twitter",
+            "twitter-page",
+            "twitter-export",
+        ):
+            social_feature = load_builtin(
+                feature_id,
+                lambda provider_root: DeclarativeFeatureGate.from_file(
+                    provider_root / "feature.json"
+                ),
+            )
+            if social_feature is not None:
+                features.register(
+                    social_feature,
+                    enabled=builtin_default_enabled(feature_id),
+                )
 
         bilibili_danmaku = load_builtin(
             "bilibili-danmaku",
@@ -548,6 +600,15 @@ class Bootstrap:
                 conversion,
                 enabled=builtin_default_enabled("media-convert"),
             )
+            media_ad_trim = load_builtin(
+                "media-ad-trim",
+                lambda _provider_root: MediaAdTrimFeature(conversion),
+            )
+            if media_ad_trim is not None:
+                features.register(
+                    media_ad_trim,
+                    enabled=builtin_default_enabled("media-ad-trim"),
+                )
 
         transcription = load_builtin(
             "speech-to-text",
@@ -677,8 +738,8 @@ class Bootstrap:
                 automation = None
 
         # Flat-MOD builds allowed saved child states to outlive a disabled
-        # site parent. Reconcile every registry after all site feature gates
-        # are registered and before any trusted UI is created.
+        # parent. Reconcile every registry after all feature gates are
+        # registered and before any trusted UI is created.
         def builtin_registry(provider_id: str) -> object:
             kind = builtin_mod_descriptor(provider_id).kind
             return {
@@ -687,7 +748,7 @@ class Bootstrap:
                 "feature": features,
             }[kind]
 
-        for parent_id, child_ids in SITE_MOD_CHILDREN.items():
+        for parent_id, child_ids in BUILTIN_MOD_CHILDREN.items():
             try:
                 parent_enabled = builtin_registry(parent_id).is_enabled(parent_id)
             except (AttributeError, KeyError, RuntimeError):

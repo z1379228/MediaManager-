@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import runpy
-from urllib import parse
+from urllib import error, parse
 
 import pytest
 
@@ -144,3 +144,29 @@ def test_episode_request_stays_on_official_pages(monkeypatch) -> None:
     assert final.endswith("animeVideo.php?sn=49943")
     assert html == "<html></html>"
     assert parse.urlsplit(seen[0]).hostname == "ani.gamer.com.tw"
+
+
+def test_episode_request_maps_cloudflare_403_to_browser_verification(
+    monkeypatch,
+) -> None:
+    namespace = provider_namespace()
+    fetch_html = namespace["fetch_html"]
+    request_module = namespace["request"]
+
+    class Opener:
+        def open(self, outgoing, *, timeout: int):
+            assert timeout == 20
+            raise error.HTTPError(
+                outgoing.full_url,
+                403,
+                "Forbidden",
+                {"cf-mitigated": "challenge"},
+                None,
+            )
+
+    monkeypatch.setattr(request_module, "build_opener", lambda _handler: Opener())
+    with pytest.raises(
+        RuntimeError,
+        match="ani-gamer-browser-verification-required",
+    ):
+        fetch_html("https://ani.gamer.com.tw/animeRef.php?sn=114096")

@@ -54,6 +54,12 @@ enabled or disabled independently, and exposes an action to add a selected
 result to the existing download queue. Release integrity pins include all
 bundled YouTube MODs.
 
+The website-specific YouTube workspace now consumes the provider's opaque next-page
+cursor through the trusted discovery service. **Load more** merges canonical media
+identities up to 200 visible results, preserves the current selection, and keeps the
+previous page intact when a later request is cancelled or fails. It does not use
+infinite scrolling or issue a background request without an explicit user action.
+
 The `youtube-history` baseline is implemented. It stores at most 500 local
 search and selection events, exposes bounded recent history, and derives simple
 content-type, language, artist and category counters. It is independently

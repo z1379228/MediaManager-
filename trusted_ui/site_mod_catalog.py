@@ -20,6 +20,8 @@ THREADS_HOME = "https://www.threads.com/"
 THREADS_EXPORT_HELP = (
     "https://www.facebook.com/help/instagram/259803026523198"
 )
+X_HOME = "https://x.com/"
+X_EXPORT_HELP = "https://help.x.com/en/managing-your-account/accessing-your-x-data"
 META_OFFICIAL_BRIDGE_NAMES = {
     "facebook": "Facebook",
     "instagram": "Instagram",
@@ -45,7 +47,7 @@ def official_meta_bridge_id_for_url(value: str) -> str:
     host = (parsed.hostname or "").casefold()
     if host in {"facebook.com", "www.facebook.com", "m.facebook.com"}:
         return "facebook"
-    if host in {"instagram.com", "www.instagram.com"}:
+    if host in {"instagram.com", "www.instagram.com", "m.instagram.com"}:
         return "instagram"
     if host in {"threads.com", "www.threads.com", "threads.net", "www.threads.net"}:
         return "threads"
@@ -177,7 +179,7 @@ def validated_instagram_url(value: str) -> str | None:
     parsed = _official_https_parts(
         value,
         home=INSTAGRAM_HOME,
-        hosts=frozenset({"instagram.com", "www.instagram.com"}),
+        hosts=frozenset({"instagram.com", "www.instagram.com", "m.instagram.com"}),
     )
     if parsed is None:
         return None
@@ -217,6 +219,41 @@ def validated_threads_url(value: str) -> str | None:
     if post is None:
         return None
     return f"https://www.threads.com/@{post.group(1)}/post/{post.group(2)}/"
+
+
+def validated_twitter_url(value: str) -> str | None:
+    """Accept only canonical X/Twitter home or status-page URLs."""
+
+    parsed = _official_https_parts(
+        value,
+        home=X_HOME,
+        hosts=frozenset(
+            {
+                "x.com",
+                "www.x.com",
+                "mobile.x.com",
+                "twitter.com",
+                "www.twitter.com",
+                "mobile.twitter.com",
+            }
+        ),
+    )
+    if parsed is None:
+        return None
+    if parsed.path in {"", "/"} and not parsed.query:
+        return X_HOME
+    if parsed.query:
+        return None
+    post = re.fullmatch(
+        r"/([A-Za-z0-9_]{1,15})/status/([0-9]{1,32})/?",
+        parsed.path,
+    )
+    if post is not None:
+        return f"https://x.com/{post.group(1)}/status/{post.group(2)}"
+    web_post = re.fullmatch(r"/i/web/status/([0-9]{1,32})/?", parsed.path)
+    if web_post is not None:
+        return f"https://x.com/i/web/status/{web_post.group(1)}"
+    return None
 
 
 def validated_mega_url(value: str) -> str | None:
@@ -295,6 +332,13 @@ OFFICIAL_BRIDGES = (
         THREADS_EXPORT_HELP,
     ),
     OfficialBridgeSpec(
+        "twitter",
+        "X / Twitter",
+        "貼上 x.com 或 twitter.com 官方 status 貼文網址（留空開首頁）",
+        validated_twitter_url,
+        X_EXPORT_HELP,
+    ),
+    OfficialBridgeSpec(
         "mega",
         "MEGA",
         "貼上 mega.nz 官方公開檔案或資料夾分享連結（留空開首頁）",
@@ -303,22 +347,10 @@ OFFICIAL_BRIDGES = (
 )
 
 
-SITE_MOD_CANDIDATES = (
-    SiteModCandidate(
-        "instagram",
-        "Instagram",
-        "不可下載 · 官方工具",
-        "驗證官方貼文或 Reel 並提供官方資料匯出說明",
-        "不啟用自動擷取器、不匯入登入工作階段；限時與私人內容不處理",
-    ),
-    SiteModCandidate(
-        "threads",
-        "Threads",
-        "不可下載 · 官方工具",
-        "驗證官方貼文頁並提供官方 Threads 資料匯出說明",
-        "沒有專用擷取器；不自動收集貼文、不匯入登入資料或處理私人內容",
-    ),
-)
+# Threads moved from this read-only candidate list into a real parent/child MOD
+# group in development 12.2. The official bridge remains available as a compact
+# shared entry point, but the MOD manager now owns its enable state.
+SITE_MOD_CANDIDATES: tuple[SiteModCandidate, ...] = ()
 
 
 def create_site_mod_catalog_panel(
@@ -359,11 +391,14 @@ def create_site_mod_catalog_panel(
     intro.setWordWrap(True)
     page.addWidget(intro)
 
+    candidate_count = len(SITE_MOD_CANDIDATES)
     summary = QLabel(
-        f"已登記 {len(SITE_MOD_CANDIDATES)} 個候選網站 MOD · 目前均未啟用下載"
+        f"已登記 {candidate_count} 個候選網站 MOD · 目前均未啟用下載"
+        if candidate_count
+        else "目前沒有僅登記但尚未實作的候選網站 MOD"
     )
     summary.setObjectName("dependencySummary")
-    summary.setProperty("dependencyState", "warning")
+    summary.setProperty("dependencyState", "warning" if candidate_count else "ready")
     summary.setAccessibleName("候選網站 MOD 狀態摘要")
     page.addWidget(summary)
 
@@ -382,6 +417,7 @@ def create_site_mod_catalog_panel(
     table.setColumnWidth(0, 150)
     table.setColumnWidth(1, 155)
     table.setColumnWidth(2, 230)
+    table.setVisible(bool(SITE_MOD_CANDIDATES))
 
     for row, candidate in enumerate(SITE_MOD_CANDIDATES):
         stage = QTableWidgetItem(candidate.stage)
@@ -457,6 +493,11 @@ def create_site_mod_catalog_panel(
             official_status.setText(
                 f"{bridge.display_name}：下載由可停用的獨立網站 MOD 處理；"
                 "此處只開啟官方頁面或說明，不會在背景連線。"
+            )
+        elif bridge.bridge_id in {"instagram", "twitter"}:
+            official_status.setText(
+                f"{bridge.display_name}：已提供可停用的內建官方工具 MOD；"
+                "不支援下載，等待使用者操作且不會在背景連線。"
             )
         elif bridge.bridge_id in META_OFFICIAL_BRIDGE_NAMES:
             official_status.setText(

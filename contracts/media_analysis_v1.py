@@ -22,6 +22,7 @@ class MediaFormatV1:
     video_codec: str
     audio_codec: str
     estimated_bytes: int | None
+    dynamic_range: str = "unknown"
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "MediaFormatV1":
@@ -35,7 +36,12 @@ class MediaFormatV1:
             "audio_codec",
             "estimated_bytes",
         }
-        if not isinstance(raw, dict) or set(raw) != required:
+        optional = {"dynamic_range"}
+        if (
+            not isinstance(raw, dict)
+            or not required.issubset(raw)
+            or not set(raw).issubset(required | optional)
+        ):
             raise MediaAnalysisContractError("media format fields invalid")
         text_limits = {
             "format_id": 100,
@@ -73,6 +79,14 @@ class MediaFormatV1:
             or not 1 <= estimated <= 16 * 1024**4
         ):
             raise MediaAnalysisContractError("media size estimate invalid")
+        dynamic_range = raw.get("dynamic_range", "unknown")
+        if (
+            not isinstance(dynamic_range, str)
+            or not dynamic_range
+            or len(dynamic_range) > 32
+            or not re.fullmatch(r"[A-Za-z0-9+._ -]+", dynamic_range)
+        ):
+            raise MediaAnalysisContractError("media dynamic range invalid")
         return cls(
             raw["format_id"],
             raw["extension"],
@@ -82,6 +96,7 @@ class MediaFormatV1:
             raw["video_codec"],
             raw["audio_codec"],
             estimated,
+            dynamic_range,
         )
 
 

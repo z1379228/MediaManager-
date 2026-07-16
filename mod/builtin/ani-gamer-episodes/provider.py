@@ -7,7 +7,7 @@ import json
 import re
 import sys
 from typing import Any
-from urllib import parse, request
+from urllib import error, parse, request
 
 
 ANI_GAMER_ORIGIN = "https://ani.gamer.com.tw"
@@ -16,6 +16,7 @@ MAX_EPISODES = 2_000
 _SERIES_PATH = re.compile(r"/animeRef\.php\?sn=([0-9]{1,10})")
 _EPISODE_PATH = re.compile(r"/animeVideo\.php\?sn=([0-9]{1,10})")
 _TITLE_SUFFIX = re.compile(r"\s*\[[^\]]{1,20}\]\s*線上看\s*-\s*巴哈姆特動畫瘋\s*$")
+BROWSER_VERIFICATION_ERROR = "ani-gamer-browser-verification-required"
 
 
 class _OfficialRedirectHandler(request.HTTPRedirectHandler):
@@ -177,11 +178,18 @@ def fetch_html(page_url: str) -> tuple[str, str]:
         },
     )
     opener = request.build_opener(_OfficialRedirectHandler())
-    with opener.open(outgoing, timeout=20) as response:
-        final_url = response.geturl()
-        if not is_official_page_url(final_url):
-            raise ValueError("AniGamer episode page redirected outside the official site")
-        payload = response.read(MAX_RESPONSE_BYTES + 1)
+    try:
+        with opener.open(outgoing, timeout=20) as response:
+            final_url = response.geturl()
+            if not is_official_page_url(final_url):
+                raise ValueError(
+                    "AniGamer episode page redirected outside the official site"
+                )
+            payload = response.read(MAX_RESPONSE_BYTES + 1)
+    except error.HTTPError as caught:
+        if caught.code == 403:
+            raise RuntimeError(BROWSER_VERIFICATION_ERROR) from caught
+        raise
     if len(payload) > MAX_RESPONSE_BYTES:
         raise ValueError("AniGamer episode response is too large")
     return final_url, payload.decode("utf-8", errors="replace")

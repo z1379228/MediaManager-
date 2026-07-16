@@ -21,6 +21,8 @@ from core.storage.atomic import commit_file_without_overwrite
 
 MAX_SOURCES = 100
 MAX_SOURCE_BYTES = 4 * 1024**4
+MAX_REMOVAL_RANGES = 50
+MAX_MEDIA_SECONDS = 604_800.0
 
 
 class ConversionService:
@@ -61,7 +63,7 @@ class ConversionService:
         return tuple(self._presets)
 
     def preview(self, request: ConversionRequest) -> ConversionPlan:
-        sources, output, preset = self._validate(request)
+        sources, output, preset, remove_ranges = self._validate(request)
         definition = self._presets[preset]
         ratio = float(definition["estimate_ratio"])
         estimated = max(1, int(sum(path.stat().st_size for path in sources) * ratio))
@@ -75,7 +77,21 @@ class ConversionService:
             command.extend(("-i", str(sources[0])))
             if request.end_time is not None:
                 command.extend(("-to", self._time_value(request.end_time)))
-        args = tuple(str(value) for value in definition["args"])
+        replacements: dict[str, str] = {}
+        if preset == "ad-trim-h264":
+            selector = self._removal_selector(remove_ranges)
+            replacements = {
+                "@REMOVE_VIDEO_FILTER@": (
+                    f"select={selector},setpts=N/FRAME_RATE/TB"
+                ),
+                "@REMOVE_AUDIO_FILTER@": (
+                    f"aselect={selector},asetpts=N/SR/TB"
+                ),
+            }
+        args = tuple(
+            replacements.get(str(value), str(value))
+            for value in definition["args"]
+        )
         fallback = None
         if request.hardware_acceleration and definition.get("gpu_args"):
             gpu_command = tuple(command + [str(value) for value in definition["gpu_args"]] + ["@OUTPUT@"])
@@ -86,7 +102,13 @@ class ConversionService:
             final_command = tuple(command + list(args) + ["@OUTPUT@"])
             strategy = str(definition["strategy"])
         return ConversionPlan(
-            replace(request, sources=sources, output=output, preset=preset),
+            replace(
+                request,
+                sources=sources,
+                output=output,
+                preset=preset,
+                remove_ranges=remove_ranges,
+            ),
             strategy,
             estimated,
             final_command,
@@ -136,6 +158,16 @@ class ConversionService:
 
     def cancel_all(self) -> int:
         return sum(self.cancel(task.task_id) for task in self.snapshots())
+
+    def cancel_preset(self, preset_id: str) -> int:
+        """Cancel only work owned by one optional conversion capability."""
+
+        selected = preset_id.strip().casefold()
+        return sum(
+            self.cancel(task.task_id)
+            for task in self.snapshots()
+            if task.request.preset == selected
+        )
 
     def close(self) -> None:
         with self._lock:
@@ -244,7 +276,12 @@ class ConversionService:
 
     def _validate(
         self, request: ConversionRequest
-    ) -> tuple[tuple[Path, ...], Path, str]:
+    ) -> tuple[
+        tuple[Path, ...],
+        Path,
+        str,
+        tuple[tuple[float, float], ...],
+    ]:
         if not isinstance(request, ConversionRequest):
             raise TypeError("invalid conversion request")
         preset = request.preset.strip().casefold()
@@ -288,7 +325,17 @@ class ConversionService:
                 raise ValueError(f"conversion {name} time is invalid")
         if request.end_time is not None and request.end_time <= (request.start_time or 0):
             raise ValueError("conversion end time must be after start")
-        return sources, output, preset
+        remove_ranges = self._validated_removal_ranges(request.remove_ranges)
+        if preset == "ad-trim-h264":
+            if request.start_time is not None or request.end_time is not None:
+                raise ValueError(
+                    "ad trim uses removal ranges instead of start/end clipping"
+                )
+            if not remove_ranges:
+                raise ValueError("ad trim needs at least one removal range")
+        elif remove_ranges:
+            raise ValueError("removal ranges require the ad-trim-h264 preset")
+        return sources, output, preset, remove_ranges
 
     def _load_presets(self) -> dict[str, dict[str, object]]:
         document = json.loads(self.preset_path.read_text(encoding="utf-8"))
@@ -316,3 +363,44 @@ class ConversionService:
     @staticmethod
     def _time_value(value: float) -> str:
         return f"{float(value):.3f}"
+
+    @staticmethod
+    def _validated_removal_ranges(
+        raw_ranges: object,
+    ) -> tuple[tuple[float, float], ...]:
+        if not isinstance(raw_ranges, tuple) or len(raw_ranges) > MAX_REMOVAL_RANGES:
+            raise ValueError("ad trim removal ranges are invalid")
+        result: list[tuple[float, float]] = []
+        previous_end = -1.0
+        for raw_range in raw_ranges:
+            if not isinstance(raw_range, tuple) or len(raw_range) != 2:
+                raise ValueError("ad trim removal ranges are invalid")
+            start, end = raw_range
+            if any(
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not math.isfinite(value)
+                for value in (start, end)
+            ):
+                raise ValueError("ad trim removal ranges are invalid")
+            normalized = (float(start), float(end))
+            if (
+                normalized[0] < 0
+                or normalized[1] <= normalized[0]
+                or normalized[1] > MAX_MEDIA_SECONDS
+                or normalized[0] < previous_end
+            ):
+                raise ValueError(
+                    "ad trim ranges must be ordered, separate and inside seven days"
+                )
+            result.append(normalized)
+            previous_end = normalized[1]
+        return tuple(result)
+
+    @staticmethod
+    def _removal_selector(ranges: tuple[tuple[float, float], ...]) -> str:
+        expressions = "+".join(
+            "between(t\\," + f"{start:.3f}\\,{end:.3f})"
+            for start, end in ranges
+        )
+        return f"not({expressions})"

@@ -5,10 +5,20 @@ import shutil
 import subprocess
 from threading import Event
 import time
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
-from core.conversion import ConversionRequest, ConversionService, ConversionTask
+from core.conversion import (
+    ConversionRequest,
+    ConversionService,
+    ConversionTask,
+    MediaAdTrimFeature,
+)
+from core.events.event_bus import EventBus
+from core.features import FeatureModRegistry
+from trusted_ui.conversion_panel import parse_removal_ranges
 
 
 @pytest.fixture
@@ -102,6 +112,119 @@ def test_service_is_disabled_by_default(service: ConversionService, tmp_path: Pa
     source.write_bytes(b"media")
     with pytest.raises(RuntimeError, match="disabled"):
         service.submit(ConversionRequest((source,), tmp_path / "output.mkv", "remux-copy"))
+
+
+def test_ad_trim_builds_bounded_filters_and_never_replaces_source(
+    service: ConversionService, tmp_path: Path
+) -> None:
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"media")
+    output = tmp_path / "trimmed.mp4"
+
+    plan = service.preview(
+        ConversionRequest(
+            (source,),
+            output,
+            "ad-trim-h264",
+            remove_ranges=((30, 45), (90.5, 105)),
+        )
+    )
+
+    assert plan.request.remove_ranges == ((30.0, 45.0), (90.5, 105.0))
+    assert any(value.startswith("select=not(") for value in plan.command)
+    assert any(value.startswith("aselect=not(") for value in plan.command)
+    assert str(source.resolve()) in plan.command
+    assert str(output.resolve()) not in plan.command
+    assert "@OUTPUT@" in plan.command
+
+
+@pytest.mark.parametrize(
+    ("ranges", "start_time"),
+    [
+        ((), None),
+        (((10.0, 20.0), (19.0, 30.0)), None),
+        (((-1.0, 2.0),), None),
+        (((1.0, 2.0),), 1.0),
+    ],
+)
+def test_ad_trim_rejects_empty_overlapping_or_clipped_requests(
+    service: ConversionService,
+    tmp_path: Path,
+    ranges: tuple[tuple[float, float], ...],
+    start_time: float | None,
+) -> None:
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"media")
+    with pytest.raises(ValueError, match="ad trim|removal ranges|ordered"):
+        service.preview(
+            ConversionRequest(
+                (source,),
+                tmp_path / "trimmed.mp4",
+                "ad-trim-h264",
+                start_time=start_time,
+                remove_ranges=ranges,
+            )
+        )
+
+
+def test_ad_trim_parser_and_child_feature_are_independently_disabled(
+    service: ConversionService,
+) -> None:
+    assert parse_removal_ranges("30-45; 01:30-01:45") == (
+        (30.0, 45.0),
+        (90.0, 105.0),
+    )
+    with pytest.raises(ValueError, match="分與秒"):
+        parse_removal_ranges("00:70-80")
+
+    feature = MediaAdTrimFeature(service)
+    service.cancel_preset = Mock(return_value=2)
+    feature._enabled = True
+    assert feature.set_enabled(False) == 2
+    service.cancel_preset.assert_called_once_with("ad-trim-h264")
+
+
+def test_conversion_panel_exposes_ad_trim_only_when_child_is_enabled(
+    service: ConversionService,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    features = FeatureModRegistry(tmp_path / "features.json")
+    features.register(service, enabled=True)
+    features.register(MediaAdTrimFeature(service), enabled=False)
+    context = SimpleNamespace(
+        conversion=service,
+        features=features,
+        download_providers=Mock(),
+        discovery=Mock(),
+        audit=Mock(),
+        events=EventBus(),
+    )
+    from trusted_ui.conversion_panel import create_conversion_panel
+
+    panel = create_conversion_panel(context)
+    try:
+        index = panel.preset.findData("ad-trim-h264")
+        panel.preset.setCurrentIndex(index)
+        app.processEvents()
+        assert panel.trim_card.isVisibleTo(panel)
+        assert not panel.submit.isEnabled()
+
+        panel.ad_trim_enabled.click()
+        app.processEvents()
+        assert features.is_enabled("media-ad-trim")
+        assert panel.ad_ranges.isEnabled()
+        assert panel.submit.isEnabled()
+    finally:
+        panel.shutdown()
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
 
 
 def test_local_ffmpeg_conversion_smoke(tmp_path: Path) -> None:

@@ -65,6 +65,32 @@ def test_generic_provider_does_not_claim_unverified_social_sites() -> None:
 
     assert capability.sites == ("generic",)
     assert not {"facebook", "instagram", "threads"}.intersection(capability.sites)
+    assert {
+        "video-2160",
+        "video-1440",
+        "video-h264-1080",
+        "audio-m4a-256",
+        "audio-mp3-320",
+        "audio-opus",
+        "audio-flac",
+        "audio-wav",
+    }.isdisjoint(capability.format_presets)
+
+
+@pytest.mark.parametrize("provider_id", ("youtube", "bilibili"))
+def test_video_providers_publish_encoding_presets(provider_id: str) -> None:
+    capability = builtin_download_capability(provider_id)
+
+    assert {
+        "video-2160",
+        "video-1440",
+        "video-h264-1080",
+        "audio-m4a-256",
+        "audio-mp3-320",
+        "audio-opus",
+        "audio-flac",
+        "audio-wav",
+    }.issubset(capability.format_presets)
 
 
 def test_facebook_capability_is_public_video_only() -> None:

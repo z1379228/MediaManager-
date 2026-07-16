@@ -10,6 +10,24 @@
 .\.venv\Scripts\python.exe -m tools.mod_sdk create example.processor .\example-processor
 ```
 
+一般範本會依目前開發版自動填入核心相容版本，並產生只含靜態文字區塊的
+`ui.json`；`en`、`ja`、`zh-CN`、`zh-TW` 四種核心語言已預先建立。
+
+網站 MOD 請改用父／子範本：
+
+```powershell
+.\.venv\Scripts\python.exe -m tools.mod_sdk create-site example.site .\example-site --host media.example.com
+.\.venv\Scripts\python.exe -m tools.mod_sdk validate-site .\example-site
+```
+
+這會建立 data-only 父 MOD 與依賴父層的 `example.site.download` 子 MOD；網站搜尋、
+彈幕或其他功能可仿照 download 子目錄另建子套件，但每個子 MOD 都必須在
+`dependencies` 指向同一父 MOD。每個 `--host` 必須是該網站家族實際負責的標準 DNS
+名稱，不接受 URL、萬用字元、IP 或跨網站共用。`validate-site` 會離線檢查父／子 ID、
+相依關係、host ownership、最小網路／媒體權限、schema v2、runtime protocol 1.0、
+30 秒請求逾時、3 秒取消寬限、程序樹終止政策與四語宣告式 UI，不安裝也不執行 MOD
+程式碼。
+
 範本刻意不產生私鑰、簽章或偽造 `files.json`。發布者應在自己的離線發行環境
 建立檔案 SHA-256 清單與 `plugin.sig`，私鑰不得放入專案或 `.modpkg`。
 

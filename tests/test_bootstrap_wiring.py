@@ -23,6 +23,7 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     assert isinstance(context.features, FeatureModRegistry)
     assert context.conversion is not None
     assert not context.features.is_enabled("media-convert")
+    assert not context.features.is_enabled("media-ad-trim")
     assert context.transcription is not None
     assert not context.features.is_enabled("speech-to-text")
     assert context.automation is not None
@@ -41,12 +42,14 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     assert not providers["bilibili"].enabled
     assert not providers["facebook"].enabled
     assert not providers["mega"].enabled
+    assert not providers["direct-http"].enabled
     assert set(providers) == {
         "youtube",
         "generic-ytdlp",
         "bilibili",
         "facebook",
         "mega",
+        "direct-http",
     }
     assert (
         context.download_providers.matching_provider_id(
@@ -63,6 +66,7 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     assert not context.download_providers.is_enabled("facebook")
     context.download_providers.set_enabled("facebook", True)
     context.download_providers.set_enabled("mega", True)
+    context.download_providers.set_enabled("direct-http", True)
     assert (
         context.download_providers.matching_provider_id(
             "https://www.facebook.com/reel/123456"
@@ -74,6 +78,18 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
             "https://mega.nz/file/AbCdEf12#abcdefghijklmnop"
         )
         == "mega"
+    )
+    assert (
+        context.download_providers.matching_provider_id(
+            "https://downloads.example.org/release.zip"
+        )
+        == "direct-http"
+    )
+    assert (
+        context.download_providers.matching_provider_id(
+            "https://www.youtube.com/media/release.zip"
+        )
+        == "youtube"
     )
     assert {status.provider_id for status in context.discovery.statuses()} == {
         "youtube-search",
@@ -92,11 +108,29 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     assert not context.discovery.is_enabled("ani-gamer-episodes")
     assert {status.provider_id for status in context.features.statuses()} == {
         "ani-gamer",
+        "ani-gamer-offline",
         "bilibili-danmaku",
+        "instagram",
+        "instagram-page",
+        "instagram-export",
+        "threads",
+        "threads-page",
+        "threads-export",
+        "twitter",
+        "twitter-page",
+        "twitter-export",
         "media-convert",
+        "media-ad-trim",
         "speech-to-text",
         "automation",
     }
+    assert not context.features.is_enabled("instagram")
+    assert not context.features.is_enabled("ani-gamer-offline")
+    assert not context.features.is_enabled("instagram-page")
+    assert not context.features.is_enabled("threads")
+    assert not context.features.is_enabled("threads-page")
+    assert not context.features.is_enabled("twitter")
+    assert not context.features.is_enabled("twitter-page")
     context.lifecycle.shutdown()
 
 
@@ -134,8 +168,10 @@ def test_clean_bootstrap_starts_no_optional_provider_process(
         assert providers
         assert all(not provider._processes for provider in providers)
         assert not context.features.is_enabled("ani-gamer")
+        assert not context.features.is_enabled("ani-gamer-offline")
         assert not context.features.is_enabled("bilibili-danmaku")
         assert not context.features.is_enabled("media-convert")
+        assert not context.features.is_enabled("media-ad-trim")
         assert not context.features.is_enabled("speech-to-text")
         assert not context.features.is_enabled("automation")
     finally:

@@ -13,20 +13,20 @@ from trusted_ui.site_mod_catalog import (
     SITE_MOD_CANDIDATES,
     THREADS_EXPORT_HELP,
     THREADS_HOME,
+    X_EXPORT_HELP,
+    X_HOME,
     official_meta_bridge_id_for_url,
     validated_ani_gamer_url,
     validated_facebook_url,
     validated_instagram_url,
     validated_mega_url,
     validated_threads_url,
+    validated_twitter_url,
 )
 
 
 def test_site_mod_catalog_registers_requested_candidates() -> None:
-    assert tuple(item.provider_id for item in SITE_MOD_CANDIDATES) == (
-        "instagram",
-        "threads",
-    )
+    assert SITE_MOD_CANDIDATES == ()
     assert all(
         "不擷取" in item.safety_boundary
         or "私人" in item.safety_boundary
@@ -40,6 +40,7 @@ def test_site_mod_catalog_registers_requested_candidates() -> None:
         "facebook",
         "instagram",
         "threads",
+        "twitter",
         "mega",
     )
 
@@ -47,8 +48,47 @@ def test_site_mod_catalog_registers_requested_candidates() -> None:
 @pytest.mark.parametrize(
     ("value", "expected"),
     (
+        ("", X_HOME),
+        ("https://x.com/openai/status/123456", "https://x.com/openai/status/123456"),
+        (
+            "https://mobile.twitter.com/openai/status/123456/",
+            "https://x.com/openai/status/123456",
+        ),
+        (
+            "https://mobile.x.com/openai/status/123456/",
+            "https://x.com/openai/status/123456",
+        ),
+        (
+            "https://twitter.com/i/web/status/123456",
+            "https://x.com/i/web/status/123456",
+        ),
+    ),
+)
+def test_twitter_official_url_is_canonical(value: str, expected: str) -> None:
+    assert validated_twitter_url(value) == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "http://x.com/openai/status/123",
+        "https://x.com.evil.example/openai/status/123",
+        "https://user:secret@x.com/openai/status/123",
+        "https://x.com/openai/status/not-digits",
+        "https://x.com/openai/status/123?ref=share",
+        "https://x.com/settings/account",
+    ),
+)
+def test_twitter_official_url_rejects_unsafe_forms(value: str) -> None:
+    assert validated_twitter_url(value) is None
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    (
         ("https://www.facebook.com/watch/?v=123", "facebook"),
         ("https://instagram.com/reel/Cexample456?utm_source=share", "instagram"),
+        ("https://m.instagram.com/reel/Cexample456", "instagram"),
         ("https://www.threads.net/@openai/post/Cexample789", "threads"),
         ("https://www.facebook.com.evil.example/watch/?v=123", ""),
         ("https://user:secret@www.instagram.com/reel/Cexample456", ""),
@@ -159,6 +199,10 @@ def test_facebook_official_url_rejects_redirect_or_nonmedia_pages(
         ),
         (
             "https://www.instagram.com/reel/Cexample456/",
+            "https://www.instagram.com/reel/Cexample456/",
+        ),
+        (
+            "https://m.instagram.com/reel/Cexample456/",
             "https://www.instagram.com/reel/Cexample456/",
         ),
         (
@@ -312,13 +356,9 @@ def test_site_mod_catalog_panel_marks_candidates_as_not_installed(
         for label in panel.findChildren(QLabel)
         if label.objectName() == "dependencySummary"
     ]
-    assert table.rowCount() == 2
-    assert summaries == [
-        "已登記 2 個候選網站 MOD · 目前均未啟用下載"
-    ]
-    assert {table.item(row, 1).text() for row in range(2)} == {
-        "不可下載 · 官方工具",
-    }
+    assert table.rowCount() == 0
+    assert table.isHidden()
+    assert summaries == ["目前沒有僅登記但尚未實作的候選網站 MOD"]
     official_site = panel.findChild(QComboBox, "officialSiteBridgeSelect")
     official_url = panel.findChild(QLineEdit, "officialSiteBridgeUrl")
     open_official = panel.findChild(QPushButton, "officialSiteBridgeOpen")
@@ -376,6 +416,14 @@ def test_site_mod_catalog_panel_marks_candidates_as_not_installed(
     assert opened[-2:] == [
         "https://www.threads.com/@openai/post/Cexample789/",
         THREADS_EXPORT_HELP,
+    ]
+    official_site.setCurrentIndex(official_site.findData("twitter"))
+    official_url.setText("https://twitter.com/openai/status/123456")
+    open_official.click()
+    open_help.click()
+    assert opened[-2:] == [
+        "https://x.com/openai/status/123456",
+        X_EXPORT_HELP,
     ]
     official_site.setCurrentIndex(official_site.findData("mega"))
     assert open_help.isHidden()

@@ -318,6 +318,19 @@ class DownloadQueue:
         self._notify(snapshot)
         return True
 
+    def cancel_all(self) -> int:
+        task_ids = tuple(
+            task.task_id
+            for task in self.snapshots()
+            if task.state
+            not in {
+                DownloadState.COMPLETED,
+                DownloadState.FAILED,
+                DownloadState.CANCELLED,
+            }
+        )
+        return sum(self.cancel(task_id) for task_id in task_ids)
+
     def clear_finished(self) -> int:
         terminal = {
             DownloadState.COMPLETED,

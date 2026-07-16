@@ -1,35 +1,32 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "provider_id": "youtube",
-  "last_live_check": "2026-07-15",
+  "last_live_check": "2026-07-16",
+  "workflow": {
+    "identify": "supported",
+    "discover": "supported",
+    "analyze": "supported",
+    "preview": "conditional",
+    "queue": "supported",
+    "cancel": "supported",
+    "complete": "supported"
+  },
+  "ui_capabilities": [
+    "search", "thumbnail", "audio-preview", "video-preview", "batch",
+    "download", "pause", "cancel"
+  ],
   "features": [
-    {
-      "feature_id": "public-video-analysis",
-      "support_status": "verified-public-analysis"
-    },
-    {
-      "feature_id": "bounded-format-summary",
-      "support_status": "offline-contract"
-    },
-    {
-      "feature_id": "playlist-selection",
-      "support_status": "offline-contract"
-    },
-    {
-      "feature_id": "segment-download",
-      "support_status": "offline-contract"
-    },
-    {
-      "feature_id": "subtitles",
-      "support_status": "offline-contract"
-    },
-    {
-      "feature_id": "audio-preview",
-      "support_status": "verified-local-ffmpeg"
-    }
+    {"feature_id": "public-video-analysis", "support_status": "verified-public-analysis"},
+    {"feature_id": "bounded-format-summary", "support_status": "offline-contract"},
+    {"feature_id": "playlist-selection", "support_status": "offline-contract"},
+    {"feature_id": "segment-download", "support_status": "offline-contract"},
+    {"feature_id": "subtitles", "support_status": "offline-contract"},
+    {"feature_id": "audio-preview", "support_status": "verified-local-ffmpeg"},
+    {"feature_id": "video-preview", "support_status": "verified-local-ffmpeg"},
+    {"feature_id": "cold-start-no-autoresume", "support_status": "offline-contract"}
   ],
   "boundaries": [
-    "No cookie import or automated sign-in",
+    "No cookie import or automated login",
     "No region, payment, DRM or membership bypass",
     "No advertisement bypass or private-content extraction",
     "Unavailable and restricted content returns a precise failure"
