@@ -15,6 +15,18 @@ from tools.audit_versions import VersionAudit, audit_version
 from tools.release_preflight import PreflightResult, check_release
 
 
+_SUPPORTED_SCHEMA_VERSIONS = frozenset({2, 3})
+
+
+def _supported_schema_pair(schema_version: object, tool_schema_version: object) -> bool:
+    return (
+        type(schema_version) is int
+        and type(tool_schema_version) is int
+        and schema_version in _SUPPORTED_SCHEMA_VERSIONS
+        and tool_schema_version == schema_version
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class CandidateEvidence:
     schema_version: int
@@ -52,8 +64,12 @@ class CandidateEvidence:
         }
         if not isinstance(raw, dict) or set(raw) != required:
             raise ValueError("candidate evidence fields are invalid")
-        if raw["schema_version"] != 2 or raw["tool_schema_version"] != 2:
-            raise ValueError("candidate evidence schema is unsupported")
+        if not _supported_schema_pair(
+            raw["schema_version"], raw["tool_schema_version"]
+        ):
+            raise ValueError(
+                "candidate evidence schema is unsupported or inconsistent"
+            )
         release_version(raw["development_version"])
         for field in ("release_build_id", "source_fingerprint", "checksums_sha256"):
             value = raw[field]
@@ -113,11 +129,16 @@ def assess_candidate(
         info = {}
         blockers.append("release-info.json is missing or invalid")
     development_version = str(info.get("core_version") or "")
-    if info.get("schema_version") != 2 or info.get("tool_schema_version") != 2:
-        blockers.append("candidate release metadata schema is stale")
+    if not _supported_schema_pair(
+        info.get("schema_version"), info.get("tool_schema_version")
+    ):
+        blockers.append(
+            "candidate release metadata schema is unsupported or inconsistent"
+        )
     if info.get("build_channel") != "development":
         blockers.append("candidate must come from a development build")
     bindings = {
+        "schema_version": info.get("schema_version"),
         "development_version": development_version,
         "release_build_id": str(info.get("build_id") or ""),
         "source_fingerprint": str(info.get("source_fingerprint") or ""),

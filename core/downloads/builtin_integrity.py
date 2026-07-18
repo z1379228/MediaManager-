@@ -7,15 +7,18 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
     },
     "ani-gamer": {
         "feature.json": "8007aeb21bcb58e3e22bee8fbd25174c2b35c84aaa89bb89fb8625a0d38b32bb",
-        "group.json": "f5e35c014d1329162e18fbe089d03b2c5d884c03fa73b5540cc1a05bac32d7ac",
-        "locales/en.json": "b4b8a55197e3042461810d4e661aee610249149e9dc32e66965bf6c9a18475b7",
-        "locales/ja.json": "161e8c9cbf08d3774d31dc47217e5e849229ee5bf60d67933ae67de0584d3c48",
-        "locales/zh-CN.json": "fc7646dde61596b3603134a3ce093505e8f2e67633467fe5f231f72679fc71e3",
-        "locales/zh-TW.json": "23fe088fe35adcc315628c6c03a23e453a5ef69d3a889d3a96422751207273c5",
+        "group.json": "d05493ab106f79eedb0e657fdad3bc203346b98aa5f676d34fe070445b80e8ea",
+        "locales/en.json": "93fee49d09079d1c0fff9f1798d7ae386359c13daa308ca4c02c882a37b792b0",
+        "locales/ja.json": "e4ba1cb202c37899aa8340f6d9a0bbc28ba951a31f8e610c56f248d345b935c4",
+        "locales/zh-CN.json": "b68e007305c09dbe758b01ff81d33539eb714ced33fdb5ee8ab9e11b59784084",
+        "locales/zh-TW.json": "46952d8804e8bceff1ac4af4001fad4e198305ee8f41346f9d7420bf74cfcf96",
         "site-matrix.json": "8b4bbeda5c691faed15f98e7429adb624fcb38bb88ffedeca317c70843dedcbd",
     },
     "ani-gamer-offline": {
         "feature.json": "3a02e563cab84182ce821ec92409e7d82ed1b658e7dcb98caaf09f69fc1140ef",
+    },
+    "ani-gamer-player": {
+        "feature.json": "b74ed80c2410f551058bf316d97a1e28c58a6adae68a62687a3bfd3056d5c366",
     },
     "ani-gamer-search": {
         "provider.py": "8019a2f0ece26834e162b430bb4deceb7e6598fa5ad566be3a07e828bd115653",

@@ -11,7 +11,11 @@ from core.downloads.notifications import (
     DownloadCompletionTracker,
     completion_message,
 )
-from core.settings import SettingsService, normalized_language
+from core.settings import (
+    SettingsService,
+    SettingsWriteBlockedError,
+    normalized_language,
+)
 from core.site_routing import classify_site_url
 from core.version import display_version
 from trusted_ui.app_icon import app_icon_path
@@ -40,6 +44,7 @@ from trusted_ui.optional_workspace_manager import (
     OptionalWorkspaceSpec,
 )
 from trusted_ui.plugin_manager import show_plugin_manager
+from trusted_ui.initial_mod_setup import show_initial_mod_setup
 from trusted_ui.search_panel import create_search_panel
 from trusted_ui.theme import (
     UI_SCALE_VALUES,
@@ -566,38 +571,79 @@ def run_main_window(context: object) -> int:
             choose_background.triggered.connect(select_background)
             reset_background.triggered.connect(restore_background)
 
-            def save_settings() -> None:
-                context.settings.in_app_download_notifications = (
-                    self.in_app_notifications.isChecked()
-                )
-                context.settings.system_download_notifications = (
-                    self.system_notifications.isChecked()
-                )
-                SettingsService(self.settings_root / "settings.json").save(
-                    context.settings
-                )
+            def persist_settings(**changes: object) -> bool:
+                try:
+                    saved = SettingsService(
+                        self.settings_root / "settings.json"
+                    ).patch(
+                        **changes
+                    )
+                except OSError as error:
+                    detail = (
+                        "設定檔目前受安全保護，變更已復原。"
+                        if isinstance(error, SettingsWriteBlockedError)
+                        else "設定檔目前無法寫入，變更已復原。"
+                    )
+                    QMessageBox.warning(
+                        self,
+                        "無法儲存設定",
+                        f"{detail}\n{error}",
+                    )
+                    return False
+                for name in changes:
+                    setattr(context.settings, name, getattr(saved, name))
+                return True
+
+            def restore_checked_action(group: object, value: str) -> None:
+                for candidate in group.actions():
+                    candidate.setChecked(candidate.data() == value)
+
+            def save_notification_settings() -> None:
+                previous_in_app = context.settings.in_app_download_notifications
+                previous_system = context.settings.system_download_notifications
+                if not persist_settings(
+                    in_app_download_notifications=(
+                        self.in_app_notifications.isChecked()
+                    ),
+                    system_download_notifications=(
+                        self.system_notifications.isChecked()
+                    ),
+                ):
+                    self.in_app_notifications.blockSignals(True)
+                    self.system_notifications.blockSignals(True)
+                    try:
+                        self.in_app_notifications.setChecked(previous_in_app)
+                        self.system_notifications.setChecked(previous_system)
+                    finally:
+                        self.in_app_notifications.blockSignals(False)
+                        self.system_notifications.blockSignals(False)
+                    return
                 if not self.system_notifications.isChecked():
                     self.remove_system_tray()
 
             def change_ui_scale(action: object) -> None:
                 scale = normalized_ui_scale(action.data())
-                context.settings.ui_scale = scale
+                previous_scale = normalized_ui_scale(context.settings.ui_scale)
+                if not persist_settings(ui_scale=scale):
+                    restore_checked_action(self.ui_scale_group, previous_scale)
+                    return
                 application = QApplication.instance()
                 if application is not None:
                     apply_application_theme(application, scale)
-                save_settings()
 
             def change_core_language(action: object) -> None:
                 locale = normalized_language(action.data())
-                context.settings.language = locale
+                previous_locale = normalized_language(context.settings.language)
+                if not persist_settings(language=locale):
+                    restore_checked_action(self.language_group, previous_locale)
+                    return
                 context.plugin_ui.locale = locale
-                save_settings()
                 context.events.publish("ui.language.changed", {"locale": locale})
 
             self.language_group.triggered.connect(change_core_language)
             self.ui_scale_group.triggered.connect(change_ui_scale)
-            self.in_app_notifications.toggled.connect(save_settings)
-            self.system_notifications.toggled.connect(save_settings)
+            self.in_app_notifications.toggled.connect(save_notification_settings)
+            self.system_notifications.toggled.connect(save_notification_settings)
 
             self.shortcuts: list[QShortcut] = []
             for sequence, index in (("Ctrl+1", 0), ("Ctrl+2", 1), ("Ctrl+3", 2)):
@@ -696,6 +742,7 @@ def run_main_window(context: object) -> int:
         if not icon.isNull():
             app.setWindowIcon(icon)
     apply_application_theme(app, context.settings.ui_scale)
+    show_initial_mod_setup(context)
     window = Window()
     window.show()
     window.raise_()

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import threading
+from collections.abc import Callable, Mapping
+from enum import Enum
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 
@@ -16,10 +19,18 @@ from trusted_ui.ani_gamer_offline import (
     ALLOWED_LOCAL_MEDIA_SUFFIXES,
     ALLOWED_LOCAL_SUBTITLE_SUFFIXES,
     AniGamerArchiveVerification,
+    LocalMediaPlaybackCapability,
+    LocalMediaRuntimeSupport,
     OfflineImportCancelled,
+    classify_local_media_playback_selection,
+    classify_local_media_player_error,
     create_episode_archive,
     import_local_media,
     import_local_subtitles,
+    local_media_playback_status_key,
+    local_media_runtime_support,
+    safe_local_media_display_name,
+    validate_local_media_selection,
     verify_episode_archive,
 )
 from trusted_ui.ani_gamer_history import (
@@ -36,6 +47,7 @@ from trusted_ui.thumbnail_loader import create_thumbnail_loader
 ANI_GAMER_SEARCH_PROVIDER_ID = "ani-gamer-search"
 ANI_GAMER_EPISODES_PROVIDER_ID = "ani-gamer-episodes"
 ANI_GAMER_OFFLINE_PROVIDER_ID = "ani-gamer-offline"
+ANI_GAMER_PLAYER_PROVIDER_ID = "ani-gamer-player"
 ANI_GAMER_HOME = "https://ani.gamer.com.tw/"
 ANI_GAMER_LIST = "https://ani.gamer.com.tw/animeList.php"
 ANI_GAMER_RECENT_QUERY = f"{ANI_GAMER_HOME}#recent"
@@ -43,6 +55,153 @@ ANI_GAMER_NEW_QUERY = f"{ANI_GAMER_HOME}#new"
 ANI_GAMER_BROWSER_VERIFICATION_ERROR = (
     "ani-gamer-browser-verification-required"
 )
+
+
+class WebEngineMediaCapability(str, Enum):
+    """Locally observable WebEngine media capability, not site playability."""
+
+    SUPPORTED = "supported"
+    UNSUPPORTED = "unsupported"
+    UNKNOWN = "unknown"
+
+
+ANI_GAMER_MEDIA_CAPABILITY_PROBE = r"""
+(() => {
+  const video = document.createElement("video");
+  const canPlay = typeof video.canPlayType === "function";
+  const hasMse = typeof MediaSource !== "undefined" &&
+    typeof MediaSource.isTypeSupported === "function";
+  const h264 = canPlay && Boolean(
+    video.canPlayType('video/mp4; codecs="avc1.42E01E"')
+  );
+  const aac = canPlay && Boolean(
+    video.canPlayType('audio/mp4; codecs="mp4a.40.2"')
+  );
+  const hls = canPlay && Boolean(
+    video.canPlayType('application/vnd.apple.mpegurl') ||
+    video.canPlayType('application/x-mpegURL')
+  );
+  const mseH264Aac = hasMse && Boolean(
+    MediaSource.isTypeSupported(
+      'video/mp4; codecs="avc1.42E01E, mp4a.40.2"'
+    )
+  );
+  return JSON.stringify({
+    html5Video: canPlay,
+    mse: hasMse,
+    h264: h264,
+    aac: aac,
+    hls: hls,
+    mseH264Aac: mseH264Aac
+  });
+})()
+""".strip()
+ANI_GAMER_MEDIA_PROBE_WORLD_ID = 1  # QWebEngineScript.ApplicationWorld
+
+
+def classify_webengine_media_capability(
+    value: object,
+) -> WebEngineMediaCapability:
+    """Classify an offline capability probe without inspecting site content."""
+
+    if isinstance(value, str):
+        if len(value) > 1_024:
+            return WebEngineMediaCapability.UNKNOWN
+        try:
+            value = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            return WebEngineMediaCapability.UNKNOWN
+    if not isinstance(value, Mapping):
+        return WebEngineMediaCapability.UNKNOWN
+    fields = ("html5Video", "mse", "h264", "aac", "hls", "mseH264Aac")
+    observations = tuple(value.get(field) for field in fields)
+    if not all(isinstance(observation, bool) for observation in observations):
+        return WebEngineMediaCapability.UNKNOWN
+    html5_video, mse, h264, aac, hls, mse_h264_aac = observations
+    if html5_video and h264 and aac and (hls or (mse and mse_h264_aac)):
+        return WebEngineMediaCapability.SUPPORTED
+    return WebEngineMediaCapability.UNSUPPORTED
+
+
+def wire_ani_gamer_web_view_diagnostics(
+    view: object,
+    *,
+    on_page_loaded: Callable[[], None],
+    on_load_failed: Callable[[], None],
+    on_capability: Callable[[WebEngineMediaCapability], None],
+    on_renderer_terminated: Callable[[], None],
+) -> None:
+    """Wire testable WebEngine diagnostics without reading page data or cookies."""
+
+    def handle_load_finished(ok: bool) -> None:
+        if not ok:
+            on_load_failed()
+            return
+        on_page_loaded()
+        try:
+            page = view.page()
+            page.runJavaScript(
+                ANI_GAMER_MEDIA_CAPABILITY_PROBE,
+                ANI_GAMER_MEDIA_PROBE_WORLD_ID,
+                lambda result: on_capability(
+                    classify_webengine_media_capability(result)
+                ),
+            )
+        except (AttributeError, RuntimeError, TypeError):
+            on_capability(WebEngineMediaCapability.UNKNOWN)
+
+    view.loadFinished.connect(handle_load_finished)
+    try:
+        view.renderProcessTerminated.connect(
+            lambda *_details: on_renderer_terminated()
+        )
+    except (AttributeError, RuntimeError, TypeError):
+        # Older Qt bindings may not expose this signal. Load/probe diagnostics
+        # remain available and the system-browser fallback is unaffected.
+        pass
+
+
+def open_ani_gamer_system_browser(
+    url: str,
+    opener: Callable[[str], object],
+) -> bool:
+    """Open only a credential-free official HTTPS URL via a supplied opener."""
+
+    try:
+        parsed = urlsplit(url)
+        allowed = (
+            parsed.scheme == "https"
+            and (parsed.hostname or "").casefold() == "ani.gamer.com.tw"
+            and not parsed.username
+            and not parsed.password
+            and parsed.port in {None, 443}
+        )
+        return bool(opener(url)) if allowed else False
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        return False
+
+
+def detect_qt_local_media_runtime_support(
+    media_format_class: object,
+) -> LocalMediaRuntimeSupport:
+    """Read bounded Qt Multimedia enum names without probing any media file."""
+
+    try:
+        decode = media_format_class.ConversionMode.Decode
+        media_format = media_format_class()
+        file_formats = {
+            value.name for value in media_format.supportedFileFormats(decode)
+        }
+        audio_codecs = {
+            value.name for value in media_format.supportedAudioCodecs(decode)
+        }
+    except (AttributeError, RuntimeError, TypeError):
+        return LocalMediaRuntimeSupport(
+            frozenset(),
+            frozenset(),
+            frozenset(ALLOWED_LOCAL_MEDIA_SUFFIXES),
+        )
+    return local_media_runtime_support(file_formats, audio_codecs)
 ANI_GAMER_FILTER_TAGS = (
     "全部",
     "動作",
@@ -116,6 +275,23 @@ def is_official_ani_gamer_url(value: object) -> bool:
     return route is not None and route.site_family == "ani-gamer"
 
 
+def is_ani_gamer_navigation_allowed(url: object, is_main_frame: bool) -> bool:
+    """Keep top-level navigation official while allowing page subresources."""
+
+    if not is_main_frame:
+        return True
+    try:
+        return (
+            url.scheme() == "https"
+            and (url.host() or "").casefold() == "ani.gamer.com.tw"
+            and not url.userName()
+            and not url.password()
+            and url.port() in {-1, 443}
+        )
+    except (AttributeError, RuntimeError, TypeError):
+        return False
+
+
 def manual_official_episode(value: str, title: str) -> DiscoveryItemV1 | None:
     route = classify_site_url(value)
     if (
@@ -141,6 +317,26 @@ def manual_official_episode(value: str, title: str) -> DiscoveryItemV1 | None:
     )
 
 
+def configure_ani_gamer_web_view(view: object) -> bool:
+    """Apply playback-friendly settings without bypassing site controls."""
+
+    try:
+        from PySide6.QtWebEngineCore import QWebEngineSettings
+
+        settings = view.settings()
+        attributes = QWebEngineSettings.WebAttribute
+        for attribute in (
+            attributes.JavascriptEnabled,
+            attributes.LocalStorageEnabled,
+            attributes.FullScreenSupportEnabled,
+        ):
+            settings.setAttribute(attribute, True)
+        settings.setAttribute(attributes.PlaybackRequiresUserGesture, False)
+    except (AttributeError, ImportError, RuntimeError, TypeError):
+        return False
+    return True
+
+
 def create_ani_gamer_workspace(context: object, parent: object = None) -> object:
     """Create a catalog/episode surface that never downloads AniGamer streams."""
 
@@ -163,6 +359,8 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
         QMenu,
         QPushButton,
         QScrollArea,
+        QSizePolicy,
+        QSlider,
         QTableWidget,
         QTableWidgetItem,
         QVBoxLayout,
@@ -175,6 +373,15 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
         QWebEnginePage = None
         QWebEngineView = None
 
+    try:
+        from PySide6.QtMultimedia import QAudioOutput, QMediaFormat, QMediaPlayer
+        from PySide6.QtMultimediaWidgets import QVideoWidget
+    except ImportError:
+        QAudioOutput = None
+        QMediaFormat = None
+        QMediaPlayer = None
+        QVideoWidget = None
+
     class SearchBridge(QObject):
         finished = Signal(str, int, object, str)
 
@@ -186,13 +393,7 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             def acceptNavigationRequest(
                 self, url, navigation_type, is_main_frame
             ):
-                return (
-                    url.scheme() == "https"
-                    and (url.host() or "").casefold() == "ani.gamer.com.tw"
-                    and not url.userName()
-                    and not url.password()
-                    and url.port() in {-1, 443}
-                )
+                return is_ani_gamer_navigation_allowed(url, is_main_frame)
 
     else:
         OfficialPage = None
@@ -204,6 +405,7 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.episodes: tuple[DiscoveryItemV1, ...] = ()
             self.episode_query = ""
             self.episode_cursor = ""
+            self.episode_replace_pending = False
             self.retry_kind = ""
             self.retry_query = ""
             self.retry_status_key = ""
@@ -219,6 +421,13 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.text: dict[str, str] = {}
             self.module_names: dict[str, str] = {}
             self._browser_dialogs: list[object] = []
+            self.embedded_web_engine_available = (
+                QWebEngineView is not None and OfficialPage is not None
+            )
+            self.local_media_dialog: object | None = None
+            self.local_media_player: object | None = None
+            self.local_media_queue: tuple[Path, ...] = ()
+            self.local_media_index = -1
             self.thumbnail_loader = create_thumbnail_loader(self)
             self.bridge = SearchBridge(self)
             self.bridge.finished.connect(self.show_response)
@@ -310,13 +519,15 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             filters.setColumnStretch(1, 1)
             filters.setColumnStretch(3, 1)
             browse_layout.addLayout(filters)
-            filter_actions = QHBoxLayout()
-            filter_actions.addStretch()
+            filter_actions = QVBoxLayout()
+            filter_actions.setSpacing(8)
             self.open_catalog_embedded = QPushButton("在軟體內搜尋官方目錄")
             self.open_catalog_embedded.setObjectName("ghost")
             self.open_catalog_embedded.clicked.connect(self.open_catalog_embedded_page)
-            filter_actions.addWidget(self.open_catalog_embedded)
-            filter_actions.addWidget(self.open_filter)
+            filter_actions.addWidget(
+                self.open_catalog_embedded, 0, Qt.AlignmentFlag.AlignRight
+            )
+            filter_actions.addWidget(self.open_filter, 0, Qt.AlignmentFlag.AlignRight)
             browse_layout.addLayout(filter_actions)
             self.filter_note = QLabel()
             self.filter_note.setObjectName("sectionSubtitle")
@@ -337,6 +548,9 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.episodes_enabled = QCheckBox()
             self.episodes_enabled.toggled.connect(self.toggle_episodes_mod)
             mod_row.addWidget(self.episodes_enabled)
+            self.player_enabled = QCheckBox()
+            self.player_enabled.toggled.connect(self.toggle_player_mod)
+            mod_row.addWidget(self.player_enabled)
             mod_row.addStretch()
             search_layout.addLayout(mod_row)
 
@@ -361,6 +575,11 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
 
             self.status = QLabel()
             self.status.setObjectName("preview")
+            self.status.setTextFormat(Qt.TextFormat.PlainText)
+            self.status.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse
+                | Qt.TextInteractionFlag.TextSelectableByKeyboard
+            )
             self.status.setWordWrap(True)
             search_layout.addWidget(self.status)
 
@@ -394,6 +613,7 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.load_episodes_button.clicked.connect(self.load_episodes)
             actions.addWidget(self.load_episodes_button)
             self.open_selected_button = QPushButton()
+            self.open_selected_button.setObjectName("primary")
             self.open_selected_button.clicked.connect(self.open_selected)
             actions.addWidget(self.open_selected_button)
             self.open_selected_embedded_button = QPushButton("在軟體內開啟")
@@ -426,7 +646,7 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             fallback_layout.addWidget(self.episode_fallback_note)
             fallback_actions = QHBoxLayout()
             self.fallback_open_series = QPushButton()
-            self.fallback_open_series.setObjectName("ghost")
+            self.fallback_open_series.setObjectName("primary")
             self.fallback_open_series.clicked.connect(self.open_selected)
             fallback_actions.addWidget(self.fallback_open_series)
             self.fallback_open_embedded = QPushButton("在軟體內開啟")
@@ -484,6 +704,7 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.load_more_button.clicked.connect(lambda: self.load_episodes(append=True))
             episode_actions.addWidget(self.load_more_button)
             self.open_episode_button = QPushButton()
+            self.open_episode_button.setObjectName("primary")
             self.open_episode_button.clicked.connect(self.open_selected_episode)
             episode_actions.addWidget(self.open_episode_button)
             self.next_episode_button = QPushButton()
@@ -557,6 +778,9 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.offline_import_button = QPushButton()
             self.offline_import_button.clicked.connect(self.start_local_media_import)
             offline_actions.addWidget(self.offline_import_button)
+            self.offline_play_button = QPushButton()
+            self.offline_play_button.clicked.connect(self.play_local_media)
+            offline_actions.addWidget(self.offline_play_button)
             self.offline_verify_button = QPushButton()
             self.offline_verify_button.clicked.connect(self.verify_offline_archive)
             offline_actions.addWidget(self.offline_verify_button)
@@ -567,6 +791,7 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             offline_layout.addLayout(offline_actions)
             self.offline_status = QLabel()
             self.offline_status.setObjectName("preview")
+            self.offline_status.setTextFormat(Qt.TextFormat.PlainText)
             self.offline_status.setWordWrap(True)
             offline_layout.addWidget(self.offline_status)
             layout.addWidget(offline_card)
@@ -593,12 +818,18 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             )
             modules = {module.provider_id: module for module in group.modules}
             self.text = dict(group.ui)
+            self.text.setdefault("player_pause", "播放 / 暫停")
+            self.text.setdefault("player_stop", "停止")
+            self.text.setdefault("player_volume", "音量")
+            self.text.setdefault("player_previous", "上一個媒體")
+            self.text.setdefault("player_next", "下一個媒體")
             self.module_names = {
                 provider_id: modules[provider_id].display_name
                 for provider_id in (
                     ANI_GAMER_SEARCH_PROVIDER_ID,
                     ANI_GAMER_EPISODES_PROVIDER_ID,
                     ANI_GAMER_OFFLINE_PROVIDER_ID,
+                    ANI_GAMER_PLAYER_PROVIDER_ID,
                 )
             }
             self.title.setText(group.workspace["title"])
@@ -616,6 +847,9 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.target_filter.setAccessibleName(self.t("audience"))
             self.sort_filter.setAccessibleName(self.t("sort"))
             self.open_filter.setText(self.t("open_filter"))
+            self.open_catalog_embedded.setText(
+                self.t("open_episode_embedded")
+            )
             self.filter_note.setText(self.t("filter_note"))
             self.search_enabled.setText(
                 modules[ANI_GAMER_SEARCH_PROVIDER_ID].display_name
@@ -636,10 +870,16 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             )
             self.load_episodes_button.setText(self.t("load_episodes"))
             self.open_selected_button.setText(self.t("open_series"))
+            self.open_selected_embedded_button.setText(
+                self.t("open_episode_embedded")
+            )
             self.episode_heading.setText(self.t("episode_section"))
             self.episode_fallback_title.setText(self.t("episode_fallback_title"))
             self.episode_fallback_note.setText(self.t("episode_fallback_note"))
             self.fallback_open_series.setText(self.t("episode_fallback_open"))
+            self.fallback_open_embedded.setText(
+                self.t("open_episode_embedded")
+            )
             self.manual_episode_url.setPlaceholderText(
                 self.t("manual_episode_placeholder")
             )
@@ -672,6 +912,7 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.offline_suffix.setAccessibleName(self.t("offline_suffix"))
             self.offline_save_button.setText(self.t("offline_save"))
             self.offline_import_button.setText(self.t("offline_import"))
+            self.offline_play_button.setText(self.t("offline_play"))
             self.offline_verify_button.setText(self.t("offline_verify"))
             self.offline_cancel_button.setText(self.t("offline_cancel"))
             if not self.offline_status.text() or not self.busy:
@@ -705,6 +946,7 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                 ANI_GAMER_SEARCH_PROVIDER_ID,
                 ANI_GAMER_EPISODES_PROVIDER_ID,
                 ANI_GAMER_OFFLINE_PROVIDER_ID,
+                ANI_GAMER_PLAYER_PROVIDER_ID,
             }:
                 self.refresh_availability()
 
@@ -742,6 +984,9 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             offline_available, offline_enabled = self.feature_state(
                 ANI_GAMER_OFFLINE_PROVIDER_ID
             )
+            player_available, player_enabled = self.feature_state(
+                ANI_GAMER_PLAYER_PROVIDER_ID
+            )
             self.search_enabled.setText(
                 self.module_names.get(
                     ANI_GAMER_SEARCH_PROVIDER_ID, ANI_GAMER_SEARCH_PROVIDER_ID
@@ -752,10 +997,16 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                     ANI_GAMER_EPISODES_PROVIDER_ID, ANI_GAMER_EPISODES_PROVIDER_ID
                 )
             )
+            self.player_enabled.setText(
+                self.module_names.get(
+                    ANI_GAMER_PLAYER_PROVIDER_ID, ANI_GAMER_PLAYER_PROVIDER_ID
+                )
+            )
             for checkbox, available, enabled in (
                 (self.search_enabled, search_available, search_enabled),
                 (self.episodes_enabled, episodes_available, episodes_enabled),
                 (self.offline_enabled, offline_available, offline_enabled),
+                (self.player_enabled, player_available, player_enabled),
             ):
                 previous = checkbox.blockSignals(True)
                 checkbox.setEnabled(parent_enabled and available and not self.busy)
@@ -778,6 +1029,14 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                 self.offline_enabled.setText(self.t("offline_unavailable"))
             elif not parent_enabled:
                 self.offline_enabled.setText(self.t("parent_required"))
+            if not player_available:
+                self.player_enabled.setText(
+                    self.module_names.get(
+                        ANI_GAMER_PLAYER_PROVIDER_ID, ANI_GAMER_PLAYER_PROVIDER_ID
+                    )
+                )
+            elif not parent_enabled:
+                self.player_enabled.setText(self.t("parent_required"))
             self.update_action_state()
 
         def toggle_mod(self, provider_id: str, enabled: bool) -> None:
@@ -796,14 +1055,36 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
         def toggle_offline_mod(self, enabled: bool) -> None:
             self.toggle_mod(ANI_GAMER_OFFLINE_PROVIDER_ID, enabled)
 
+        def toggle_player_mod(self, enabled: bool) -> None:
+            self.toggle_mod(ANI_GAMER_PLAYER_PROVIDER_ID, enabled)
+
+        def dispatch_official_url(
+            self,
+            url: str,
+            success_key: str,
+            **values: object,
+        ) -> bool:
+            """Hand an official URL to the OS without claiming media playback."""
+
+            accepted = open_ani_gamer_system_browser(
+                url,
+                lambda official_url: QDesktopServices.openUrl(
+                    QUrl(official_url)
+                ),
+            )
+            if accepted:
+                self.status.setText(self.t(success_key, **values))
+                return True
+            self.status.setText(self.t("system_browser_open_failed", url=url))
+            return False
+
         def open_official(self, url: str, label: str) -> None:
             if url not in {ANI_GAMER_HOME, ANI_GAMER_LIST} and not url.startswith(
                 f"{ANI_GAMER_LIST}?"
             ):
                 self.status.setText(self.t("catalog_rejected"))
                 return
-            QDesktopServices.openUrl(QUrl(url))
-            self.status.setText(self.t("catalog_opened", label=label))
+            self.dispatch_official_url(url, "catalog_opened", label=label)
 
         def open_catalog_filter(self) -> None:
             try:
@@ -868,9 +1149,6 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.retry_query = query
             self.retry_status_key = status_key
             generation = self.begin_operation("search")
-            self.results = ()
-            self.clear_episodes()
-            self.table.setRowCount(0)
             self.thumbnail_loader.cancel_pending()
             self.status.setText(self.t(status_key))
 
@@ -959,12 +1237,13 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.retry_episode_append = append
             cursor = self.episode_cursor if append else ""
             if not append:
-                self.episodes = ()
-                self.episode_table.setRowCount(0)
                 self.episode_query = query
                 self.episode_cursor = ""
+                self.episode_replace_pending = True
                 self.show_episode_fallback(False)
                 self.show_episode_context(selected.title if selected is not None else "")
+            else:
+                self.episode_replace_pending = False
             generation = self.begin_operation("episodes")
             self.status.setText(self.t("episodes_running"))
 
@@ -1039,6 +1318,7 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                 self.status.setText(self.t("search_invalid"))
                 return
             accepted = []
+            seen_video_ids: set[str] = set()
             for index, item in enumerate(response.items):
                 source = response.sources[index] if index < len(response.sources) else ""
                 route = classify_site_url(item.url)
@@ -1047,9 +1327,12 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                     and route is not None
                     and route.site_family == "ani-gamer"
                     and route.resource_kind == "series"
+                    and item.video_id not in seen_video_ids
                 ):
                     accepted.append(item)
+                    seen_video_ids.add(item.video_id)
             self.results = tuple(accepted)
+            self.clear_episodes()
             self.populate_results()
             if response.failures:
                 message = response.failures[0].message[:240]
@@ -1074,6 +1357,7 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                 self.status.setText(self.t("episodes_invalid"))
                 return
             accepted = []
+            seen_video_ids: set[str] = set()
             for index, item in enumerate(response.items):
                 source = response.sources[index] if index < len(response.sources) else ""
                 route = classify_site_url(item.url)
@@ -1082,12 +1366,18 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                     and route is not None
                     and route.site_family == "ani-gamer"
                     and route.resource_kind == "episode"
+                    and item.video_id not in seen_video_ids
                 ):
                     accepted.append(item)
-            known = {item.video_id for item in self.episodes}
-            self.episodes = self.episodes + tuple(
-                item for item in accepted if item.video_id not in known
-            )
+                    seen_video_ids.add(item.video_id)
+            if self.episode_replace_pending:
+                self.episodes = tuple(accepted)
+                self.episode_replace_pending = False
+            else:
+                known = {item.video_id for item in self.episodes}
+                self.episodes = self.episodes + tuple(
+                    item for item in accepted if item.video_id not in known
+                )
             self.episode_cursor = dict(response.next_cursors).get(
                 ANI_GAMER_EPISODES_PROVIDER_ID, ""
             )
@@ -1095,9 +1385,12 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.populate_episodes()
             QTimer.singleShot(0, self.focus_episode_section)
             if response.failures:
-                self.status.setText(
-                    self.t("episodes_failed", error=response.failures[0].message[:240])
-                )
+                message = response.failures[0].message[:240]
+                if ANI_GAMER_BROWSER_VERIFICATION_ERROR in message:
+                    self.status.setText(self.t("episodes_browser_verification"))
+                    self.show_episode_fallback(True)
+                else:
+                    self.status.setText(self.t("episodes_failed", error=message))
             elif self.episodes and self.episode_cursor:
                 self.status.setText(self.t("episodes_more", count=len(self.episodes)))
             elif self.episodes:
@@ -1188,6 +1481,7 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.episodes = ()
             self.episode_query = ""
             self.episode_cursor = ""
+            self.episode_replace_pending = False
             self.episode_table.setRowCount(0)
             self.episode_context.clear()
             self.episode_context.setVisible(False)
@@ -1234,13 +1528,13 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             ):
                 self.status.setText(self.t("select_series"))
                 return
-            QDesktopServices.openUrl(QUrl(selected.url))
-            self.status.setText(self.t("series_opened", title=selected.title))
+            self.dispatch_official_url(
+                selected.url,
+                "series_opened",
+                title=selected.title,
+            )
 
         def open_embedded_url(self, url: str, title: str) -> None:
-            if QWebEngineView is None or OfficialPage is None:
-                self.status.setText("目前環境未安裝 Qt WebEngine，請使用官方頁按鈕")
-                return
             parsed = urlsplit(url)
             if (
                 parsed.scheme != "https"
@@ -1251,14 +1545,130 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             ):
                 self.status.setText(self.t("catalog_rejected"))
                 return
+
+            def open_system_browser() -> bool:
+                return self.dispatch_official_url(
+                    url,
+                    "catalog_opened",
+                    label=title,
+                )
+            if not self.embedded_web_engine_available:
+                self.status.setText(self.t("embedded_webengine_unavailable"))
+                return
             dialog = QDialog(self)
             dialog.setWindowTitle(title[:120] or "AniGamer 官方頁")
             dialog.resize(960, 680)
+            dialog.setMinimumSize(700, 480)
             layout = QVBoxLayout(dialog)
+            layout.setContentsMargins(10, 10, 10, 10)
+            layout.setSpacing(8)
+            status = QLabel(self.t("embedded_loading"), dialog)
+            status.setTextFormat(Qt.TextFormat.PlainText)
+            status.setWordWrap(True)
+            status.setSizePolicy(
+                QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
+            )
+            status.setMaximumHeight(56)
+            layout.addWidget(status)
             view = QWebEngineView(dialog)
+            view.setMinimumSize(640, 420)
+            view.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            )
             view.setPage(OfficialPage(view))
+            configure_ani_gamer_web_view(view)
+            layout.addWidget(view, 1)
+            layout.setStretch(1, 1)
+            actions = QHBoxLayout()
+            actions.addStretch()
+            fallback = QPushButton(self.t("open_official_fallback"), dialog)
+            fallback.setObjectName("primary")
+
+            def use_system_browser() -> None:
+                if open_system_browser():
+                    dialog.close()
+
+            fallback.clicked.connect(use_system_browser)
+            actions.addWidget(fallback)
+            close_button = QPushButton(self.t("cancel"), dialog)
+            close_button.clicked.connect(dialog.close)
+            actions.addWidget(close_button)
+            layout.addLayout(actions)
+
+            def promote_fallback() -> None:
+                fallback.setObjectName("primary")
+                fallback.setDefault(True)
+                fallback.setFocus(Qt.FocusReason.OtherFocusReason)
+
+            # Keep the embedded surface bounded: a verification/interstitial page
+            # may never emit a useful media state, so always expose a safe fallback
+            # instead of leaving a blank, apparently-frozen dialog.
+            load_timeout = QTimer(dialog)
+            load_timeout.setSingleShot(True)
+            probe_timeout = QTimer(dialog)
+            probe_timeout.setSingleShot(True)
+            probe_pending = {"active": False}
+
+            def on_load_timeout() -> None:
+                status.setText(self.t("embedded_load_failed"))
+                promote_fallback()
+
+            def on_page_loaded() -> None:
+                load_timeout.stop()
+                status.setText(self.t("embedded_page_loaded"))
+                probe_pending["active"] = True
+                probe_timeout.start(5_000)
+
+            def on_load_failed() -> None:
+                load_timeout.stop()
+                probe_timeout.stop()
+                probe_pending["active"] = False
+                status.setText(self.t("embedded_load_failed"))
+                promote_fallback()
+
+            def on_probe_timeout() -> None:
+                probe_pending["active"] = False
+                status.setText(self.t("embedded_capability_unknown"))
+                promote_fallback()
+
+            def on_capability(capability: WebEngineMediaCapability) -> None:
+                if not probe_pending["active"]:
+                    return
+                probe_pending["active"] = False
+                probe_timeout.stop()
+                status_key = {
+                    WebEngineMediaCapability.SUPPORTED: (
+                        "embedded_capability_supported"
+                    ),
+                    WebEngineMediaCapability.UNSUPPORTED: (
+                        "embedded_capability_unsupported"
+                    ),
+                    WebEngineMediaCapability.UNKNOWN: (
+                        "embedded_capability_unknown"
+                    ),
+                }[capability]
+                status.setText(self.t(status_key))
+                if capability is not WebEngineMediaCapability.SUPPORTED:
+                    promote_fallback()
+
+            def on_renderer_terminated() -> None:
+                load_timeout.stop()
+                probe_timeout.stop()
+                probe_pending["active"] = False
+                status.setText(self.t("embedded_renderer_terminated"))
+                promote_fallback()
+
+            load_timeout.timeout.connect(on_load_timeout)
+            probe_timeout.timeout.connect(on_probe_timeout)
+            wire_ani_gamer_web_view_diagnostics(
+                view,
+                on_page_loaded=on_page_loaded,
+                on_load_failed=on_load_failed,
+                on_capability=on_capability,
+                on_renderer_terminated=on_renderer_terminated,
+            )
             view.setUrl(QUrl(url))
-            layout.addWidget(view)
+            load_timeout.start(15_000)
             self._browser_dialogs.append(dialog)
             dialog.finished.connect(
                 lambda _result, current=dialog: self._browser_dialogs.remove(current)
@@ -1266,6 +1676,251 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                 else None
             )
             dialog.show()
+
+        def play_local_media(self) -> None:
+            try:
+                player_enabled = context.features.is_enabled(
+                    ANI_GAMER_PLAYER_PROVIDER_ID
+                )
+            except (AttributeError, KeyError, RuntimeError):
+                player_enabled = False
+            if not player_enabled:
+                self.offline_status.setText(self.t("parent_required"))
+                return
+            if (
+                QMediaPlayer is None
+                or QAudioOutput is None
+                or QMediaFormat is None
+                or QVideoWidget is None
+            ):
+                self.offline_status.setText(self.t("offline_media_missing"))
+                return
+            runtime_support = detect_qt_local_media_runtime_support(QMediaFormat)
+            filters: list[str] = []
+            if runtime_support.supported:
+                filters.append(
+                    self.t(
+                        "offline_play_supported_filter",
+                        patterns=" ".join(
+                            f"*{suffix}"
+                            for suffix in sorted(runtime_support.supported)
+                        ),
+                    )
+                )
+            if runtime_support.unknown:
+                filters.append(
+                    self.t(
+                        "offline_play_unknown_filter",
+                        patterns=" ".join(
+                            f"*{suffix}"
+                            for suffix in sorted(runtime_support.unknown)
+                        ),
+                    )
+                )
+            filenames, _filter = QFileDialog.getOpenFileNames(
+                self,
+                self.t("offline_play"),
+                str(Path(context.paths.downloads)),
+                ";;".join(filters),
+            )
+            if not filenames:
+                return
+            try:
+                queue = validate_local_media_selection(
+                    tuple(Path(filename) for filename in filenames)
+                )
+            except ValueError:
+                self.offline_status.setText(self.t("offline_select_files"))
+                return
+            playback_capability = classify_local_media_playback_selection(
+                queue,
+                runtime_support,
+            )
+            if playback_capability is LocalMediaPlaybackCapability.UNSUPPORTED:
+                names = ", ".join(
+                    safe_local_media_display_name(path, limit=80) for path in queue
+                )[:160]
+                self.offline_status.setText(
+                    self.t("offline_media_runtime_unsupported", path=names)
+                )
+                return
+            self.stop_local_media()
+            dialog = QDialog(self)
+            dialog.setWindowTitle(safe_local_media_display_name(queue[0]))
+            dialog.resize(960, 640)
+            layout = QVBoxLayout(dialog)
+            video = QVideoWidget(dialog)
+            layout.addWidget(video, 1)
+            controls = QHBoxLayout()
+            pause_button = QPushButton(self.t("player_pause"), dialog)
+            controls.addWidget(pause_button)
+            stop_button = QPushButton(self.t("player_stop"), dialog)
+            controls.addWidget(stop_button)
+            previous_button = QPushButton("◀", dialog)
+            previous_button.setToolTip(self.t("player_previous"))
+            previous_button.setAccessibleName(self.t("player_previous"))
+            controls.addWidget(previous_button)
+            next_button = QPushButton("▶", dialog)
+            next_button.setToolTip(self.t("player_next"))
+            next_button.setAccessibleName(self.t("player_next"))
+            controls.addWidget(next_button)
+            controls.addWidget(QLabel(self.t("player_volume"), dialog))
+            volume_slider = QSlider(Qt.Orientation.Horizontal, dialog)
+            volume_slider.setRange(0, 100)
+            volume_slider.setValue(70)
+            controls.addWidget(volume_slider, 1)
+            close_button = QPushButton(self.t("cancel"), dialog)
+            controls.addWidget(close_button)
+            layout.addLayout(controls)
+            player = QMediaPlayer(dialog)
+            audio = QAudioOutput(dialog)
+            audio.setVolume(0.7)
+            player.setAudioOutput(audio)
+            player.setVideoOutput(video)
+            # Stop playback without closing the player window; closing remains an
+            # explicit user action and mirrors normal desktop-player behaviour.
+            stop_button.clicked.connect(player.stop)
+            pause_button.clicked.connect(
+                lambda: (
+                    player.pause()
+                    if player.playbackState()
+                    == QMediaPlayer.PlaybackState.PlayingState
+                    else player.play()
+                )
+            )
+            close_button.clicked.connect(dialog.close)
+            volume_slider.valueChanged.connect(lambda value: audio.setVolume(value / 100))
+            dialog.finished.connect(self.stop_local_media)
+            self.local_media_dialog = dialog
+            self.local_media_player = player
+            self.local_media_queue = queue
+            self.local_media_index = 0
+            reported_error: dict[str, object] = {"key": None}
+            active_source: dict[str, object] = {
+                "url": None,
+                "capability": LocalMediaPlaybackCapability.UNKNOWN,
+            }
+
+            def current_source_is_active() -> bool:
+                source = active_source["url"]
+                return (
+                    source is not None
+                    and 0 <= self.local_media_index < len(self.local_media_queue)
+                    and player.source() == source
+                )
+
+            def report_playback_error(code: str) -> None:
+                if not current_source_is_active():
+                    return
+                source = active_source["url"]
+                key = (source, code)
+                if reported_error["key"] == key:
+                    return
+                reported_error["key"] = key
+                item = self.local_media_queue[self.local_media_index]
+                self.offline_status.setText(
+                    self.t(
+                        "offline_media_error",
+                        path=safe_local_media_display_name(item),
+                        code=code,
+                    )
+                )
+
+            def handle_player_error(error: object, *_details: object) -> None:
+                if error != player.error() or not current_source_is_active():
+                    return
+                report_playback_error(
+                    classify_local_media_player_error(getattr(error, "name", ""))
+                )
+
+            player.errorOccurred.connect(handle_player_error)
+
+            def load_queue_item(index: int) -> None:
+                if not 0 <= index < len(self.local_media_queue):
+                    return
+                self.local_media_index = index
+                item = self.local_media_queue[index]
+                item_name = safe_local_media_display_name(item)
+                reported_error["key"] = None
+                dialog.setWindowTitle(item_name)
+                previous_button.setEnabled(index > 0)
+                next_button.setEnabled(index + 1 < len(self.local_media_queue))
+                item_capability = classify_local_media_playback_selection(
+                    (item,),
+                    runtime_support,
+                )
+                source = QUrl.fromLocalFile(str(item))
+                active_source["url"] = source
+                active_source["capability"] = item_capability
+                self.offline_status.setText(
+                    self.t(
+                        local_media_playback_status_key(item_capability, "LoadingState"),
+                        path=item_name,
+                    )
+                )
+                player.setSource(source)
+                player.play()
+
+            previous_button.clicked.connect(
+                lambda: load_queue_item(self.local_media_index - 1)
+            )
+            next_button.clicked.connect(
+                lambda: load_queue_item(self.local_media_index + 1)
+            )
+
+            def handle_playback_state(state: object) -> None:
+                if (
+                    getattr(state, "name", "") != "PlayingState"
+                    or not current_source_is_active()
+                ):
+                    return
+                item = self.local_media_queue[self.local_media_index]
+                capability = active_source["capability"]
+                if not isinstance(capability, LocalMediaPlaybackCapability):
+                    capability = LocalMediaPlaybackCapability.UNKNOWN
+                self.offline_status.setText(
+                    self.t(
+                        local_media_playback_status_key(capability, "PlayingState"),
+                        path=safe_local_media_display_name(item),
+                    )
+                )
+
+            player.playbackStateChanged.connect(handle_playback_state)
+
+            def handle_media_status(status: object) -> None:
+                if status != player.mediaStatus() or not current_source_is_active():
+                    return
+                if (
+                    status == QMediaPlayer.MediaStatus.EndOfMedia
+                    and self.local_media_index + 1 < len(self.local_media_queue)
+                ):
+                    load_queue_item(self.local_media_index + 1)
+                    return
+                if status == QMediaPlayer.MediaStatus.InvalidMedia:
+                    error = player.error()
+                    report_playback_error(
+                        classify_local_media_player_error(
+                            getattr(error, "name", ""),
+                            invalid_media=True,
+                        )
+                    )
+
+            player.mediaStatusChanged.connect(handle_media_status)
+            dialog.show()
+            load_queue_item(0)
+
+        def stop_local_media(self) -> None:
+            player = self.local_media_player
+            dialog = self.local_media_dialog
+            self.local_media_player = None
+            self.local_media_dialog = None
+            self.local_media_queue = ()
+            self.local_media_index = -1
+            if player is not None:
+                player.stop()
+                player.setSource(QUrl())
+            if dialog is not None and dialog.isVisible():
+                dialog.close()
 
         def open_selected_embedded(self) -> None:
             selected = self.selected_result()
@@ -1291,9 +1946,12 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             ):
                 self.status.setText(self.t("select_episode"))
                 return
-            QDesktopServices.openUrl(QUrl(selected.url))
-            self.record_episode_history(selected)
-            self.status.setText(self.t("episode_opened", title=selected.title))
+            if self.dispatch_official_url(
+                selected.url,
+                "episode_opened",
+                title=selected.title,
+            ):
+                self.record_episode_history(selected)
 
         def open_next_episode(self) -> None:
             row = self.episode_table.currentRow()
@@ -1397,10 +2055,11 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             ):
                 self.status.setText(self.t("catalog_rejected"))
                 return
-            if QWebEngineView is None or OfficialPage is None:
-                QDesktopServices.openUrl(QUrl(entry.url))
-                return
-            self.open_embedded_url(entry.url, entry.episode_title)
+            self.dispatch_official_url(
+                entry.url,
+                "episode_opened",
+                title=entry.episode_title,
+            )
 
         def choose_offline_output(self) -> None:
             selected = QFileDialog.getExistingDirectory(
@@ -1666,6 +2325,9 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             _offline_available, offline_enabled = self.feature_state(
                 ANI_GAMER_OFFLINE_PROVIDER_ID
             )
+            _player_available, player_enabled = self.feature_state(
+                ANI_GAMER_PLAYER_PROVIDER_ID
+            )
             selected = self.selected_result()
             selected_episode = self.selected_episode()
             self.query.setEnabled(not self.busy)
@@ -1711,6 +2373,9 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                 and not self.busy
             )
             self.open_selected_button.setEnabled(selected is not None and not self.busy)
+            self.open_selected_embedded_button.setEnabled(
+                parent_enabled and player_enabled and selected is not None and not self.busy
+            )
             self.load_more_button.setEnabled(
                 parent_enabled
                 and episodes_enabled
@@ -1727,7 +2392,10 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
                 and not self.busy
             )
             self.open_episode_embedded_button.setEnabled(
-                selected_episode is not None and not self.busy
+                parent_enabled
+                and player_enabled
+                and selected_episode is not None
+                and not self.busy
             )
             self.history_button.setEnabled(parent_enabled and not self.busy)
             manual_ready = (
@@ -1752,6 +2420,9 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.offline_suffix.setEnabled(not self.busy)
             self.offline_save_button.setEnabled(offline_ready and not self.busy)
             self.offline_import_button.setEnabled(offline_ready and not self.busy)
+            self.offline_play_button.setEnabled(
+                parent_enabled and player_enabled and not self.busy
+            )
             self.offline_verify_button.setEnabled(offline_ready and not self.busy)
             self.offline_cancel_button.setEnabled(
                 self.busy
@@ -1765,7 +2436,8 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             self.closing = True
             self.offline_cancel_event.set()
             self.generation += 1
-            self.thumbnail_loader.cancel_pending()
+            self.thumbnail_loader.shutdown()
+            self.stop_local_media()
             if self.events is not None:
                 self.events.unsubscribe("builtin_mod.changed", self.handle_mod_changed)
                 self.events.unsubscribe("ui.language.changed", self.apply_language)

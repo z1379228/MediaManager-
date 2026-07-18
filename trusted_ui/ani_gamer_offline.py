@@ -10,8 +10,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import uuid
@@ -63,6 +65,166 @@ class OfflineImportCancelled(RuntimeError):
     """Raised after an explicit local-media import cancellation."""
 
 
+class LocalMediaPlaybackCapability(str, Enum):
+    """What the current Qt Multimedia runtime can infer before opening a file."""
+
+    SUPPORTED = "supported"
+    UNSUPPORTED = "unsupported"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True, slots=True)
+class LocalMediaRuntimeSupport:
+    """A complete, platform-local classification of allowed media suffixes."""
+
+    supported: frozenset[str]
+    unsupported: frozenset[str]
+    unknown: frozenset[str]
+
+
+_EXACT_MEDIA_SUPPORT_BY_SUFFIX = {
+    ".flac": (frozenset({"FLAC"}), frozenset({"FLAC"})),
+    ".mp3": (frozenset({"MP3"}), frozenset({"MP3"})),
+    ".opus": (frozenset({"Ogg"}), frozenset({"Opus"})),
+}
+_VARIABLE_CONTAINER_FORMATS_BY_SUFFIX = {
+    ".avi": frozenset({"AVI"}),
+    ".m4a": frozenset({"Mpeg4Audio", "MPEG4"}),
+    ".m4v": frozenset({"MPEG4"}),
+    ".mkv": frozenset({"Matroska"}),
+    ".mov": frozenset({"QuickTime", "MPEG4"}),
+    ".mp4": frozenset({"MPEG4"}),
+    ".ogg": frozenset({"Ogg"}),
+    ".wav": frozenset({"Wave"}),
+    ".webm": frozenset({"WebM"}),
+}
+_UNSAFE_DISPLAY_CODEPOINTS = frozenset(
+    {
+        0x061C,
+        0x200E,
+        0x200F,
+        *range(0x202A, 0x202F),
+        *range(0x2066, 0x206A),
+    }
+)
+
+
+def local_media_runtime_support(
+    supported_file_formats: object,
+    supported_audio_codecs: object,
+) -> LocalMediaRuntimeSupport:
+    """Classify suffixes from Qt enum names without importing optional Qt modules.
+
+    Container support only proves that at least one codec combination is
+    available.  Variable-codec containers therefore remain unknown when the
+    container is available.  Only codec-specific suffixes such as ``.flac``,
+    ``.mp3``, and ``.opus`` can be classified as supported before opening the
+    selected file.
+    """
+
+    if not isinstance(supported_file_formats, (set, frozenset, tuple, list)):
+        supported_file_formats = ()
+    if not isinstance(supported_audio_codecs, (set, frozenset, tuple, list)):
+        supported_audio_codecs = ()
+    file_formats = frozenset(
+        str(value) for value in supported_file_formats if isinstance(value, str)
+    )
+    audio_codecs = frozenset(
+        str(value) for value in supported_audio_codecs if isinstance(value, str)
+    )
+    supported: set[str] = set()
+    unsupported: set[str] = set()
+    exact_support = _EXACT_MEDIA_SUPPORT_BY_SUFFIX.items()
+    for suffix, (required_formats, required_codecs) in exact_support:
+        target = (
+            supported
+            if required_formats & file_formats and required_codecs & audio_codecs
+            else unsupported
+        )
+        target.add(suffix)
+    for suffix, required_formats in _VARIABLE_CONTAINER_FORMATS_BY_SUFFIX.items():
+        if not required_formats & file_formats:
+            unsupported.add(suffix)
+    unknown = set(ALLOWED_LOCAL_MEDIA_SUFFIXES) - supported - unsupported
+    return LocalMediaRuntimeSupport(
+        frozenset(supported),
+        frozenset(unsupported),
+        frozenset(unknown),
+    )
+
+
+def classify_local_media_playback_selection(
+    paths: object,
+    support: LocalMediaRuntimeSupport,
+) -> LocalMediaPlaybackCapability:
+    """Return the strictest runtime capability for an already-validated queue."""
+
+    if not isinstance(paths, (list, tuple)) or not paths:
+        return LocalMediaPlaybackCapability.UNKNOWN
+    suffixes = tuple(
+        Path(value).suffix.casefold()
+        for value in paths
+        if isinstance(value, (str, Path))
+    )
+    if len(suffixes) != len(paths):
+        return LocalMediaPlaybackCapability.UNKNOWN
+    if any(suffix in support.unsupported for suffix in suffixes):
+        return LocalMediaPlaybackCapability.UNSUPPORTED
+    if any(suffix not in support.supported for suffix in suffixes):
+        return LocalMediaPlaybackCapability.UNKNOWN
+    return LocalMediaPlaybackCapability.SUPPORTED
+
+
+def classify_local_media_player_error(
+    error_name: object,
+    *,
+    invalid_media: bool = False,
+) -> str:
+    """Map Qt enum names to stable, non-sensitive local playback error codes."""
+
+    name = str(error_name) if isinstance(error_name, str) else ""
+    if invalid_media and name in {"", "NoError"}:
+        return "invalid-media"
+    return {
+        "FormatError": "unsupported-codec-or-corrupt-media",
+        "ResourceError": "missing-or-unreadable-media",
+        "AccessDeniedError": "media-access-denied",
+        "NetworkError": "unexpected-local-backend-network-error",
+    }.get(name, "playback-failed")
+
+
+def local_media_playback_status_key(
+    capability: LocalMediaPlaybackCapability,
+    playback_state_name: object,
+) -> str:
+    """Return a UI key without treating an asynchronous play request as success."""
+
+    if playback_state_name == "PlayingState":
+        return "offline_media_playing"
+    if capability is LocalMediaPlaybackCapability.UNKNOWN:
+        return "offline_media_playing_unknown"
+    return "offline_media_loading"
+
+
+def safe_local_media_display_name(value: object, *, limit: int = 120) -> str:
+    """Return a bounded basename without control or bidi-format characters."""
+
+    if limit < 1:
+        raise ValueError("display-name limit must be positive")
+    if not isinstance(value, (str, Path)):
+        return "local-media"
+    name = Path(value).name
+    cleaned = "".join(
+        " "
+        if ord(character) < 0x20
+        or 0x7F <= ord(character) <= 0x9F
+        or ord(character) in _UNSAFE_DISPLAY_CODEPOINTS
+        else character
+        for character in name
+    ).strip()
+    return cleaned[:limit] or "local-media"
+
+
 @dataclass(frozen=True, slots=True)
 class AniGamerEpisodeArchive:
     root: Path
@@ -84,6 +246,38 @@ class AniGamerArchiveVerification:
     actual_sha256: str = ""
     subtitle_state: str = "not-linked"
     subtitle_paths: tuple[Path, ...] = ()
+    cover_state: str = "not-linked"
+
+
+def validate_local_media_selection(paths: object) -> tuple[Path, ...]:
+    """Validate an explicit local-player selection without following links.
+
+    The player MOD is intentionally limited to regular files selected by the
+    user.  Keeping this check in the offline boundary prevents UI callers from
+    accidentally accepting symlinks, directories, unsupported formats, or
+    files that exceed the bounded local-media limit.
+    """
+
+    if not isinstance(paths, (list, tuple)):
+        raise ValueError("selected local media list is invalid")
+    selected = tuple(Path(value).expanduser() for value in paths if isinstance(value, (str, Path)))
+    if not selected or len(selected) != len(paths):
+        raise ValueError("no local media was selected")
+    validated: list[Path] = []
+    for candidate in selected:
+        try:
+            if candidate.is_symlink() or not candidate.is_file():
+                raise ValueError("selected local media is missing or unsafe")
+            resolved = candidate.resolve(strict=True)
+            size = resolved.stat().st_size
+        except OSError as error:
+            raise ValueError("selected local media is missing or unsafe") from error
+        if resolved.suffix.casefold() not in ALLOWED_LOCAL_MEDIA_SUFFIXES:
+            raise ValueError("selected local media type or size is unsupported")
+        if size <= 0 or size > MAX_LOCAL_MEDIA_BYTES:
+            raise ValueError("selected local media type or size is unsupported")
+        validated.append(resolved)
+    return tuple(validated)
 
 
 def _safe_component(value: str, fallback: str, *, limit: int = 96) -> str:
@@ -132,6 +326,7 @@ def _atomic_write(path: Path, payload: bytes) -> None:
         with temporary.open("xb") as output:
             output.write(payload)
             output.flush()
+            os.fsync(output.fileno())
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
@@ -152,7 +347,99 @@ def _read_metadata(path: Path) -> dict[str, object]:
         or not isinstance(document.get("episode"), dict)
     ):
         raise ValueError("AniGamer offline metadata contract is invalid")
+    if "manifest_schema" in document:
+        files = document.get("files")
+        if document.get("manifest_schema") != 1 or not isinstance(files, list):
+            raise ValueError("AniGamer offline file manifest is invalid")
+        if len(files) > MAX_LOCAL_SUBTITLES + 2:
+            raise ValueError("AniGamer offline file manifest is too large")
+        for entry in files:
+            if not isinstance(entry, dict) or entry.get("role") not in {
+                "cover",
+                "media",
+                "subtitle",
+            }:
+                raise ValueError("AniGamer offline file manifest is invalid")
+            raw_path = entry.get("path")
+            raw_hash = entry.get("sha256")
+            if (
+                not isinstance(raw_path, str)
+                or not raw_path
+                or "\\" in raw_path
+                or Path(raw_path).is_absolute()
+                or ".." in Path(raw_path).parts
+                or not isinstance(raw_hash, str)
+                or re.fullmatch(r"[0-9a-f]{64}", raw_hash) is None
+            ):
+                raise ValueError("AniGamer offline file manifest is invalid")
     return document
+
+
+def _refresh_file_manifest(document: dict[str, object]) -> None:
+    """Write a bounded, hash-addressed file list into the episode manifest."""
+
+    entries: list[dict[str, object]] = []
+    cover = document.get("cover")
+    cover_sha256 = document.get("cover_sha256")
+    if isinstance(cover, str) and cover and isinstance(cover_sha256, str):
+        entries.append({"role": "cover", "path": cover, "sha256": cover_sha256})
+    media = document.get("local_media")
+    if isinstance(media, dict) and isinstance(media.get("path"), str):
+        entries.append(
+            {
+                "role": "media",
+                "path": media["path"],
+                "bytes": media.get("bytes"),
+                "sha256": media.get("sha256"),
+            }
+        )
+    subtitles = document.get("local_subtitles", [])
+    if isinstance(subtitles, list):
+        for subtitle in subtitles:
+            if isinstance(subtitle, dict) and isinstance(subtitle.get("path"), str):
+                entries.append(
+                    {
+                        "role": "subtitle",
+                        "path": subtitle["path"],
+                        "bytes": subtitle.get("bytes"),
+                        "sha256": subtitle.get("sha256"),
+                    }
+                )
+    document["manifest_schema"] = 1
+    document["files"] = entries[: MAX_LOCAL_SUBTITLES + 2]
+
+
+def _verify_cover(root: Path, document: dict[str, object]) -> tuple[bool, str]:
+    """Verify an archived cover when its hash is available.
+
+    Archives created before cover hashes were introduced remain readable and
+    are reported as ``legacy`` rather than being treated as corrupted.
+    """
+
+    raw_cover = document.get("cover")
+    if raw_cover is None:
+        return True, "not-linked"
+    if (
+        not isinstance(raw_cover, str)
+        or not raw_cover
+        or "\\" in raw_cover
+        or Path(raw_cover).is_absolute()
+        or ".." in Path(raw_cover).parts
+    ):
+        raise ValueError("AniGamer cover metadata is invalid")
+    cover = root.joinpath(*raw_cover.split("/"))
+    resolved = cover.resolve()
+    if not resolved.is_relative_to(root) or cover.is_symlink() or not cover.is_file():
+        return False, "missing"
+    expected = document.get("cover_sha256")
+    if expected is None:
+        return True, "legacy"
+    if not isinstance(expected, str) or re.fullmatch(r"[0-9a-f]{64}", expected) is None:
+        raise ValueError("AniGamer cover metadata is invalid")
+    if cover.stat().st_size > MAX_COVER_BYTES:
+        return False, "size-mismatch"
+    digest = hashlib.sha256(cover.read_bytes()).hexdigest()
+    return digest == expected, "ok" if digest == expected else "hash-mismatch"
 
 
 def create_episode_archive(
@@ -215,6 +502,16 @@ def create_episode_archive(
     elif (episode_root / "cover.png").is_file():
         cover_path = episode_root / "cover.png"
 
+    if cover_path is not None:
+        try:
+            if cover_path.stat().st_size > MAX_COVER_BYTES:
+                raise ValueError("AniGamer cover PNG is invalid or too large")
+            cover_sha256 = hashlib.sha256(cover_path.read_bytes()).hexdigest()
+        except OSError as error:
+            raise ValueError("AniGamer cover PNG is unavailable") from error
+    else:
+        cover_sha256 = None
+
     document = {
         "schema": OFFLINE_SCHEMA,
         "kind": "ani-gamer-selected-episode",
@@ -232,10 +529,12 @@ def create_episode_archive(
             "official_url": episode.url,
         },
         "cover": cover_path.name if cover_path is not None else None,
+        "cover_sha256": cover_sha256,
         "naming": {"prefix": prefix, "suffix": suffix},
         "local_media": existing_media,
         "local_subtitles": existing_subtitles,
     }
+    _refresh_file_manifest(document)
     encoded = (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode(
         "utf-8"
     )
@@ -298,6 +597,7 @@ def import_local_media(
                 digest.update(chunk)
                 output_file.write(chunk)
             output_file.flush()
+            os.fsync(output_file.fileno())
         final = candidate.stat()
         if (
             written != initial.st_size
@@ -315,6 +615,7 @@ def import_local_media(
         "sha256": digest.hexdigest(),
         "source_name": candidate.name,
     }
+    _refresh_file_manifest(document)
     encoded = (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode(
         "utf-8"
     )
@@ -407,6 +708,7 @@ def import_local_subtitles(
                         digest.update(chunk)
                         output_file.write(chunk)
                     output_file.flush()
+                    os.fsync(output_file.fileno())
                 final = candidate.stat()
                 if (
                     written != initial.st_size
@@ -428,6 +730,7 @@ def import_local_subtitles(
             )
 
         document["local_subtitles"] = [*existing, *entries]
+        _refresh_file_manifest(document)
         encoded = (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode(
             "utf-8"
         )
@@ -541,6 +844,7 @@ def verify_episode_archive(
         raise ValueError("AniGamer episode archive is unsafe")
     root = candidate.resolve()
     document = _read_metadata(root / "episode.json")
+    cover_valid, cover_state = _verify_cover(root, document)
     subtitles_valid, subtitle_state, subtitle_paths = _verify_local_subtitles(
         root, document, cancelled=cancelled
     )
@@ -548,11 +852,12 @@ def verify_episode_archive(
     if local_media is None:
         return AniGamerArchiveVerification(
             root,
-            subtitles_valid,
+            subtitles_valid and cover_valid,
             "not-linked",
             None,
             subtitle_state=subtitle_state,
             subtitle_paths=subtitle_paths,
+            cover_state=cover_state,
         )
     if not isinstance(local_media, dict):
         raise ValueError("AniGamer local media metadata is invalid")
@@ -587,6 +892,7 @@ def verify_episode_archive(
             expected_sha256,
             subtitle_state=subtitle_state,
             subtitle_paths=subtitle_paths,
+            cover_state=cover_state,
         )
     initial = media_path.stat()
     if initial.st_size != expected_bytes:
@@ -600,6 +906,7 @@ def verify_episode_archive(
             expected_sha256,
             subtitle_state=subtitle_state,
             subtitle_paths=subtitle_paths,
+            cover_state=cover_state,
         )
     digest = hashlib.sha256()
     read_bytes = 0
@@ -615,7 +922,7 @@ def verify_episode_archive(
     if final.st_size != initial.st_size or final.st_mtime_ns != initial.st_mtime_ns:
         raise ValueError("AniGamer local media changed during verification")
     actual_sha256 = digest.hexdigest()
-    valid = actual_sha256 == expected_sha256 and subtitles_valid
+    valid = actual_sha256 == expected_sha256 and subtitles_valid and cover_valid
     return AniGamerArchiveVerification(
         root,
         valid,
@@ -627,4 +934,5 @@ def verify_episode_archive(
         actual_sha256,
         subtitle_state=subtitle_state,
         subtitle_paths=subtitle_paths,
+        cover_state=cover_state,
     )

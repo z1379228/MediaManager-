@@ -23,14 +23,18 @@ def test_quality_workflow_runs_release_and_mod_audits() -> None:
     text = _workflow_text()
 
     required_commands = (
+        "python -m tools.quality_audit --ruff-only",
+        "python -m tools.quality_audit --text-only",
         "python -m tools.audit_versions --root Version",
         "python -m tools.audit_mod_groups",
         "python -m tools.site_quality_audit",
         "python -m tools.dependency_lock_audit",
-        "audit_text_pollution.ps1",
+        "python -m tools.audit_version_docs",
     )
     for command in required_commands:
         assert command in text
+
+    assert "ruff check ." not in text
 
 
 def test_quality_workflow_is_read_only_for_pull_requests() -> None:

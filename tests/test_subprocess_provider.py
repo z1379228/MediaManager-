@@ -4,10 +4,12 @@ import json
 import os
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
 
+from core.downloads import subprocess_provider as subprocess_provider_module
 from core.downloads.errors import DownloadCancelled
 from core.downloads.models import DownloadRequest
 from core.downloads.subprocess_provider import (
@@ -126,6 +128,48 @@ def test_provider_bounds_stderr_in_protocol_error(tmp_path: Path) -> None:
 
     assert len(str(captured.value)) < 66_000
     assert str(captured.value).endswith("[provider stderr truncated]")
+
+
+def test_provider_drains_stderr_after_stdout_eof(tmp_path: Path) -> None:
+    source = (
+        "import json, sys, time\n"
+        "json.loads(sys.stdin.readline())\n"
+        "sys.stdout.close()\n"
+        "time.sleep(0.25)\n"
+        "sys.stderr.write('late provider error')\n"
+        "sys.stderr.flush()\n"
+    )
+    root = make_provider(tmp_path, source)
+    provider = SubprocessDownloadProvider(
+        root, application_root=tmp_path, analyze_timeout=3
+    )
+
+    with pytest.raises(ProviderProtocolError, match="late provider error"):
+        provider.analyze("https://example.com/video")
+
+
+def test_provider_accepts_result_enqueued_after_process_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = (
+        "import json, sys\n"
+        "json.loads(sys.stdin.readline())\n"
+        "print(json.dumps({'type':'result','value':{}}), flush=True)\n"
+    )
+    original_put = subprocess_provider_module.queue.Queue.put
+
+    def delayed_put(self, item, block=True, timeout=None):
+        if isinstance(item, str):
+            time.sleep(1.25)
+        return original_put(self, item, block=block, timeout=timeout)
+
+    monkeypatch.setattr(subprocess_provider_module.queue.Queue, "put", delayed_put)
+    root = make_provider(tmp_path, source)
+    provider = SubprocessDownloadProvider(
+        root, application_root=tmp_path, analyze_timeout=3
+    )
+
+    assert provider.analyze("https://example.com/video") == {}
 
 
 def test_provider_rejects_oversized_stdout_message(tmp_path: Path) -> None:

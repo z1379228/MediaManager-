@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -71,6 +73,7 @@ def test_complete_main_window_builds_at_supported_minimum_size(
     monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
     app = QApplication.instance() or QApplication([])
     context = Bootstrap(portable=True).initialize(start_background=False)
+    context.settings.initial_mod_setup_completed = True
     observed: dict[str, object] = {}
 
     def inspect_then_exit(_app: QApplication) -> int:
@@ -80,6 +83,7 @@ def test_complete_main_window_builds_at_supported_minimum_size(
             for widget in app.topLevelWidgets()
             if isinstance(widget, QMainWindow)
             and widget.accessibleName() == "MediaManager 主視窗"
+            and widget.isVisible()
         )
         tabs = window.findChild(QTabWidget)
         observed.update(
@@ -104,5 +108,91 @@ def test_complete_main_window_builds_at_supported_minimum_size(
         assert observed["surface"] == "#0a0f1d"
         assert observed["has_mod_manager"]
         assert observed["locale_count"] == 4
+    finally:
+        context.lifecycle.shutdown()
+
+
+def test_main_window_reverts_controls_when_settings_are_read_only(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
+
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+    app = QApplication.instance() or QApplication([])
+    warning = Mock(return_value=QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(QMessageBox, "warning", warning)
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    context.settings.initial_mod_setup_completed = True
+    original_locale = context.settings.language
+    original_plugin_locale = context.plugin_ui.locale
+    original_scale = context.settings.ui_scale
+    original_in_app = context.settings.in_app_download_notifications
+    settings_path = Path(context.paths.settings) / "settings.json"
+    original_document = json.dumps(
+        {
+            "schema_version": 99,
+            "language": original_locale,
+            "ui_scale": original_scale,
+            "in_app_download_notifications": original_in_app,
+        }
+    )
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(original_document, encoding="utf-8")
+
+    def exercise_then_exit(_app: QApplication) -> int:
+        app.processEvents()
+        window = next(
+            widget
+            for widget in app.topLevelWidgets()
+            if isinstance(widget, QMainWindow)
+            and widget.accessibleName() == "MediaManager 主視窗"
+            and widget.isVisible()
+        )
+        original_stylesheet = app.styleSheet()
+
+        next(
+            action
+            for action in window.language_group.actions()
+            if action.data() == "ja"
+        ).trigger()
+        next(
+            action
+            for action in window.ui_scale_group.actions()
+            if action.data() == "large"
+        ).trigger()
+        window.in_app_notifications.trigger()
+        app.processEvents()
+
+        assert context.settings.language == original_locale
+        assert context.plugin_ui.locale == original_plugin_locale
+        assert context.settings.ui_scale == original_scale
+        assert context.settings.in_app_download_notifications is original_in_app
+        assert [
+            action.data()
+            for action in window.language_group.actions()
+            if action.isChecked()
+        ] == [original_locale]
+        assert [
+            action.data()
+            for action in window.ui_scale_group.actions()
+            if action.isChecked()
+        ] == [original_scale]
+        assert window.in_app_notifications.isChecked() is original_in_app
+        assert app.styleSheet() == original_stylesheet
+        assert settings_path.read_text(encoding="utf-8") == original_document
+        assert warning.call_count == 3
+        assert all("復原" in call.args[2] for call in warning.call_args_list)
+        window.close()
+        app.processEvents()
+        return 0
+
+    monkeypatch.setattr(QApplication, "exec", exercise_then_exit)
+    try:
+        assert run_main_window(context) == 0
     finally:
         context.lifecycle.shutdown()

@@ -24,6 +24,12 @@ class BuiltinModDescriptor:
 
 BUILTIN_MOD_CATALOG = (
     BuiltinModDescriptor(
+        "ani-gamer-player", "AniGamer Player", "feature",
+        "Official embedded preview and user-selected local media playback",
+        "AniGamer workspace player controls", False,
+        parent_provider_id="ani-gamer",
+    ),
+    BuiltinModDescriptor(
         "youtube", "YouTube", "download", "批量、分段與音訊下載",
         "YouTube 下載工作區", True,
         dependency_ids=("yt-dlp", "yt-dlp-ejs", "javascript-runtime", "ffmpeg"),

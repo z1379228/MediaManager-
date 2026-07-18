@@ -101,6 +101,10 @@ def validate_clean_source(root: Path) -> str:
         capture_output=True,
         text=True,
     )
+    if status.stderr.strip():
+        raise RuntimeError(
+            "release source inspection is incomplete; Git reported a diagnostic"
+        )
     if status.stdout.strip():
         raise RuntimeError(
             "release source is dirty; commit or intentionally remove every listed "
@@ -222,6 +226,7 @@ def build_version(
     portable_runtime: bool = True,
     channel: str = BUILD_CHANNEL,
     confirm_stable: bool = False,
+    temp_root: Path | None = None,
 ) -> Path:
     root = root.resolve()
     if channel == "stable" and not confirm_stable:
@@ -230,27 +235,54 @@ def build_version(
         )
     validate_build_version(root, version)
     validate_clean_source(root)
+    generated_targets = (root / "build", root / "mediamanager.egg-info")
+    preexisting_targets = tuple(
+        target
+        for target in generated_targets
+        if target.exists() or target.is_symlink()
+    )
+    if preexisting_targets:
+        names = ", ".join(str(target) for target in preexisting_targets)
+        raise FileExistsError(
+            "refusing to build over pre-existing generated paths; "
+            f"move or remove them explicitly first: {names}"
+        )
     public_version = release_identity_version(channel)
+    attempt_id = secrets.token_hex(4)
     paths = version_build_paths(
         root,
         version,
         channel=channel,
         release_version=public_version,
-        attempt_id=secrets.token_hex(4),
+        attempt_id=attempt_id,
     )
+    external_temp_root = None if temp_root is None else temp_root.resolve()
+    build_temp = paths.temp
+    if external_temp_root is not None:
+        build_temp = external_temp_root / f"mediamanager-build-{attempt_id}"
+        if build_temp.parent != external_temp_root:
+            raise ValueError("build temporary directory escapes the selected root")
     portable_tools = portable_release_tools(root, enabled=portable_runtime)
     failure: BaseException | None = None
+    work_created = False
+    build_temp_created = False
     try:
-        paths.temp.mkdir(parents=True, exist_ok=True)
+        paths.work.parent.mkdir(parents=True, exist_ok=True)
+        paths.work.mkdir(exist_ok=False)
+        work_created = True
+        build_temp.mkdir(
+            parents=True,
+            exist_ok=False,
+        )
+        build_temp_created = True
         build_environment = os.environ.copy()
-        build_environment["TEMP"] = str(paths.temp)
-        build_environment["TMP"] = str(paths.temp)
+        build_environment["TEMP"] = str(build_temp)
+        build_environment["TMP"] = str(build_temp)
         pyinstaller = Path(sys.executable).with_name("pyinstaller.exe")
         if not pyinstaller.is_file():
             raise FileNotFoundError(
                 f"PyInstaller executable is missing: {pyinstaller}"
             )
-        paths.work.mkdir(parents=True, exist_ok=True)
         subprocess.run(
             [
                 str(pyinstaller),
@@ -270,7 +302,7 @@ def build_version(
             remove_build_tree(paths.wheel_output)
         paths.wheel_output.mkdir(parents=True)
         wheel_environment = wheel_build_environment(
-            build_environment, paths.temp / "pip-wheel"
+            build_environment, build_temp / "pip-wheel"
         )
         subprocess.run(
             wheel_build_command(Path(sys.executable), paths.wheel_output),
@@ -295,8 +327,14 @@ def build_version(
         raise
     finally:
         cleanup_errors: list[tuple[Path, OSError]] = []
-        cleanup_targets = [] if keep_work else [paths.work]
-        cleanup_targets.extend((root / "build", root / "mediamanager.egg-info"))
+        cleanup_targets = (
+            [paths.work] if work_created and not keep_work else []
+        )
+        # ``build`` and ``mediamanager.egg-info`` are fixed setuptools paths
+        # under the source root.  A different process may create them after
+        # our preflight check, so this build cannot prove ownership at cleanup
+        # time.  Preserve them and let the next preflight fail closed instead
+        # of recursively deleting another process's output.
         for target in cleanup_targets:
             if target.parent not in {root, root / ".work" / release_track(channel)}:
                 continue
@@ -304,6 +342,17 @@ def build_version(
                 remove_build_tree(target)
             except OSError as exc:
                 cleanup_errors.append((target, exc))
+        if (
+            not keep_work
+            and external_temp_root is not None
+            and build_temp_created
+        ):
+            if build_temp.parent != external_temp_root:
+                raise RuntimeError("refusing to clean an unsafe build temporary path")
+            try:
+                remove_build_tree(build_temp)
+            except OSError as exc:
+                cleanup_errors.append((build_temp, exc))
         _record_cleanup_failure(failure, cleanup_errors)
 
 
@@ -325,6 +374,11 @@ def main() -> int:
         action="store_true",
         help="build without pinned Deno and FFmpeg runtimes",
     )
+    parser.add_argument(
+        "--temp-root",
+        type=Path,
+        help="Writable user-local root for isolated build temporary directories",
+    )
     args = parser.parse_args()
     print(
         build_version(
@@ -334,6 +388,7 @@ def main() -> int:
             portable_runtime=not args.without_portable_runtime,
             channel=args.channel,
             confirm_stable=args.confirm_stable,
+            temp_root=args.temp_root,
         )
     )
     return 0

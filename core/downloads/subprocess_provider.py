@@ -43,6 +43,7 @@ from core.downloads.errors import (
 _MAX_PROVIDER_MESSAGE_CHARS = 1024 * 1024
 _MAX_PROVIDER_STDERR_CHARS = 64 * 1024
 _PROVIDER_MESSAGE_BACKLOG = 128
+_PROVIDER_EXIT_DRAIN_SECONDS = 1.0
 
 
 class ProviderProtocolError(RuntimeError):
@@ -1061,12 +1062,45 @@ class SubprocessDownloadProvider:
                     line = messages.get(timeout=0.1)
                 except queue.Empty:
                     if process.poll() is not None:
-                        line = None
+                        # The process can exit after writing a valid result but
+                        # before the stdout reader gets scheduled to enqueue it.
+                        # Wait for its next message within the existing operation
+                        # bounds instead of imposing a second scheduling deadline.
+                        now = time.monotonic()
+                        result_wait_deadline = min(
+                            deadline,
+                            last_activity + idle_timeout,
+                        )
+                        remaining = max(0.0, result_wait_deadline - now)
+                        if remaining <= 0:
+                            line = None
+                        else:
+                            try:
+                                line = messages.get(timeout=remaining)
+                            except queue.Empty:
+                                line = None
                     else:
                         continue
                 if line is None:
-                    if process.poll() is not None:
-                        stderr_thread.join(timeout=0.2)
+                    # stdout can close just before the process reports a useful
+                    # bounded error on stderr. Give that already-ending process
+                    # a short, operation-bounded drain window before snapshotting
+                    # stderr; otherwise the result depends on reader scheduling.
+                    now = time.monotonic()
+                    drain_deadline = min(
+                        deadline,
+                        last_activity + idle_timeout,
+                        now + _PROVIDER_EXIT_DRAIN_SECONDS,
+                    )
+                    remaining = max(0.0, drain_deadline - now)
+                    if process.poll() is None and remaining > 0:
+                        try:
+                            process.wait(timeout=remaining)
+                        except subprocess.TimeoutExpired:
+                            pass
+                    remaining = max(0.0, drain_deadline - time.monotonic())
+                    if remaining > 0:
+                        stderr_thread.join(timeout=remaining)
                     error = stderr_text()
                     raise ProviderProtocolError(
                         error or "provider exited without a result"

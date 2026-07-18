@@ -333,6 +333,8 @@ def test_retryable_provider_failure_is_retried_with_persisted_bound(
         state_path=state,
         retry_wait=lambda _delay, _event: False,
     )
+    observed: list[DownloadState] = []
+    downloads.subscribe(lambda task: observed.append(task.state))
     downloads.add(DownloadRequest("https://youtu.be/x", tmp_path))
 
     downloads.start()
@@ -342,6 +344,7 @@ def test_retryable_provider_failure_is_retried_with_persisted_bound(
     task = downloads.snapshots()[0]
 
     assert backend.calls == 3
+    assert DownloadState.RETRYING in observed
     assert task.automatic_retries == 2
     assert task.next_retry_seconds == 0
     restored = DownloadQueue(RecordingBackend(), state_path=state).snapshots()[0]

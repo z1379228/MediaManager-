@@ -54,6 +54,14 @@ Build and stage the current version with:
 .\.venv\Scripts\python.exe -m tools.build_version
 ```
 
+Windows 環境若因 Python／pip `TEMP`、`TMP` 暫存 ACL 出現 `WinError 5`，
+可指定使用者可寫入的一次性建置暫存根目錄：
+
+```powershell
+.\.venv\Scripts\python.exe -m tools.build_version `
+  --temp-root "$env:LOCALAPPDATA\MediaManager\build-temp"
+```
+
 The default Windows build requires pinned, verified portable Deno and FFmpeg
 runtimes. Fetch them once into the ignored local tool cache with:
 

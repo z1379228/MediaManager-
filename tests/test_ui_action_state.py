@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import threading
 from types import SimpleNamespace
@@ -18,6 +19,53 @@ from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.main_window import apply_download_prefill, configure_workspace_tabs
 from trusted_ui.mega_workspace import create_mega_workspace
 from trusted_ui.search_panel import create_search_panel, search_source_for_url
+
+
+def test_download_worker_count_reverts_when_settings_are_read_only(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    app = QApplication.instance() or QApplication([])
+    warning = Mock(return_value=QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(QMessageBox, "warning", warning)
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    original_workers = context.settings.download_workers
+    set_worker_count = Mock(wraps=context.download_queue.set_worker_count)
+    monkeypatch.setattr(
+        context.download_queue,
+        "set_worker_count",
+        set_worker_count,
+    )
+    original_document = json.dumps(
+        {"schema_version": 99, "download_workers": original_workers}
+    )
+    settings_path = Path(context.paths.settings) / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(original_document, encoding="utf-8")
+    panel = create_download_panel(context)
+    panel.timer.stop()
+    try:
+        panel.worker_count.setCurrentIndex(panel.worker_count.findData(4))
+        app.processEvents()
+
+        assert context.settings.download_workers == original_workers
+        assert context.download_queue.worker_count == original_workers
+        set_worker_count.assert_not_called()
+        assert panel.worker_count.currentData() == original_workers
+        assert settings_path.read_text(encoding="utf-8") == original_document
+        warning.assert_called_once()
+        assert "復原" in warning.call_args.args[2]
+    finally:
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
 
 
 def test_search_source_is_inferred_only_from_exact_official_hosts() -> None:

@@ -26,6 +26,7 @@ SITE_MOD_CHILDREN = {
         "ani-gamer-search",
         "ani-gamer-episodes",
         "ani-gamer-offline",
+        "ani-gamer-player",
     ),
     "instagram": ("instagram-page", "instagram-export"),
     "threads": ("threads-page", "threads-export"),

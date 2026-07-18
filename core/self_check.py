@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 import json
 from pathlib import Path
 from typing import Literal
+from uuid import uuid4
 
 from core.builtin_mod_catalog import (
     BUILTIN_MOD_CHILDREN,
@@ -14,9 +16,13 @@ from core.builtin_mod_catalog import (
     OPTIONAL_WORKSPACE_IDS,
     builtin_mod_ids,
 )
+from core.builtin_mod_snapshot import snapshot_for_context
 from core.downloads.site_quality import audit_builtin_site_quality
 from core.downloads.direct_http_policy import direct_http_url_candidate
+from core.downloads.capabilities import builtin_provider_capability
+from contracts.provider_capability_v1 import BUILTIN_PROVIDER_CAPABILITY_IDS
 from core.localization import SUPPORTED_LOCALE_CODES, normalized_core_locale
+from core.logging.redaction import redact
 from core.mod_groups import (
     SITE_MOD_CHILDREN,
     SITE_MOD_PARENT,
@@ -36,6 +42,13 @@ from core.version import BUILD_CHANNEL, CORE_VERSION
 SelfCheckState = Literal["pass", "warning", "block"]
 
 
+def _safe_error_detail(error: BaseException, limit: int = 240) -> str:
+    """Keep diagnostics useful without copying secrets into exported reports."""
+
+    value = redact(f"{type(error).__name__}: {error}")
+    return str(value)[:limit]
+
+
 @dataclass(frozen=True, slots=True)
 class SelfCheckItem:
     check_id: str
@@ -51,6 +64,8 @@ class SelfCheckReport:
     core_version: str
     build_channel: str
     items: tuple[SelfCheckItem, ...]
+    generated_at: str = ""
+    run_id: str = ""
 
     @property
     def pass_count(self) -> int:
@@ -69,6 +84,8 @@ class SelfCheckReport:
             "schema_version": self.schema_version,
             "core_version": self.core_version,
             "build_channel": self.build_channel,
+            "generated_at": self.generated_at,
+            "run_id": self.run_id,
             "summary": {
                 "pass": self.pass_count,
                 "warning": self.warning_count,
@@ -160,7 +177,7 @@ def _release_item(application_root: Path) -> SelfCheckItem:
             "release.metadata",
             "block",
             "發行資訊無法驗證",
-            str(error)[:240],
+            _safe_error_detail(error),
             "release.metadata.rebuild",
         )
     if not isinstance(document, dict):
@@ -192,14 +209,46 @@ def _release_item(application_root: Path) -> SelfCheckItem:
     )
 
 
+def _provider_capability_item(statuses: tuple[object, ...]) -> SelfCheckItem:
+    """Validate declarative provider capabilities without refreshing providers."""
+
+    provider_ids = {
+        str(status.provider_id)
+        for status in statuses
+        if str(status.provider_id) in BUILTIN_PROVIDER_CAPABILITY_IDS
+    }
+    missing = sorted(BUILTIN_PROVIDER_CAPABILITY_IDS - provider_ids)
+    if missing:
+        return _item(
+            "provider.capability_contract",
+            "block",
+            "下載 Provider 能力契約缺少項目",
+            f"缺少：{', '.join(missing)}",
+            "provider.capability_contract.repair",
+        )
+    try:
+        for provider_id in sorted(provider_ids):
+            builtin_provider_capability(provider_id)
+    except (KeyError, ValueError, TypeError) as error:
+        return _item(
+            "provider.capability_contract",
+            "block",
+            "下載 Provider 能力契約無效",
+            _safe_error_detail(error),
+            "provider.capability_contract.repair",
+        )
+    return _item(
+        "provider.capability_contract",
+        "pass",
+        "下載 Provider 能力契約一致",
+        f"已核對 {len(provider_ids)} 個下載 Provider",
+    )
+
+
 def _parent_child_state_item(context: object) -> SelfCheckItem:
+    snapshot = snapshot_for_context(context)
     states: dict[str, bool] = {}
-    for registry_name in ("download_providers", "discovery", "features"):
-        registry = getattr(context, registry_name, None)
-        try:
-            statuses = tuple(registry.statuses())
-        except (AttributeError, RuntimeError, TypeError):
-            continue
+    for statuses in (snapshot.download, snapshot.discovery, snapshot.feature):
         states.update(
             (str(status.provider_id), bool(status.enabled)) for status in statuses
         )
@@ -369,7 +418,7 @@ def _transport_boundary_item() -> SelfCheckItem:
             "transport.boundary",
             "block",
             "選用傳輸安全基線異常",
-            str(error)[:240],
+            _safe_error_detail(error),
             "transport.boundary.repair",
         )
     return _item(
@@ -412,7 +461,7 @@ def _download_queue_item(context: object) -> SelfCheckItem:
             "downloads.queue",
             "block",
             "下載佇列狀態無法讀取",
-            str(error)[:240],
+            _safe_error_detail(error),
             "downloads.queue.repair",
         )
     if tasks:
@@ -443,7 +492,7 @@ def load_provider_smoke_report(path: Path) -> SelfCheckItem:
             "smoke.latest",
             "block",
             "手動 smoke 報告無法讀取",
-            str(error)[:240],
+            _safe_error_detail(error),
             "smoke.report.replace",
         )
     if not isinstance(document, dict):
@@ -506,6 +555,7 @@ def run_self_check(
 ) -> SelfCheckReport:
     """Inspect warm in-memory state only; never refresh dependencies or start tools."""
 
+    snapshot = snapshot_for_context(context)
     items: list[SelfCheckItem] = []
     catalog_ids = tuple(item.provider_id for item in BUILTIN_MOD_CATALOG)
     catalog_ok = len(catalog_ids) == len(set(catalog_ids)) and all(
@@ -524,11 +574,12 @@ def run_self_check(
 
     items.extend(
         (
-            _registry_item("download", tuple(context.download_providers.statuses())),
-            _registry_item("discovery", tuple(context.discovery.statuses())),
-            _registry_item("feature", tuple(context.features.statuses())),
+            _registry_item("download", snapshot.download),
+            _registry_item("discovery", snapshot.discovery),
+            _registry_item("feature", snapshot.feature),
         )
     )
+    items.append(_provider_capability_item(snapshot.download))
     items.append(_parent_child_state_item(context))
 
     parents = {
@@ -669,4 +720,11 @@ def run_self_check(
         )
     else:
         items.extend(ui_items)
-    return SelfCheckReport(1, CORE_VERSION, BUILD_CHANNEL, tuple(items))
+    return SelfCheckReport(
+        1,
+        CORE_VERSION,
+        BUILD_CHANNEL,
+        tuple(items),
+        datetime.now(UTC).isoformat(),
+        uuid4().hex,
+    )

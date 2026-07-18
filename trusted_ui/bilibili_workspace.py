@@ -498,7 +498,7 @@ def create_bilibili_workspace(
             if not self.busy:
                 return
             self.cancelled_generations.add(self.active_generation)
-            self.thumbnail_loader.cancel_pending()
+            self.thumbnail_loader.shutdown()
             self.status.setText("已取消顯示；等待目前搜尋安全結束。")
             self.update_action_state()
 
@@ -752,7 +752,7 @@ def create_bilibili_workspace(
         def shutdown(self) -> None:
             self.closing = True
             self.generation += 1
-            self.thumbnail_loader.cancel_pending()
+            self.thumbnail_loader.shutdown()
 
         def closeEvent(self, event: object) -> None:
             self.shutdown()

@@ -8,10 +8,18 @@ import pytest
 from contracts.discovery_v1 import DiscoveryItemV1
 import trusted_ui.ani_gamer_offline as offline
 from trusted_ui.ani_gamer_offline import (
+    ALLOWED_LOCAL_MEDIA_SUFFIXES,
+    LocalMediaPlaybackCapability,
     OfflineImportCancelled,
+    classify_local_media_playback_selection,
+    classify_local_media_player_error,
     create_episode_archive,
     import_local_media,
     import_local_subtitles,
+    local_media_playback_status_key,
+    local_media_runtime_support,
+    safe_local_media_display_name,
+    validate_local_media_selection,
     verify_episode_archive,
 )
 
@@ -54,6 +62,9 @@ def test_selected_episode_archive_is_atomic_and_preserves_local_media(tmp_path: 
     assert document["episode"]["official_url"] == EPISODE.url
     assert document["boundary"] == "public-metadata-cover-and-user-local-media-only"
     assert document["local_media"] is None
+    assert document["cover_sha256"]
+    assert document["manifest_schema"] == 1
+    assert document["files"][0]["role"] == "cover"
     assert not tuple(archive.root.glob("*.tmp"))
 
     local = tmp_path / "owned.mp4"
@@ -66,11 +77,33 @@ def test_selected_episode_archive_is_atomic_and_preserves_local_media(tmp_path: 
     assert imported.local_media.read_bytes() == b"owned-media"
     assert preserved["local_media"]["path"].startswith("media/")
     assert preserved["local_media"]["sha256"]
+    assert any(entry["role"] == "media" for entry in preserved["files"])
 
     verified = verify_episode_archive(archive.root)
     assert verified.valid
     assert verified.media_state == "ok"
     assert verified.actual_sha256 == preserved["local_media"]["sha256"]
+    assert verified.cover_state == "ok"
+
+
+def test_offline_archive_verification_reports_tampered_cover(tmp_path: Path) -> None:
+    archive = create_episode_archive(tmp_path, SERIES, EPISODE, cover_png=PNG)
+    assert archive.cover is not None
+    archive.cover.write_bytes(PNG + b"changed")
+
+    verified = verify_episode_archive(archive.root)
+    assert not verified.valid
+    assert verified.cover_state == "hash-mismatch"
+
+
+def test_offline_archive_rejects_tampered_file_manifest(tmp_path: Path) -> None:
+    archive = create_episode_archive(tmp_path, SERIES, EPISODE, cover_png=PNG)
+    document = json.loads(archive.metadata.read_text(encoding="utf-8"))
+    document["files"][0]["path"] = "../outside.png"
+    archive.metadata.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="file manifest"):
+        verify_episode_archive(archive.root)
 
 
 def test_offline_archive_supports_bounded_safe_name_components(tmp_path: Path) -> None:
@@ -147,6 +180,193 @@ def test_local_media_import_rejects_links_types_limits_and_cleans_cancel(
     with pytest.raises(OfflineImportCancelled):
         import_local_media(archive.root, local, cancelled=lambda: True)
     assert not tuple(archive.root.rglob("*.part"))
+
+
+def test_player_media_selection_rejects_links_and_returns_resolved_files(
+    tmp_path: Path,
+) -> None:
+    media = tmp_path / "episode.mp4"
+    media.write_bytes(b"local player media")
+
+    selected = validate_local_media_selection([media])
+    assert selected == (media.resolve(),)
+
+    with pytest.raises(ValueError, match="missing or unsafe"):
+        validate_local_media_selection([tmp_path / "missing.mp4"])
+    unsupported = tmp_path / "notes.txt"
+    unsupported.write_text("not media", encoding="utf-8")
+    with pytest.raises(ValueError, match="type or size"):
+        validate_local_media_selection([unsupported])
+
+    symlink = tmp_path / "linked.mp4"
+    try:
+        symlink.symlink_to(media)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlink creation is unavailable")
+    with pytest.raises(ValueError, match="missing or unsafe"):
+        validate_local_media_selection([symlink])
+
+
+def test_local_player_runtime_support_is_separate_from_archive_allowlist(
+    tmp_path: Path,
+) -> None:
+    support = local_media_runtime_support(
+        {"AVI", "Matroska", "MPEG4", "Ogg", "Mpeg4Audio", "MP3", "FLAC", "Wave"},
+        {"AAC", "FLAC", "MP3", "Wave"},
+    )
+
+    assert {".flac", ".mp3"} <= support.supported
+    assert ".mp4" in support.unknown
+    assert ".webm" in support.unsupported
+    assert ".opus" in support.unsupported
+    assert ".ogg" in support.unknown
+    assert {".mpeg", ".mpg", ".ts"} <= support.unknown
+    assert support.supported | support.unsupported | support.unknown == (
+        ALLOWED_LOCAL_MEDIA_SUFFIXES
+    )
+    assert not (support.supported & support.unsupported)
+    assert not (support.supported & support.unknown)
+    assert not (support.unsupported & support.unknown)
+
+    webm = tmp_path / "owned.webm"
+    webm.write_bytes(b"user-owned media")
+    queue = validate_local_media_selection([webm])
+    assert queue == (webm.resolve(),)
+    assert (
+        classify_local_media_playback_selection(queue, support)
+        is LocalMediaPlaybackCapability.UNSUPPORTED
+    )
+
+
+def test_local_player_runtime_support_allows_codec_specific_opus_only_when_known() -> None:
+    unsupported = local_media_runtime_support({"Ogg"}, set())
+    supported = local_media_runtime_support({"Ogg"}, {"Opus"})
+
+    assert ".ogg" in unsupported.unknown
+    assert ".ogg" in supported.unknown
+    assert ".opus" in unsupported.unsupported
+    assert ".opus" in supported.supported
+
+
+def test_local_player_queue_uses_the_strictest_runtime_capability(tmp_path: Path) -> None:
+    support = local_media_runtime_support(
+        {"FLAC", "MPEG4"},
+        {"FLAC", "AAC"},
+    )
+    supported = tmp_path / "supported.flac"
+    unknown = tmp_path / "unknown.mp4"
+    unsupported = tmp_path / "unsupported.webm"
+    for path in (supported, unknown, unsupported):
+        path.write_bytes(b"user-owned media")
+
+    assert (
+        classify_local_media_playback_selection((supported,), support)
+        is LocalMediaPlaybackCapability.SUPPORTED
+    )
+    assert (
+        classify_local_media_playback_selection((supported, unknown), support)
+        is LocalMediaPlaybackCapability.UNKNOWN
+    )
+    assert (
+        classify_local_media_playback_selection(
+            (supported, unknown, unsupported),
+            support,
+        )
+        is LocalMediaPlaybackCapability.UNSUPPORTED
+    )
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    (".avi", ".m4a", ".m4v", ".mkv", ".mov", ".mp4", ".ogg", ".wav", ".webm"),
+)
+def test_variable_codec_containers_remain_unknown_when_runtime_supports_them(
+    suffix: str,
+) -> None:
+    support = local_media_runtime_support(
+        {
+            "AVI",
+            "Mpeg4Audio",
+            "MPEG4",
+            "Matroska",
+            "QuickTime",
+            "Ogg",
+            "Wave",
+            "WebM",
+        },
+        {"AAC", "FLAC", "MP3", "Opus", "Wave"},
+    )
+
+    assert suffix in support.unknown
+
+
+@pytest.mark.parametrize(
+    ("capability", "state_name", "expected"),
+    (
+        (
+            LocalMediaPlaybackCapability.SUPPORTED,
+            "LoadingState",
+            "offline_media_loading",
+        ),
+        (
+            LocalMediaPlaybackCapability.UNKNOWN,
+            "LoadingState",
+            "offline_media_playing_unknown",
+        ),
+        (
+            LocalMediaPlaybackCapability.SUPPORTED,
+            "PlayingState",
+            "offline_media_playing",
+        ),
+        (
+            LocalMediaPlaybackCapability.UNKNOWN,
+            "PlayingState",
+            "offline_media_playing",
+        ),
+    ),
+)
+def test_local_player_status_confirms_playback_only_after_playing_state(
+    capability: LocalMediaPlaybackCapability,
+    state_name: str,
+    expected: str,
+) -> None:
+    assert local_media_playback_status_key(capability, state_name) == expected
+
+
+def test_local_player_display_name_is_bounded_plain_text_without_bidi_controls() -> None:
+    value = Path("folder") / "<b>episode<b>\n\u202egnp.exe.mp4"
+
+    assert safe_local_media_display_name(value) == "<b>episode<b>  gnp.exe.mp4"
+    assert safe_local_media_display_name(value, limit=10) == "<b>episode"
+    assert safe_local_media_display_name(object()) == "local-media"
+    with pytest.raises(ValueError, match="positive"):
+        safe_local_media_display_name(value, limit=0)
+
+
+@pytest.mark.parametrize(
+    ("error_name", "invalid_media", "expected"),
+    (
+        ("FormatError", False, "unsupported-codec-or-corrupt-media"),
+        ("ResourceError", False, "missing-or-unreadable-media"),
+        ("AccessDeniedError", False, "media-access-denied"),
+        ("NetworkError", False, "unexpected-local-backend-network-error"),
+        ("NoError", True, "invalid-media"),
+        ("NoError", False, "playback-failed"),
+        ("UnknownFutureError", False, "playback-failed"),
+    ),
+)
+def test_local_player_error_classification_is_stable(
+    error_name: str,
+    invalid_media: bool,
+    expected: str,
+) -> None:
+    assert (
+        classify_local_media_player_error(
+            error_name,
+            invalid_media=invalid_media,
+        )
+        == expected
+    )
 
 
 def test_local_media_import_never_overwrites_existing_media(tmp_path: Path) -> None:

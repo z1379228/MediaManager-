@@ -5,6 +5,7 @@ from __future__ import annotations
 from core.builtin_mod_catalog import BUILTIN_MOD_PARENT, OPTIONAL_WORKSPACE_IDS
 from core.localization import SUPPORTED_LOCALE_CODES, normalized_core_locale
 from core.self_check import SelfCheckItem, SelfCheckState
+from core.builtin_mod_snapshot import snapshot_for_context
 from trusted_ui.builtin_mod_panel import builtin_mod_rows
 
 
@@ -50,11 +51,12 @@ def _mod_management_item(context: object, anchor: object) -> SelfCheckItem:
             "請從主視窗的 MOD 管理開啟本頁，再執行按鈕與父子顯示檢查。",
             "ui.mod_management.open",
         )
+    snapshot = snapshot_for_context(context)
     rows = builtin_mod_rows(
-        context.download_providers.statuses(),
-        context.discovery.statuses(),
-        context.features.statuses(),
-        getattr(context, "builtin_mod_errors", {}),
+        snapshot.download,
+        snapshot.discovery,
+        snapshot.feature,
+        snapshot.errors,
         locale=getattr(getattr(context, "settings", None), "language", "zh-TW"),
     )
     rows_by_id = {row.provider_id: row for row in rows}
@@ -309,11 +311,12 @@ def _ani_gamer_episode_actions_item(
             status.provider_id: status for status in context.discovery.statuses()
         }
         parent = features.get("ani-gamer")
+        player = features.get("ani-gamer-player")
         search = discovery.get("ani-gamer-search")
         episodes = discovery.get("ani-gamer-episodes")
     except (AttributeError, RuntimeError):
-        parent = search = episodes = None
-    if parent is None or search is None or episodes is None:
+        parent = player = search = episodes = None
+    if parent is None or player is None or search is None or episodes is None:
         return _item(
             "ui.ani_gamer_episode_actions",
             "block",
@@ -373,6 +376,11 @@ def _ani_gamer_episode_actions_item(
             selected_episode is not None and not busy
         ):
             problems.append("開啟選取集數按鈕狀態錯誤")
+        expected_player = bool(
+            parent.enabled and player.enabled and selected_episode is not None and not busy
+        )
+        if panel.open_episode_embedded_button.isEnabled() != expected_player:
+            problems.append("AniGamer 播放器子 MOD 狀態與單集預覽按鈕不同步")
         if panel.episode_fallback.isVisible() and not manual_ready:
             problems.append("403 備援區顯示時缺少有效作品或集數 MOD")
     except (AttributeError, RuntimeError, TypeError) as error:

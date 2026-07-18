@@ -57,6 +57,36 @@ def test_dirty_release_source_is_rejected(monkeypatch) -> None:
         validate_clean_source(ROOT)
 
 
+def test_release_source_with_git_status_warning_is_rejected(monkeypatch) -> None:
+    responses = iter(
+        (
+            subprocess.CompletedProcess(
+                [],
+                0,
+                stdout="",
+                stderr=(
+                    "warning: could not open directory "
+                    "'SENSITIVE_SOURCE_PATH': Permission denied\n"
+                ),
+            ),
+            subprocess.CompletedProcess(
+                [], 0, stdout="a" * 40 + "\n", stderr=""
+            ),
+        )
+    )
+    monkeypatch.setattr(build_version.shutil, "which", lambda _name: "git.exe")
+    monkeypatch.setattr(
+        build_version.subprocess,
+        "run",
+        lambda *_args, **_kwargs: next(responses),
+    )
+
+    with pytest.raises(RuntimeError, match="source inspection is incomplete") as error:
+        validate_clean_source(ROOT)
+
+    assert "SENSITIVE_SOURCE_PATH" not in str(error.value)
+
+
 def test_version_build_paths_are_isolated_under_work(tmp_path: Path) -> None:
     paths = version_build_paths(
         tmp_path,
@@ -190,6 +220,152 @@ def test_failed_build_removes_only_its_attempt_directory(
     assert (preserved / "keep.txt").read_text(encoding="utf-8") == "keep"
 
 
+def test_build_rejects_preexisting_generated_paths_without_deleting_them(
+    tmp_path: Path, monkeypatch
+) -> None:
+    build_sentinel = tmp_path / "build" / "keep.txt"
+    egg_sentinel = tmp_path / "mediamanager.egg-info" / "keep.txt"
+    for sentinel in (build_sentinel, egg_sentinel):
+        sentinel.parent.mkdir(parents=True)
+        sentinel.write_text("keep", encoding="utf-8")
+
+    monkeypatch.setattr(build_version, "validate_build_version", lambda *_args: None)
+    monkeypatch.setattr(build_version, "validate_clean_source", lambda *_args: "a" * 40)
+
+    with pytest.raises(FileExistsError, match="pre-existing generated paths"):
+        build_version.build_version(tmp_path, CORE_VERSION, portable_runtime=False)
+
+    assert build_sentinel.read_text(encoding="utf-8") == "keep"
+    assert egg_sentinel.read_text(encoding="utf-8") == "keep"
+
+
+def test_failed_build_preserves_generated_paths_created_after_preflight(
+    tmp_path: Path, monkeypatch
+) -> None:
+    python = tmp_path / "runtime" / "python.exe"
+    python.parent.mkdir()
+    python.write_bytes(b"python")
+    python.with_name("pyinstaller.exe").write_bytes(b"pyinstaller")
+
+    monkeypatch.setattr(build_version, "validate_build_version", lambda *_args: None)
+    monkeypatch.setattr(build_version, "validate_clean_source", lambda *_args: "a" * 40)
+    monkeypatch.setattr(build_version, "portable_release_tools", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(build_version.secrets, "token_hex", lambda _size: "raced")
+    monkeypatch.setattr(build_version.sys, "executable", str(python))
+
+    build_sentinel = tmp_path / "build" / "other-owner.txt"
+    egg_sentinel = tmp_path / "mediamanager.egg-info" / "other-owner.txt"
+
+    def fail_after_external_generation(*_args, **_kwargs) -> None:
+        for sentinel in (build_sentinel, egg_sentinel):
+            sentinel.parent.mkdir(parents=True)
+            sentinel.write_text("keep", encoding="utf-8")
+        raise subprocess.CalledProcessError(1, "pyinstaller")
+
+    monkeypatch.setattr(
+        build_version.subprocess,
+        "run",
+        fail_after_external_generation,
+    )
+
+    with pytest.raises(subprocess.CalledProcessError):
+        build_version.build_version(tmp_path, CORE_VERSION, portable_runtime=False)
+
+    assert build_sentinel.read_text(encoding="utf-8") == "keep"
+    assert egg_sentinel.read_text(encoding="utf-8") == "keep"
+
+
+def test_build_attempt_collision_preserves_existing_directory(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(build_version, "validate_build_version", lambda *_args: None)
+    monkeypatch.setattr(build_version, "validate_clean_source", lambda *_args: "a" * 40)
+    monkeypatch.setattr(build_version, "portable_release_tools", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(build_version.secrets, "token_hex", lambda _size: "collision")
+
+    paths = version_build_paths(
+        tmp_path,
+        CORE_VERSION,
+        channel="development",
+        release_version=build_version.release_identity_version("development"),
+        attempt_id="collision",
+    )
+    paths.work.mkdir(parents=True)
+    sentinel = paths.work / "other-owner.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+
+    with pytest.raises(FileExistsError):
+        build_version.build_version(tmp_path, CORE_VERSION, portable_runtime=False)
+
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+
+
+def test_external_temp_root_is_isolated_and_cleaned_after_failed_build(
+    tmp_path: Path, monkeypatch
+) -> None:
+    python = tmp_path / "runtime" / "python.exe"
+    python.parent.mkdir()
+    python.write_bytes(b"python")
+    python.with_name("pyinstaller.exe").write_bytes(b"pyinstaller")
+    selected_temp_root = tmp_path / "user-local-temp"
+    preserved_sibling = selected_temp_root / "preserved-sibling"
+    preserved_sibling.mkdir(parents=True)
+    (preserved_sibling / "keep.txt").write_text("keep", encoding="utf-8")
+    captured_environment: dict[str, str] = {}
+
+    monkeypatch.setattr(build_version, "validate_build_version", lambda *_args: None)
+    monkeypatch.setattr(build_version, "validate_clean_source", lambda *_args: "a" * 40)
+    monkeypatch.setattr(build_version, "portable_release_tools", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(build_version.secrets, "token_hex", lambda _size: "external")
+    monkeypatch.setattr(build_version.sys, "executable", str(python))
+
+    def fail_build(*_args, **kwargs) -> None:
+        captured_environment.update(kwargs["env"])
+        raise subprocess.CalledProcessError(1, "pyinstaller")
+
+    monkeypatch.setattr(build_version.subprocess, "run", fail_build)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        build_version.build_version(
+            tmp_path,
+            CORE_VERSION,
+            portable_runtime=False,
+            temp_root=selected_temp_root,
+        )
+
+    isolated_temp = selected_temp_root / "mediamanager-build-external"
+    assert captured_environment["TEMP"] == str(isolated_temp)
+    assert captured_environment["TMP"] == str(isolated_temp)
+    assert selected_temp_root.is_dir()
+    assert not isolated_temp.exists()
+    assert (preserved_sibling / "keep.txt").read_text(encoding="utf-8") == "keep"
+
+
+def test_external_temp_collision_preserves_existing_directory(
+    tmp_path: Path, monkeypatch
+) -> None:
+    selected_temp_root = tmp_path / "user-local-temp"
+    existing_temp = selected_temp_root / "mediamanager-build-existing"
+    existing_temp.mkdir(parents=True)
+    sentinel = existing_temp / "keep.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+
+    monkeypatch.setattr(build_version, "validate_build_version", lambda *_args: None)
+    monkeypatch.setattr(build_version, "validate_clean_source", lambda *_args: "a" * 40)
+    monkeypatch.setattr(build_version, "portable_release_tools", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(build_version.secrets, "token_hex", lambda _size: "existing")
+
+    with pytest.raises(FileExistsError):
+        build_version.build_version(
+            tmp_path,
+            CORE_VERSION,
+            portable_runtime=False,
+            temp_root=selected_temp_root,
+        )
+
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+
+
 def test_keep_work_preserves_failed_build_attempt(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -202,6 +378,8 @@ def test_keep_work_preserves_failed_build_attempt(
     monkeypatch.setattr(build_version, "portable_release_tools", lambda *_args, **_kwargs: {})
     monkeypatch.setattr(build_version.secrets, "token_hex", lambda _size: "kept")
     monkeypatch.setattr(build_version.sys, "executable", str(python))
+    selected_temp_root = tmp_path / "user-local-temp"
+
     def fail_build(*_args, **_kwargs) -> None:
         raise subprocess.CalledProcessError(1, "pyinstaller")
 
@@ -213,6 +391,7 @@ def test_keep_work_preserves_failed_build_attempt(
             CORE_VERSION,
             portable_runtime=False,
             keep_work=True,
+            temp_root=selected_temp_root,
         )
 
     attempt = version_build_paths(
@@ -223,3 +402,23 @@ def test_keep_work_preserves_failed_build_attempt(
         attempt_id="kept",
     )
     assert attempt.work.is_dir()
+    assert (selected_temp_root / "mediamanager-build-kept").is_dir()
+
+
+def test_main_forwards_selected_temp_root(tmp_path: Path, monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_build(root: Path, version: str, **kwargs) -> Path:
+        captured.update({"root": root, "version": version, **kwargs})
+        return tmp_path / "artifact"
+
+    monkeypatch.setattr(build_version, "build_version", fake_build)
+    monkeypatch.setattr(
+        build_version.sys,
+        "argv",
+        ["build_version", "--temp-root", str(tmp_path)],
+    )
+
+    assert build_version.main() == 0
+    assert captured["temp_root"] == tmp_path
+    assert "artifact" in capsys.readouterr().out

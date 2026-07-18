@@ -685,10 +685,11 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             state_labels = {
                 DownloadState.QUEUED: "等待中",
                 DownloadState.RUNNING: "下載中",
+                DownloadState.RETRYING: "等待重試",
                 DownloadState.PAUSED: "已暫停",
                 DownloadState.COMPLETED: "已完成",
                 DownloadState.FAILED: "失敗",
-                DownloadState.CANCELLED: "已停止",
+                DownloadState.CANCELLED: "已取消",
             }
             for row, task in enumerate(tasks):
                 title = task.title or task.request.output_filename or task.request.url
@@ -710,7 +711,12 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
                 if task.task_id == selected_id:
                     self.table.selectRow(row)
             active = sum(
-                task.state in {DownloadState.QUEUED, DownloadState.RUNNING}
+                task.state
+                in {
+                    DownloadState.QUEUED,
+                    DownloadState.RUNNING,
+                    DownloadState.RETRYING,
+                }
                 for task in tasks
             )
             failed = sum(task.state is DownloadState.FAILED for task in tasks)
@@ -731,6 +737,7 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             controllable = {
                 DownloadState.QUEUED,
                 DownloadState.RUNNING,
+                DownloadState.RETRYING,
                 DownloadState.PAUSED,
             }
             self.pause_button.setEnabled(state in controllable)

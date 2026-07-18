@@ -106,7 +106,7 @@ class DownloadQueue:
             self._stopping.set()
             threads = tuple(self._threads)
             for task in self._tasks.values():
-                if task.state is DownloadState.RUNNING:
+                if task.state in {DownloadState.RUNNING, DownloadState.RETRYING}:
                     task.cancel_event.set()
             for _ in threads:
                 self._pending.put(
@@ -236,6 +236,7 @@ class DownloadQueue:
             if task is None or task.state not in {
                 DownloadState.QUEUED,
                 DownloadState.RUNNING,
+                DownloadState.RETRYING,
             }:
                 return False
             if task.pause_requested.is_set() or task.cancel_event.is_set():
@@ -289,7 +290,11 @@ class DownloadQueue:
         task_ids = tuple(
             task.task_id
             for task in self.snapshots()
-            if task.state in {DownloadState.QUEUED, DownloadState.RUNNING}
+            if task.state in {
+                DownloadState.QUEUED,
+                DownloadState.RUNNING,
+                DownloadState.RETRYING,
+            }
         )
         return sum(self.pause(task_id) for task_id in task_ids)
 
@@ -311,7 +316,11 @@ class DownloadQueue:
             }:
                 return False
             task.cancel_event.set()
-            if task.state in {DownloadState.QUEUED, DownloadState.PAUSED}:
+            if task.state in {
+                DownloadState.QUEUED,
+                DownloadState.RETRYING,
+                DownloadState.PAUSED,
+            }:
                 task.state = DownloadState.CANCELLED
             self._persist_locked()
             snapshot = replace(task)
@@ -422,6 +431,7 @@ class DownloadQueue:
                             raise
                         with self._lock:
                             task.automatic_retries += 1
+                            task.state = DownloadState.RETRYING
                             task.next_retry_seconds = decision.delay_seconds
                             task.speed = ""
                             task.eta = ""
@@ -442,6 +452,7 @@ class DownloadQueue:
                         ):
                             raise DownloadCancelled("automatic retry cancelled")
                         with self._lock:
+                            task.state = DownloadState.RUNNING
                             task.next_retry_seconds = 0
                             task.error = ""
             except DownloadCancelled:
@@ -551,7 +562,12 @@ class DownloadQueue:
                 if task.task_id in self._tasks:
                     continue
                 if (
-                    task.state in {DownloadState.QUEUED, DownloadState.PAUSED}
+                    task.state
+                    in {
+                        DownloadState.QUEUED,
+                        DownloadState.PAUSED,
+                        DownloadState.RETRYING,
+                    }
                     and self.archive.contains(task.request)
                 ):
                     task.state = DownloadState.COMPLETED
@@ -645,7 +661,11 @@ class DownloadQueue:
             state = DownloadState.PAUSED
         elif cancel_requested:
             state = DownloadState.CANCELLED
-        elif state in {DownloadState.RUNNING, DownloadState.QUEUED}:
+        elif state in {
+            DownloadState.RUNNING,
+            DownloadState.RETRYING,
+            DownloadState.QUEUED,
+        }:
             # A restored process no longer owns a live provider subprocess.
             # Never restart network work merely because the application opened.
             state = DownloadState.PAUSED
@@ -714,7 +734,8 @@ class DownloadQueue:
                 "cancel_requested": (
                     task.cancel_event.is_set()
                     and not task.pause_requested.is_set()
-                    and task.state is DownloadState.RUNNING
+                    and task.state
+                    in {DownloadState.RUNNING, DownloadState.RETRYING}
                 ),
             }
             for task in self._tasks.values()

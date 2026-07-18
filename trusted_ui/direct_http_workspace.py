@@ -402,10 +402,11 @@ def create_direct_http_workspace(context: object, parent: object = None) -> obje
             states = {
                 DownloadState.QUEUED: "等待中",
                 DownloadState.RUNNING: "下載中",
+                DownloadState.RETRYING: "等待重試",
                 DownloadState.PAUSED: "已暫停",
                 DownloadState.COMPLETED: "已完成",
                 DownloadState.FAILED: "失敗",
-                DownloadState.CANCELLED: "已停止",
+                DownloadState.CANCELLED: "已取消",
             }
             for row, task in enumerate(tasks):
                 title = task.title or task.request.output_filename or task.request.url
@@ -429,10 +430,22 @@ def create_direct_http_workspace(context: object, parent: object = None) -> obje
             self.retry.setEnabled(state in {DownloadState.FAILED, DownloadState.CANCELLED})
             self.pause.setText("繼續" if state is DownloadState.PAUSED else "暫停")
             self.pause.setEnabled(
-                state in {DownloadState.QUEUED, DownloadState.RUNNING, DownloadState.PAUSED}
+                state
+                in {
+                    DownloadState.QUEUED,
+                    DownloadState.RUNNING,
+                    DownloadState.RETRYING,
+                    DownloadState.PAUSED,
+                }
             )
             self.cancel.setEnabled(
-                state in {DownloadState.QUEUED, DownloadState.RUNNING, DownloadState.PAUSED}
+                state
+                in {
+                    DownloadState.QUEUED,
+                    DownloadState.RUNNING,
+                    DownloadState.RETRYING,
+                    DownloadState.PAUSED,
+                }
             )
             self.open_result.setEnabled(
                 safe_task_output_path(task) is not None if task else False

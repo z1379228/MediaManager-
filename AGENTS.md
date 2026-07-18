@@ -47,9 +47,13 @@
 ## 驗證命令
 
 ```powershell
-.\.venv\Scripts\python.exe -m ruff check .
-.\.venv\Scripts\python.exe -m pytest -q --basetemp=.work\pytest-agent
+.\.venv\Scripts\python.exe -m tools.quality_audit
+.\.venv\Scripts\python.exe -m tools.run_tests
 .\.venv\Scripts\python.exe -m tools.audit_versions --root Version
+.\.venv\Scripts\python.exe -m tools.copied_folder_smoke `
+  --current Version\Development\32.1 `
+  --previous Version\Development\32.0 `
+  --retained-root Version
 ```
 
 建立版本前，還需執行相符的 provider smoke、一次性簽署演練與 copied-folder

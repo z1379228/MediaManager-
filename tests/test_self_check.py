@@ -78,6 +78,11 @@ def test_self_check_is_manual_read_only_and_uses_only_warm_snapshot(
         item for item in report.items if item.check_id == "site.capability_matrix"
     ).state == "pass"
     assert next(
+        item
+        for item in report.items
+        if item.check_id == "provider.capability_contract"
+    ).state == "pass"
+    assert next(
         item for item in report.items if item.check_id == "smoke.latest"
     ).state == "warning"
 
@@ -175,9 +180,10 @@ def test_self_check_blocks_missing_registry_and_builtin_initialization(
 
     report = run_self_check(value)
 
-    assert report.block_count == 2
+    assert report.block_count == 3
     assert {item.check_id for item in report.items if item.state == "block"} == {
         "registry.download",
+        "provider.capability_contract",
         "builtin.initialization",
     }
 
@@ -224,6 +230,8 @@ def test_self_check_export_is_deidentified(tmp_path: Path) -> None:
     document = json.loads(report.to_json())
 
     assert document["schema_version"] == 1
+    assert document["generated_at"]
+    assert len(document["run_id"]) == 32
     assert str(tmp_path) not in report.to_json()
     assert "test-fingerprint" not in report.to_json()
     assert set(document["summary"]) == {"pass", "warning", "block"}

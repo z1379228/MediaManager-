@@ -49,6 +49,7 @@ def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
         (
             FeatureStatus("ani-gamer", "AniGamer", False),
             FeatureStatus("ani-gamer-offline", "AniGamer Offline", False),
+            FeatureStatus("ani-gamer-player", "AniGamer Player", False),
             FeatureStatus("bilibili-danmaku", "Bilibili Danmaku", False),
             FeatureStatus("instagram", "Instagram", False),
             FeatureStatus("instagram-page", "Instagram Page", False),
@@ -65,7 +66,7 @@ def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
             FeatureStatus("automation", "Automation", False),
         ),
     )
-    assert len(rows) == 31
+    assert len(rows) == 32
     assert all(row.available for row in rows)
     assert sum(row.enabled for row in rows) == 5
     player = next(row for row in rows if row.provider_id == "youtube-player")
@@ -75,6 +76,7 @@ def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
 def test_builtin_mod_rows_keep_missing_expected_mod_visible() -> None:
     rows = builtin_mod_rows((), (), ())
     assert tuple(row.provider_id for row in rows) == (
+        "ani-gamer-player",
         "youtube",
         "generic-ytdlp",
         "bilibili",
@@ -182,6 +184,7 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
             (
                 FeatureStatus("ani-gamer", "AniGamer", False),
                 FeatureStatus("ani-gamer-offline", "AniGamer Offline", False),
+                FeatureStatus("ani-gamer-player", "AniGamer Player", False),
                 FeatureStatus("bilibili-danmaku", "Bilibili Danmaku", False),
                 FeatureStatus("instagram", "Instagram", False),
                 FeatureStatus("instagram-page", "Instagram Page", False),
@@ -218,7 +221,7 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
     assert len(toggles) == 19
     assert {toggle.text() for toggle in toggles} == {"啟用"}
     assert summary.text() == (
-        "內建 MOD 31/31 已載入 · 10 個已啟用 · "
+        "內建 MOD 32/32 已載入 · 10 個已啟用 · "
         f"8 個網站父 MOD · 規劃中 {len(PLANNED_MODS)} 個"
     )
     youtube = next(

@@ -1445,7 +1445,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.closing = True
             self.generation += 1
             self.results_generation += 1
-            self.thumbnail_loader.cancel_pending()
+            self.thumbnail_loader.shutdown()
             self.cleanup_audio_preview()
             self.cleanup_video_preview()
 

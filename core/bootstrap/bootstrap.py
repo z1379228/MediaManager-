@@ -20,6 +20,7 @@ from core.downloads.builtin import (
 )
 from core.dependency_health import find_executable, find_javascript_runtime
 from core.dependency_snapshot import DependencySnapshotService
+from core.builtin_mod_snapshot import BuiltinModSnapshot
 from core.discovery.service import DiscoveryService
 from core.downloads.capabilities import builtin_download_capability
 from core.downloads.builtin_integrity import BUILTIN_PROVIDER_HASHES
@@ -53,6 +54,7 @@ from core.security.safe_mode import SafeMode, SecurityMode
 from core.security.trust_store import TrustStore
 from core.settings import (
     Settings,
+    SettingsLoadResult,
     SettingsService,
     normalized_download_workers,
     normalized_language,
@@ -125,6 +127,7 @@ _BuiltinT = TypeVar("_BuiltinT")
 @dataclass(slots=True)
 class AppContext:
     settings: Settings
+    settings_load: SettingsLoadResult
     paths: AppPaths
     logger: object
     events: EventBus
@@ -154,6 +157,7 @@ class AppContext:
     transcription: TranscriptionService | None
     automation: AutomationService | None
     dependencies: DependencySnapshotService
+    builtin_mod_snapshot: BuiltinModSnapshot | None = None
 
 
 class Bootstrap:
@@ -205,7 +209,8 @@ class Bootstrap:
         dependencies = DependencySnapshotService(paths.application, paths.data)
         self.state.advance(StartupPhase.PATHS_READY, "runtime paths ready")
         settings_service = SettingsService(paths.settings / "settings.json")
-        settings = settings_service.load()
+        settings_load = settings_service.load_with_status()
+        settings = settings_load.settings
         settings.portable_mode = self.portable
         settings.language = normalized_language(settings.language)
         settings.download_workers = normalized_download_workers(
@@ -214,6 +219,12 @@ class Bootstrap:
         self.state.advance(StartupPhase.SETTINGS_READY, "settings loaded")
         logger = configure_logging(paths.logs, settings.log_level)
         audit = AuditLog(paths.logs / "audit.jsonl")
+        audit.write(
+            "settings.loaded",
+            state=settings_load.state,
+            writable=settings_load.writable,
+            diagnostic_codes=settings_load.diagnostics,
+        )
         self.state.advance(StartupPhase.LOGGING_READY, "secure logging ready")
         security, trust_store = self._security_state(paths)
         audit.write("security.bootstrap", mode=security.mode, reason=security.reason)
@@ -458,7 +469,7 @@ class Bootstrap:
                 enabled=builtin_default_enabled("ani-gamer-episodes"),
             )
 
-        for feature_id in ("ani-gamer", "ani-gamer-offline"):
+        for feature_id in ("ani-gamer", "ani-gamer-offline", "ani-gamer-player"):
             ani_gamer_feature = load_builtin(
                 feature_id,
                 lambda provider_root: DeclarativeFeatureGate.from_file(
@@ -837,8 +848,15 @@ class Bootstrap:
                         errors=result.errors,
                     )
         audit.write("plugins.started", plugin_ids=started_plugins)
+        builtin_mod_snapshot = BuiltinModSnapshot.capture(
+            download_providers,
+            discovery,
+            features,
+            builtin_mod_errors,
+        )
         context = AppContext(
             settings=settings,
+            settings_load=settings_load,
             paths=paths,
             logger=logger,
             events=EventBus(),
@@ -868,6 +886,7 @@ class Bootstrap:
             transcription=transcription,
             automation=automation,
             dependencies=dependencies,
+            builtin_mod_snapshot=builtin_mod_snapshot,
         )
         self.state.advance(StartupPhase.READY, "core ready")
         return context

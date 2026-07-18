@@ -18,6 +18,7 @@ _UNSAFE_FILENAME = frozenset('<>:"/\\|?*')
 class DownloadState(StrEnum):
     QUEUED = "QUEUED"
     RUNNING = "RUNNING"
+    RETRYING = "RETRYING"
     PAUSED = "PAUSED"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"

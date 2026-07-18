@@ -109,6 +109,7 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     assert {status.provider_id for status in context.features.statuses()} == {
         "ani-gamer",
         "ani-gamer-offline",
+        "ani-gamer-player",
         "bilibili-danmaku",
         "instagram",
         "instagram-page",
@@ -146,6 +147,51 @@ def test_bootstrap_applies_supported_language_to_mod_ui(tmp_path, monkeypatch) -
         context.lifecycle.shutdown()
 
 
+def test_bootstrap_invalid_settings_starts_with_read_only_status(
+    tmp_path, monkeypatch
+) -> None:
+    import json
+
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    paths.settings.mkdir(parents=True, exist_ok=True)
+    settings_path = paths.settings / "settings.json"
+    original = json.dumps(
+        {
+            "schema_version": 1,
+            "language": "ja",
+            "log_level": [],
+        }
+    ).encode("utf-8")
+    settings_path.write_bytes(original)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    try:
+        assert context.settings.language == "ja"
+        assert context.settings.log_level == "INFO"
+        assert context.settings_load.state == "invalid"
+        assert not context.settings_load.writable
+        assert context.settings_load.diagnostics == ("invalid_type:log_level",)
+        assert settings_path.read_bytes() == original
+
+        audit_entries = [
+            json.loads(line)
+            for line in (paths.logs / "audit.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        event = next(
+            entry for entry in audit_entries if entry["event"] == "settings.loaded"
+        )
+        assert event["details"] == {
+            "state": "invalid",
+            "writable": False,
+            "diagnostic_codes": ["invalid_type:log_level"],
+        }
+    finally:
+        context.lifecycle.shutdown()
+
+
 def test_clean_bootstrap_starts_no_optional_provider_process(
     tmp_path, monkeypatch
 ) -> None:
@@ -169,6 +215,7 @@ def test_clean_bootstrap_starts_no_optional_provider_process(
         assert all(not provider._processes for provider in providers)
         assert not context.features.is_enabled("ani-gamer")
         assert not context.features.is_enabled("ani-gamer-offline")
+        assert not context.features.is_enabled("ani-gamer-player")
         assert not context.features.is_enabled("bilibili-danmaku")
         assert not context.features.is_enabled("media-convert")
         assert not context.features.is_enabled("media-ad-trim")

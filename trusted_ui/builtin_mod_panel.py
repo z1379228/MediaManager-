@@ -18,6 +18,7 @@ from core.mod_groups import (
     BuiltinModGroupError,
     load_builtin_mod_groups,
 )
+from core.builtin_mod_snapshot import snapshot_for_context
 
 
 @dataclass(frozen=True, slots=True)
@@ -260,12 +261,12 @@ def create_builtin_mod_panel(context: object, parent: object = None) -> object:
         tree.setItemWidget(item, 4, toggle)
 
     def populate() -> None:
-        feature_source = getattr(context, "features", None)
+        snapshot = snapshot_for_context(context)
         all_rows = builtin_mod_rows(
-            context.download_providers.statuses(),
-            context.discovery.statuses(),
-            feature_source.statuses() if feature_source is not None else (),
-            getattr(context, "builtin_mod_errors", {}),
+            snapshot.download,
+            snapshot.discovery,
+            snapshot.feature,
+            snapshot.errors,
             locale=getattr(getattr(context, "settings", None), "language", "zh-TW"),
         )
         rows_by_id = {row.provider_id: row for row in all_rows}

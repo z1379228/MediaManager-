@@ -35,7 +35,7 @@ jobs:
           python -m pip install -e . --no-deps
 
       - name: Ruff
-        run: python -m ruff check .
+        run: python -m tools.quality_audit --ruff-only
 
       - name: Pytest
         shell: pwsh
@@ -49,10 +49,11 @@ jobs:
       - name: Static project audits
         shell: pwsh
         run: |
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\audit_text_pollution.ps1
+          python -m tools.quality_audit --text-only
           python -m tools.audit_mod_groups
           python -m tools.site_quality_audit
           python -m tools.dependency_lock_audit
+          python -m tools.audit_version_docs
           python -m tools.audit_versions --root Version
 
   symlink-security:

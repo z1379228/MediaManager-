@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.localization import CORE_LOCALES
-from core.settings import SettingsService
+from core.settings import SettingsService, SettingsWriteBlockedError
 
 
 def create_mod_pages_panel(context: object, parent: object = None) -> object:
@@ -13,6 +13,7 @@ def create_mod_pages_panel(context: object, parent: object = None) -> object:
         QComboBox,
         QHBoxLayout,
         QLabel,
+        QMessageBox,
         QPushButton,
         QScrollArea,
         QVBoxLayout,
@@ -123,12 +124,37 @@ def create_mod_pages_panel(context: object, parent: object = None) -> object:
 
     def apply_locale() -> None:
         locale = str(locale_selector.currentData())
-        context.plugin_ui.locale = locale
+        previous_locale = getattr(context.plugin_ui, "locale", "zh-TW")
         settings = getattr(context, "settings", None)
         settings_root = getattr(getattr(context, "paths", None), "settings", None)
         if settings is not None and isinstance(settings_root, Path):
-            settings.language = locale
-            SettingsService(settings_root / "settings.json").save(settings)
+            try:
+                saved = SettingsService(
+                    settings_root / "settings.json"
+                ).patch(language=locale)
+            except OSError as error:
+                locale_selector.blockSignals(True)
+                try:
+                    previous_index = locale_selector.findData(previous_locale)
+                    locale_selector.setCurrentIndex(
+                        previous_index if previous_index >= 0 else 0
+                    )
+                finally:
+                    locale_selector.blockSignals(False)
+                detail = (
+                    "設定檔目前受安全保護，語言變更已復原。"
+                    if isinstance(error, SettingsWriteBlockedError)
+                    else "設定檔目前無法寫入，語言變更已復原。"
+                )
+                locale_status.setText(detail)
+                QMessageBox.warning(
+                    panel,
+                    "無法儲存介面語言",
+                    f"{detail}\n{error}",
+                )
+                return
+            settings.language = saved.language
+        context.plugin_ui.locale = locale
         refresh_pages()
 
     selector.currentIndexChanged.connect(render)

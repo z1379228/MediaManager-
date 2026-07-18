@@ -2,6 +2,7 @@
 
 from contracts.download_capability_v2 import DownloadCapabilityV2
 from contracts.media_options_v1 import FORMAT_PRESET_IDS_V1, SUBTITLE_MODES_V1
+from contracts.provider_capability_v1 import ProviderCapabilityV1
 
 _VIDEO_ONLY_PRESETS = ("best", "video-1080", "video-720", "video-480")
 _GENERIC_PRESETS = (
@@ -54,4 +55,31 @@ def builtin_download_capability(provider_id: str) -> DownloadCapabilityV2:
         max_batch_size=(
             50 if provider_id == "mega" else 100 if provider_id == "direct-http" else 500
         ),
+    )
+
+
+def builtin_provider_capability(provider_id: str) -> ProviderCapabilityV1:
+    """Return the safe, declarative capability matrix for a built-in provider."""
+
+    declarations = {
+        "youtube": ("youtube", ("search", "preview", "download", "playlist", "subtitles", "offline-archive"), False, False, True, 500),
+        "generic-ytdlp": ("generic", ("preview", "download", "playlist", "subtitles", "offline-archive"), False, False, True, 100),
+        "bilibili": ("bilibili", ("search", "preview", "download", "playlist", "subtitles", "timed-comments", "offline-archive"), False, False, True, 500),
+        "facebook": ("facebook", ("preview", "download"), True, False, False, 100),
+        "mega": ("mega", ("download", "offline-archive"), False, False, True, 50),
+        "direct-http": ("direct-http", ("download", "offline-archive"), False, False, True, 100),
+        "ani-gamer": ("ani-gamer", ("search", "preview", "offline-archive", "local-playback"), True, True, True, 100),
+    }
+    try:
+        site, operations, official, local, archive, batch = declarations[provider_id]
+    except KeyError as error:
+        raise KeyError(provider_id) from error
+    return ProviderCapabilityV1(
+        provider_id=provider_id,
+        sites=(site,),
+        operations=operations,
+        requires_official_page=official,
+        supports_local_playback=local,
+        supports_offline_archive=archive,
+        max_batch_size=batch,
     )

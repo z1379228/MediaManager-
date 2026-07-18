@@ -44,7 +44,11 @@ from core.downloads.preparation import (
 from core.downloads.split_batch import build_split_requests
 from core.mod_groups import BuiltinModGroupError, load_builtin_mod_group
 from core.site_routing import classify_site_url
-from core.settings import SettingsService, normalized_download_workers
+from core.settings import (
+    SettingsService,
+    SettingsWriteBlockedError,
+    normalized_download_workers,
+)
 from trusted_ui.batch_import_dialog import show_batch_import_dialog
 from trusted_ui.bilibili_workspace import (
     bilibili_url_kind_label,
@@ -111,7 +115,12 @@ def download_refresh_interval(
     if not visible:
         return HIDDEN_REFRESH_INTERVAL_MS
     if any(
-        task.state in {DownloadState.QUEUED, DownloadState.RUNNING}
+        task.state
+        in {
+            DownloadState.QUEUED,
+            DownloadState.RUNNING,
+            DownloadState.RETRYING,
+        }
         for task in tasks
     ):
         return ACTIVE_REFRESH_INTERVAL_MS
@@ -179,10 +188,13 @@ def task_detail_summary(task: DownloadTask) -> str:
         if output is not None:
             return f"{title}\n輸出：{output}"
         return f"{title}\n任務已完成，但輸出檔案已移動或目前不存在。"
-    if task.state is DownloadState.RUNNING and task.pause_requested.is_set():
+    if (
+        task.state in {DownloadState.RUNNING, DownloadState.RETRYING}
+        and task.pause_requested.is_set()
+    ):
         return f"{title}\n正在暫停；下載子程序停止後會保留為可手動繼續的工作。"
     if (
-        task.state is DownloadState.RUNNING
+        task.state in {DownloadState.RUNNING, DownloadState.RETRYING}
         and task.cancel_event.is_set()
         and not task.pause_requested.is_set()
     ):
@@ -1132,6 +1144,7 @@ def create_download_panel(
                     in {
                         DownloadState.QUEUED,
                         DownloadState.RUNNING,
+                        DownloadState.RETRYING,
                         DownloadState.PAUSED,
                     }
                     for item in selected_tasks
@@ -1169,7 +1182,7 @@ def create_download_panel(
             pause_requested = bool(task and task.pause_requested.is_set())
             stop_requested = bool(
                 task
-                and task.state is DownloadState.RUNNING
+                and task.state in {DownloadState.RUNNING, DownloadState.RETRYING}
                 and task.cancel_event.is_set()
             )
             self.pause_button.setText(
@@ -1180,6 +1193,7 @@ def create_download_panel(
                 in {
                     DownloadState.QUEUED,
                     DownloadState.RUNNING,
+                    DownloadState.RETRYING,
                     DownloadState.PAUSED,
                 }
                 and not pause_requested
@@ -1191,10 +1205,11 @@ def create_download_panel(
                     in {
                         DownloadState.QUEUED,
                         DownloadState.RUNNING,
+                        DownloadState.RETRYING,
                         DownloadState.PAUSED,
                     }
                     and not (
-                        item.state is DownloadState.RUNNING
+                        item.state in {DownloadState.RUNNING, DownloadState.RETRYING}
                         and item.cancel_event.is_set()
                     )
                     for item in selected_tasks
@@ -1226,7 +1241,12 @@ def create_download_panel(
             self.clear_selection_action.setEnabled(bool(selected_tasks))
             self.pause_all_action.setEnabled(
                 any(
-                    item.state in {DownloadState.QUEUED, DownloadState.RUNNING}
+                    item.state
+                    in {
+                        DownloadState.QUEUED,
+                        DownloadState.RUNNING,
+                        DownloadState.RETRYING,
+                    }
                     and not item.pause_requested.is_set()
                     for item in tasks
                 )
@@ -1240,6 +1260,7 @@ def create_download_panel(
                     in {
                         DownloadState.QUEUED,
                         DownloadState.RUNNING,
+                        DownloadState.RETRYING,
                         DownloadState.PAUSED,
                     }
                     for item in tasks
@@ -2440,7 +2461,8 @@ def create_download_panel(
             counts = {
                 "all": len(tasks),
                 "active": sum(
-                    str(task.state) in {"QUEUED", "RUNNING"} for task in tasks
+                    str(task.state) in {"QUEUED", "RUNNING", "RETRYING"}
+                    for task in tasks
                 ),
                 "done": sum(str(task.state) == "COMPLETED" for task in tasks),
                 "failed": sum(
@@ -2453,6 +2475,7 @@ def create_download_panel(
             states = {
                 "QUEUED": ("等待中", COLORS["muted"]),
                 "RUNNING": ("下載中", COLORS["info"]),
+                "RETRYING": ("等待重試", COLORS["warning"]),
                 "PAUSED": ("已暫停", COLORS["warning"]),
                 "COMPLETED": ("完成", COLORS["success"]),
                 "FAILED": ("失敗", COLORS["danger"]),
@@ -2490,12 +2513,12 @@ def create_download_panel(
                         self.table.setItem(row, 1, status)
                     status_text, status_color = states[str(task.state)]
                     if (
-                        task.state is DownloadState.RUNNING
+                        task.state in {DownloadState.RUNNING, DownloadState.RETRYING}
                         and task.pause_requested.is_set()
                     ):
                         status_text, status_color = "正在暫停", COLORS["warning"]
                     elif (
-                        task.state is DownloadState.RUNNING
+                        task.state in {DownloadState.RUNNING, DownloadState.RETRYING}
                         and task.cancel_event.is_set()
                     ):
                         status_text, status_color = "正在停止", COLORS["warning"]
@@ -2709,14 +2732,33 @@ def create_download_panel(
 
         def change_worker_count(self, *_: object) -> None:
             workers = normalized_download_workers(self.worker_count.currentData())
-            context.download_queue.set_worker_count(workers)
-            context.settings.download_workers = workers
+            previous_setting = context.settings.download_workers
+            previous_control = normalized_download_workers(previous_setting)
             try:
-                SettingsService(
+                saved = SettingsService(
                     Path(context.paths.settings) / "settings.json"
-                ).save(context.settings)
+                ).patch(download_workers=workers)
             except OSError as error:
-                QMessageBox.warning(self, "無法儲存同時工作數", str(error))
+                self.worker_count.blockSignals(True)
+                try:
+                    self.worker_count.setCurrentIndex(
+                        self.worker_count.findData(previous_control)
+                    )
+                finally:
+                    self.worker_count.blockSignals(False)
+                detail = (
+                    "設定檔目前受安全保護，同時工作數已復原。"
+                    if isinstance(error, SettingsWriteBlockedError)
+                    else "設定檔目前無法寫入，同時工作數已復原。"
+                )
+                QMessageBox.warning(
+                    self,
+                    "無法儲存同時工作數",
+                    f"{detail}\n{error}",
+                )
+                return
+            context.settings.download_workers = saved.download_workers
+            context.download_queue.set_worker_count(saved.download_workers)
 
         def cancel_selected(self) -> None:
             task_ids = self.selected_task_ids()
@@ -2753,6 +2795,7 @@ def create_download_panel(
                 in {
                     DownloadState.QUEUED,
                     DownloadState.RUNNING,
+                    DownloadState.RETRYING,
                     DownloadState.PAUSED,
                 }
                 for task in context.download_queue.snapshots()

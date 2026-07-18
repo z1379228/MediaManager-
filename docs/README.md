@@ -5,12 +5,17 @@
 
 ## 目前狀態
 
-- 來源目前為開發版 29.0，已建立新的 `Version/Development/29.0`；29.0 維持
-  `SAFE_MODE`，不覆寫 28.0，也不是 Stable 或 Testing。
+- 目前來源版本為開發版 34.0（核心相容版本 34.0.0），尚未封裝；歷史
+  Development 產物只作回退與稽核用途，不覆寫既有內容。
 - 開發與測試成品仍維持 `SAFE_MODE`；目前沒有可宣告的 Stable 正式版。
-- 目前來源最終回歸為 882 passed、2 skipped；兩個略過項目皆為 Windows symlink
-  權限限制，不偽裝為通過。
-- 目前來源含 31 個內建 MOD、8 個網站父群組與 4 種介面語言。
+- 完整 pytest 已透過固定 Repository 根目錄及隔離使用者暫存的安全入口完成：
+  `1092 passed, 7 skipped`；未再廣域收集 `AppData` 或觸發 `WinError 5`。
+- source-freeze 品質閘門已驗證 Ruff／文字污染 `355 / 557` 個檔案、MOD 群組
+  `8 / 4`、網站 `13 / 42 / 56`、依賴鎖 `10`、版本文件 `4` 與保留版本 `5`；
+  34.0 已完成本機 source freeze；這些證據不等於 build、push、簽署或發行授權。
+- `tools.audit_version_docs` 會離線比對 `core/version.py`、`pyproject.toml` 與目前文件；
+  版本分歧時以非零狀態結束。
+- 目前來源含 32 個內建 MOD、8 個網站父群組與 4 種介面語言。
 - 16.0 的離線能力稽核覆蓋 8 個網站父 MOD、5 個通用白名單站點、39 項功能與
   56 個工作流階段；Self Check 可匯入最近一次手動 provider smoke schema 2 JSON。
 - 動畫瘋功能包含官方公開目錄、搜尋、封面、明確啟用後的分頁集數導覽、官方播放頁，以及選取單集
@@ -26,6 +31,9 @@
 ## 目前有效文件
 
 - [專案首頁與執行方式](../README.md)
+- [Development 34.0～40.0 唯一版本更新計畫與優先度](roadmap-development-34.0-40.0.md)
+- [Development 34.0 目前執行證據與阻擋](roadmap-development-34.0.md)
+- [Development 35→34 設定回復 Runbook](settings-pre35-rollback.md)
 - [網站父 MOD、子 MOD 與四語言契約](site-mod-group-format.md)
 - [動畫瘋整合範圍與限制](ani-gamer-feasibility.md)
 - [第三方 MOD 開發流程](mod-developer-guide.md)
@@ -42,6 +50,7 @@
 - [GitHub 自動檢查與合併](github-auto-merge.md)
 - [正式簽章流程](release-signing.md)
 - [版本資料夾與三軌發布政策](version-layout.md)
+- [開發版 33.0～34.0 更新紀錄（34.0 尚未封裝）](release-33.0-34.0.md)
 - [開發版 12.x 實際更新紀錄](release-12.0-13.0.md)
 - [開發版 13.x 實際更新紀錄](release-13.0-14.0.md)
 - [開發版 14.x 實際更新紀錄](release-14.0-15.0.md)

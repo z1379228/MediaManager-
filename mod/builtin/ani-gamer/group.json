@@ -7,6 +7,7 @@
   "children": [
     {"module_id": "search", "provider_id": "ani-gamer-search"},
     {"module_id": "episodes", "provider_id": "ani-gamer-episodes"},
-    {"module_id": "offline", "provider_id": "ani-gamer-offline"}
+    {"module_id": "offline", "provider_id": "ani-gamer-offline"},
+    {"module_id": "player", "provider_id": "ani-gamer-player"}
   ]
 }
