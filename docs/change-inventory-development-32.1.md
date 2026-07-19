@@ -147,9 +147,9 @@ freeze 前快照。使用者於 2026-07-19 先授權 34.0 stage、本機 commit 
 | 35.0 | `DONE / SOURCE ONLY / SAFE_MODE` | G35-01 已吸收到 34 freeze；G35-02A～E 的 graph、bounded lifecycle journal、Supervisor ownership、candidate transaction、dependency-safe toggle、topological recovery、文件與完整 Gate 均完成；後續納入 Development 38.0 source freeze，未建立 35.0 候選包。 |
 | 36.0 | `DONE / SOURCE ONLY / SAFE_MODE` | 六個列名非特權 result DTO 已使用一致、有界且不持久化 extras 的加法 reader；特權 capability／manifest 契約維持 strict，完整 Gate 已完成。 |
 | 37.0 | `DONE / EVIDENCE READY / NO CLAIM / SOURCE ONLY / SAFE_MODE` | 去識別原生／provider 證據、queue／self-check 邊界、runbook 與完整 Gate 已完成；未知 crash／exit 1 不宣稱已修復。 |
-| 38.0 | `ACTIVE / G38-01 P1 FIXES VALIDATED / MANUAL REVALIDATION BLOCKED / SAFE_MODE` | 來源身分已同步為 38.0.0；tree focus、安全 badge 與 AniGamer 系統瀏覽器主操作可見性已完成低風險修正，手動官方單集 URL production path 直接通過完整回歸，AniGamer targeted suite 60 passed／1 skipped，完整 Repository 1281 passed／7 skipped，Ruff／文字污染 366／571。stage、本機 commit、Development 38.0 source freeze 與一次 SAFE_MODE 未簽署 build／EXE 均已獲明確授權；本次 freeze commit 提供 build revision，產物結果仍以實際稽核為準。940×620 全工作區、四語、NVDA 與 OS 高對比人工缺口繼續阻擋 Exit Gate。 |
+| 38.0 | `ACTIVE / PACKAGE BUILT / G38-01 P1 FIXES VALIDATED / MANUAL REVALIDATION BLOCKED / SAFE_MODE` | 來源身分為 38.0.0；source freeze `6534e3f…1107` 與一次未簽署 Development 包已完成。runtime 6/6、116 筆 checksum、copied-folder `38.0 → 32.1 → 38.0` 與回退均通過；EXE 為 `NotSigned`。940×620 全工作區、四語、NVDA／UIA 與 OS 高對比人工缺口繼續阻擋 Exit Gate。 |
 | 39.0 | `WAITING / MEASUREMENT GATED / READ-ONLY INVENTORY DONE` | 已盤點固定 workload 並完成純本機 constraint preflight `7 passed, 1 skipped`；無可證瓶頸或已保存 baseline，G38 前不啟動。 |
-| 40.0 | `WAITING / PRIOR GATES + FORMAL RUNTIME REQUIRED` | 精確 SAFE_MODE copied-folder 證據；本次單一 38.0 打包授權不啟動 G40，Stable operator／正式簽署仍條件式阻擋。 |
+| 40.0 | `WAITING / PRIOR GATES + EXACT SAFE_MODE OUTPUT REQUIRED` | runtime/checksum 與 copied-folder 回退基線已通過，但未保存精確 SAFE_MODE stdout；本次單一 38.0 打包不啟動 G40，Stable operator／正式簽署仍條件式阻擋。 |
 | 41.0 | `DONE BASELINE` | 安全測試與品質入口已完成；歷史清理仍不在授權範圍。 |
 | 42.0 | `SUPERSEDED BY FIX-34-02` | 本清冊即其缺少的收斂結果。 |
 | 43.0 | `HISTORICAL / PARTIALLY ABSORBED` | capability self-check、播放器／manifest 已有實作；外部／人工／候選證據分別由 G37／G38／G40 管理，未接線的 capability-to-button routing 留在 deferred backlog。 |

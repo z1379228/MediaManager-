@@ -1,13 +1,16 @@
 # MediaManager
 
-目前來源版本為開發版 38.0（核心相容版本 38.0.0），已進入本機 source-freeze／Development 候選流程；32.1、32.0、31.0、30.2、30.1、30.0、29.5、29.4 與 29.3 保留於 `Version/Development` 作為回退版本。35.0 收斂外部 MOD dependency graph 與生命週期邊界；36.0 完成六個非特權 result DTO 的有界加法相容；37.0 已完成去識別診斷證據 Gate，38.0 保留人工驗證阻擋，並維持 SAFE_MODE。
+目前來源版本為開發版 38.0（核心相容版本 38.0.0）；本機 source freeze 與未簽署 Development 候選包已完成，38.0 仍保留人工驗證阻擋並維持 SAFE_MODE。32.1、32.0、31.0、30.2、30.1、30.0、29.5、29.4 與 29.3 保留於 `Version/Development` 作為回退版本。35.0 收斂外部 MOD dependency graph 與生命週期邊界；36.0 完成六個非特權 result DTO 的有界加法相容；37.0 已完成去識別診斷證據 Gate。
 
 34.0 已完成本機 source freeze；Development 35.0 與 36.0 的來源 Exit Gate 已完成，
 目前來源身分同步為 38.0.0。六個列名 result DTO 只忽略已驗證、有界且不保留的 JSON extra；
 missing required、unknown schema 與 oversize 仍 fail closed，manifest、capability、路徑與簽章等
 特權契約維持 strict。使用者已明確授權將目前 35.0～38.0 核准變更 stage、本機 commit 並固定為
 Development 38.0 source freeze，且只建立一次 Development 38.0 SAFE_MODE 未簽署候選包；不授權
-push、Testing／Stable、簽署、發布或覆寫歷史版本。候選產物是否建立成功只以實際 post-build 稽核為準。
+push、Testing／Stable、簽署、發布或覆寫歷史版本。source freeze 為
+`6534e3f5ebcc3e3c459a34a335e2b176b2cd1107`；候選已建立於 `Version/Development/38.0`，
+116 筆 checksum、portable runtime 6/6 與 copied-folder `38.0 → 32.1 → 38.0` 均通過。
+EXE Authenticode 為 `NotSigned`，因此只可作為 Development／SAFE_MODE 候選。
 Development 37.0 source-only Exit Gate 已完成；strict evidence v1、provider exit metadata、UTF-8
 有界 redaction、queue restore 與安全原子 self-check 匯出均有 regression。Development 38.0／G38-01
 現為唯一 `ACTIVE / P1 FIXES VALIDATED / MANUAL REVALIDATION BLOCKED / SAFE_MODE`；焦點指示與

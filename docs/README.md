@@ -47,6 +47,11 @@
   2026-07-19 明確授權將目前 35.0～38.0 核准變更 stage、本機 commit、固定為 Development 38.0
   source freeze，並建立一次 SAFE_MODE 未簽署 Development 38.0 包；push、Testing／Stable、
   簽署與發布仍未授權。
+- Development 38.0 已從 freeze revision
+  `6534e3f5ebcc3e3c459a34a335e2b176b2cd1107` 建立於 `Version/Development/38.0`；
+  runtime policy 6/6、116 筆 checksum 與 copied-folder `38.0 → 32.1 → 38.0` 均通過，
+  `rollback=true / source_unchanged=true / process_tree_safe=true`。EXE 為 `NotSigned`；這項
+  封裝證據不替代 G38 人工 UI 矩陣，也沒有保存 G40 所需的精確 SAFE_MODE stdout。
 - `tools.audit_version_docs` 會離線比對 `core/version.py`、`pyproject.toml` 與目前文件；
   版本分歧時以非零狀態結束。
 - 目前來源含 32 個內建 MOD、8 個網站父群組與 4 種介面語言。

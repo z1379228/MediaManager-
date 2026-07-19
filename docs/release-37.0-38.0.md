@@ -2,8 +2,8 @@
 
 狀態：Development 37.0 source-only Exit Gate 已完成，判定為 `EVIDENCE READY / NO CLAIM`；目前核心
 相容版本已同步為 `38.0.0`。使用者已明確授權將目前 35.0～38.0 核准變更 stage、本機 commit 並固定為
-Development 38.0 source freeze，再建立一次 Development 38.0 SAFE_MODE 未簽署候選包；產物結果只以
-後續實際 build 稽核為準。本文不是發行附件、Testing／Stable 宣告、正式簽署證據或原生 crash 已修復聲明。
+Development 38.0 source freeze，再建立一次 Development 38.0 SAFE_MODE 未簽署候選包；該包已由
+實際 post-build 稽核通過。本文不是 Testing／Stable 宣告、正式簽署證據或原生 crash 已修復聲明。
 
 ## 37.0｜去識別原生／provider 證據邊界
 
@@ -79,8 +79,26 @@ AniGamer targeted suite 為 `60 passed, 1 skipped`，本輪完整 Repository Gat
 
 目前已有 38.0 material delta，核心身分已同步為 `38.0.0`；人工 Gate 仍未完成。使用者已明確授權
 本次 stage、本機 commit、Development 38.0 source freeze，以及一次 Development 38.0 SAFE_MODE
-未簽署候選包；本 source-freeze commit 固定核准來源，實際產物仍須由後續 build／稽核證明，
-本節尚不是產物或發行宣告。
+未簽署候選包。source freeze commit 為
+`6534e3f5ebcc3e3c459a34a335e2b176b2cd1107`，產物已建立於 `Version/Development/38.0`。
+
+### 38.0 封裝證據（2026-07-19）
+
+- `release-info.json` 為 schema/tool schema 3，`core_version`／`release_version` 均為 `38.0.0`，
+  channel／track／folder 為 `development / Development / 38.0`；`source_revision` 精確等於上述
+  source freeze，source fingerprint 為
+  `4438b8f606a6e11b1d1d898b631fbd590ffce5fbdbd34fb1d9533ccc0144d8ce`。
+- `tools.audit_staged_runtime` 為 `valid=true / checked=6`；Deno `2.9.2`、FFmpeg／ffprobe
+  `8.1.2` 與三份授權／說明檔均通過 pinned SHA-256 policy。
+- `tools.audit_versions` 驗證 Development 38.0 的 116 筆 checksum 全部通過。`MediaManager.exe`
+  為 249,897,780 bytes，SHA-256
+  `ed94e16da81e7f62008dc07910bff3bc4c3419e1ca39ab05c391d0ac59a53b8c`；wheel 為
+  920,186 bytes，SHA-256 `d017d263fecf05dd86ff04adb3a62b5b92aad63890431e9e6aed42a1e288d77d`。
+- disposable copied-folder smoke 依序執行 `38.0 → 32.1 → 38.0`；9 個 `--version`、
+  `--portable --verify-only`、`--headless --portable` 命令皆 exit 0，且
+  `rollback=true / source_unchanged=true / process_tree_safe=true`，attempt 已清除。
+- Authenticode 為 `NotSigned`。copied-folder 報告沒有保存精確 SAFE_MODE stdout，因此本證據不完成
+  G40 Exit Gate；也不替代 G38 的 940×620、四語、NVDA／UIA 與 OS 高對比人工矩陣。
 
 真實 940×620 全工作區、Tab／focused widget、NVDA／讀屏、Windows OS 高對比、四語逐頁裁切與
 SAFE_MODE／provider blocker 實際朗讀，必須取得相符環境與明確人工操作授權。未滿足前保持
