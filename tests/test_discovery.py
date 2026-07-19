@@ -36,7 +36,6 @@ def test_discovery_contract_accepts_bounded_result() -> None:
         {"url": "javascript:alert(1)"},
         {"title": "x" * 301},
         {"duration": 999999},
-        {"extra": "field"},
     ],
 )
 def test_discovery_contract_rejects_invalid_result(changes) -> None:

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from core.logging.redaction import bounded_redacted_text
 from core.self_check import (
     SelfCheckItem,
     SelfCheckReport,
     load_provider_smoke_report,
     run_self_check,
+    write_self_check_report,
 )
 from trusted_ui.self_check_probe import collect_ui_self_check_items
 
@@ -121,13 +123,14 @@ def create_self_check_panel(context: object, parent: object = None) -> object:
             if not selected:
                 return
             destination = Path(selected)
-            temporary = destination.with_suffix(destination.suffix + ".tmp")
             try:
-                temporary.write_text(self.report.to_json(), encoding="utf-8")
-                temporary.replace(destination)
-            except OSError as error:
-                temporary.unlink(missing_ok=True)
-                QMessageBox.warning(self, "匯出失敗", str(error))
+                write_self_check_report(destination, self.report)
+            except (OSError, ValueError) as error:
+                QMessageBox.warning(
+                    self,
+                    "匯出失敗",
+                    bounded_redacted_text(error, max_utf8_bytes=512),
+                )
                 return
             QMessageBox.information(self, "匯出完成", "自我檢查 JSON 已儲存。")
 

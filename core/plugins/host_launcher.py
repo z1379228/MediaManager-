@@ -10,6 +10,7 @@ import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NoReturn
 
 from core.downloads.windows_job import ProviderJob
 
@@ -23,6 +24,23 @@ class PluginProcess:
     plugin_id: str
     process: subprocess.Popen[str]
     job: ProviderJob
+
+
+class PluginLaunchError(RuntimeError):
+    """Report a failed launch whose process cleanup is still unconfirmed."""
+
+    def __init__(
+        self,
+        plugin_process: PluginProcess,
+        startup_error: BaseException,
+        cleanup_error: BaseException,
+    ) -> None:
+        super().__init__(
+            f"{startup_error}; cleanup could not be confirmed: {cleanup_error}"
+        )
+        self.plugin_process = plugin_process
+        self.startup_error = startup_error
+        self.cleanup_error = cleanup_error
 
 
 class HostLauncher:
@@ -66,7 +84,6 @@ class HostLauncher:
         ):
             raise ValueError("plugin entry point escaped its root or is missing")
         job = ProviderJob()
-        process = None
         try:
             process = subprocess.Popen(
                 self._command(plugin_id, root, entry_point, nonce),
@@ -83,13 +100,14 @@ class HostLauncher:
                     subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
                 ),
             )
-            job.assign(int(getattr(process, "_handle", 0)))
         except Exception:
-            if process is not None and process.poll() is None:
-                process.terminate()
             job.close()
             raise
         plugin = PluginProcess(plugin_id, process, job)
+        try:
+            job.assign(int(getattr(process, "_handle", 0)))
+        except Exception as error:
+            self._fail_startup(plugin, error)
         stderr_parts: list[str] = []
         stderr_size = 0
         stderr_lock = threading.Lock()
@@ -126,26 +144,39 @@ class HostLauncher:
         try:
             raw = handshake.get(timeout=self.handshake_timeout)
         except queue.Empty as error:
-            self.stop(plugin)
-            raise TimeoutError("plugin host handshake timed out") from error
+            self._fail_startup(
+                plugin,
+                TimeoutError("plugin host handshake timed out"),
+                cause=error,
+            )
         if isinstance(raw, BaseException):
-            self.stop(plugin)
-            raise RuntimeError(f"plugin host handshake failed: {raw}") from raw
+            self._fail_startup(
+                plugin,
+                RuntimeError(f"plugin host handshake failed: {raw}"),
+                cause=raw,
+            )
         if not raw:
-            self.stop(plugin)
             stderr_thread.join(timeout=0.2)
             with stderr_lock:
                 stderr_text = "".join(stderr_parts).strip()
             detail = f": {stderr_text}" if stderr_text else ""
-            raise RuntimeError(f"plugin host rejected startup{detail}")
+            self._fail_startup(
+                plugin,
+                RuntimeError(f"plugin host rejected startup{detail}"),
+            )
         if len(raw) > _MAX_HANDSHAKE_CHARS:
-            self.stop(plugin)
-            raise RuntimeError("plugin host handshake exceeded size limit")
+            self._fail_startup(
+                plugin,
+                RuntimeError("plugin host handshake exceeded size limit"),
+            )
         try:
             message = json.loads(raw)
         except ValueError as error:
-            self.stop(plugin)
-            raise RuntimeError("plugin host emitted an invalid handshake") from error
+            self._fail_startup(
+                plugin,
+                RuntimeError("plugin host emitted an invalid handshake"),
+                cause=error,
+            )
         expected = {
             "protocol_version": "1.0",
             "plugin_id": plugin_id,
@@ -154,10 +185,31 @@ class HostLauncher:
         if message != expected or process.poll() is not None:
             with stderr_lock:
                 stderr_text = "".join(stderr_parts).strip()
-            self.stop(plugin)
             detail = f": {stderr_text}" if stderr_text else ""
-            raise RuntimeError(f"plugin host rejected startup{detail}")
+            self._fail_startup(
+                plugin,
+                RuntimeError(f"plugin host rejected startup{detail}"),
+            )
         return plugin
+
+    def _fail_startup(
+        self,
+        plugin: PluginProcess,
+        failure: BaseException,
+        *,
+        cause: BaseException | None = None,
+    ) -> NoReturn:
+        try:
+            self.stop(plugin)
+        except Exception as cleanup_error:
+            raise PluginLaunchError(
+                plugin,
+                failure,
+                cleanup_error,
+            ) from failure
+        if cause is not None:
+            raise failure from cause
+        raise failure
 
     @staticmethod
     def initialize(

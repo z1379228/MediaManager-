@@ -351,6 +351,92 @@ def test_qt_local_media_runtime_adapter_fails_closed_to_unknown() -> None:
     assert support.unknown == ALLOWED_LOCAL_MEDIA_SUFFIXES
 
 
+def test_ani_gamer_episode_verification_failure_accepts_manual_official_url(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    from trusted_ui.ani_gamer_workspace import create_ani_gamer_workspace
+
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+    app = QApplication.instance() or QApplication([])
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    set_builtin_mod_enabled(context, "ani-gamer", True)
+    set_builtin_mod_enabled(context, "ani-gamer-episodes", True)
+    panel = create_ani_gamer_workspace(context)
+    series = DiscoveryItemV1(
+        video_id="ani-114115",
+        url="https://ani.gamer.com.tw/animeRef.php?sn=114115",
+        title="幼女戰記 2",
+        artist="動畫瘋",
+        duration=None,
+        language="zh-TW",
+        category="video",
+        thumbnail_url="",
+    )
+    episode_url = "https://ani.gamer.com.tw/animeVideo.php?sn=49944"
+    queries: list[str] = []
+
+    def fake_episode_search(query: str, **_options: object):
+        queries.append(query)
+        return FederatedSearchResult(
+            (),
+            (
+                SearchAdapterFailure(
+                    "ani-gamer-episodes",
+                    "ani-gamer-browser-verification-required",
+                ),
+            ),
+            (),
+            (),
+        )
+
+    monkeypatch.setattr(context.discovery, "federated_search", fake_episode_search)
+    try:
+        panel.resize(940, 620)
+        panel.show()
+        panel.results = (series,)
+        panel.populate_results()
+        panel.table.selectRow(0)
+        panel.load_episodes_button.click()
+
+        for _ in range(200):
+            app.processEvents()
+            if not panel.busy and panel.episode_fallback.isVisible():
+                break
+            QTest.qWait(10)
+
+        assert queries == [series.url]
+        assert panel.episode_table.rowCount() == 0
+        assert panel.episodes == ()
+        assert panel.episode_fallback.isVisible()
+        assert panel.manual_episode_url.isEnabled()
+
+        panel.manual_episode_url.setText(episode_url)
+        app.processEvents()
+        assert panel.manual_episode_add.isEnabled()
+        panel.manual_episode_add.click()
+        app.processEvents()
+
+        assert panel.episode_table.rowCount() == 1
+        assert len(panel.episodes) == 1
+        assert panel.episodes[0].url == episode_url
+        assert panel.episode_query == series.url
+        assert panel.episode_context.isVisible()
+        assert panel.episode_context.text() == series.title
+    finally:
+        panel.shutdown()
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
 def test_ani_gamer_workspace_follows_parent_child_state_and_opens_filter(
     tmp_path,
     monkeypatch,

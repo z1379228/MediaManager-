@@ -53,6 +53,35 @@ Trust Store 仍在正式安裝時驗證。
 目前公開契約為 API `1.0`、runtime protocol `1.0`。UI 僅接受簽署的宣告式
 `ui.json`；不可注入 HTML、Qt 物件、任意腳本或廣告。
 
+### 依賴、可恢復交易與失敗復原
+
+- 每個 MOD 最多宣告 `64` 個 dependency，完整 graph 最多 `512` 個節點，manifest
+  讀取上限為 `256 KiB`。missing node、cycle、tamper、overflow 或無法驗證的路徑一律
+  fail closed；不會以截斷、忽略或自動修正 graph 來繼續。
+- Enable 前，所有 transitive dependency 必須已安裝、`pending=NONE`、已啟用且通過
+  manifest／file hash／publisher trust 驗證；核心不會自動安裝或啟用 dependency。
+  Disable 若會留下 enabled transitive dependent 則拒絕，不會自動 cascade 改變其他 MOD。
+- Install／update／rollback／restore 會在檔案 mutation 前驗證完整 candidate graph；update
+  必須維持相同 ID 與 publisher，restore 一律回到 disabled。候選即使已落盤，enable 時仍會
+  重新驗證完整性、相容性、信任與 dependency readiness。
+- 所有 lifecycle mutation 共用有界、跨程序 lock；`ENABLE`／`DISABLE` journal 在 start／stop
+  前以 compare-and-set 提交。Supervisor 啟動只接受 Manager 已提交且 identity 完全一致的
+  `ENABLE` claim；第三方 MOD 或 UI 不可直接呼叫 Supervisor 啟動入口。
+- 正常 startup 與 UPDATE／ROLLBACK transaction recovery 採 dependency-first；dependency
+  失敗會阻擋 downstream。未完成 toggle recovery 採 dependent-first stop；只有確認 runtime
+  已停止才清除 journal 並收斂為 disabled／`NONE`，否則保留 journal 與可診斷錯誤，不得直接
+  手改 SQLite。
+- Rollback／restore／recovery 在移動後重新驗證 signed directory；失敗時補償回原位置。
+  Restore 若補償也失敗，下次 startup 會把 identity 相符的 stranded candidate 移回 quarantine
+  並保留 `REMOVE`。traversal、symlink、junction、reparse point 或 MOD root escape 會在 mutation
+  前拒絕。
+- Publisher trust revoke 會先停止所有 runtime，再停用該 publisher 的 exact enabled records。
+  跨 publisher dependent 不會被自動改設定，但其 runtime 同樣已停止；後續 startup 會因被撤銷
+  dependency 已 disabled 而阻擋。
+- 降回不支援上述 recovery 的來源前，必須先以目前來源讓所有 lifecycle journal 收斂；不得刪除
+  registry、backup、quarantine 或使用者資料。Executable plugin 仍預設關閉，`SAFE_MODE`／
+  `BLOCKED` 規則不變。
+
 網站功能若要整合到可信 UI，必須維持「一個網域家族一個父 MOD、額外能力拆成子
 MOD」的結構，並提供 `en`、`ja`、`zh-CN`、`zh-TW` 四份完整語言資源。父 MOD
 停用時子 MOD 不顯示且不可執行；網站權限、網址允許清單與 provider 不得跨群組共用。

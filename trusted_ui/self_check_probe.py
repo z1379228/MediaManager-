@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from core.builtin_mod_catalog import BUILTIN_MOD_PARENT, OPTIONAL_WORKSPACE_IDS
-from core.localization import SUPPORTED_LOCALE_CODES, normalized_core_locale
-from core.self_check import SelfCheckItem, SelfCheckState
 from core.builtin_mod_snapshot import snapshot_for_context
+from core.localization import SUPPORTED_LOCALE_CODES, normalized_core_locale
+from core.logging.redaction import bounded_redacted_text
+from core.self_check import SelfCheckItem, SelfCheckState
 from trusted_ui.builtin_mod_panel import builtin_mod_rows
 
 
@@ -286,7 +287,11 @@ def _ani_gamer_offline_actions_item(
         if panel.offline_cancel_button.isEnabled() != expected_cancel:
             problems.append("本機媒體取消按鈕狀態錯誤")
     except (AttributeError, RuntimeError, TypeError) as error:
-        problems = [f"動畫瘋工作區控制讀取失敗：{str(error)[:160]}"]
+        problems = [
+            bounded_redacted_text(
+                f"動畫瘋工作區控制讀取失敗：{error}", max_utf8_bytes=512
+            )
+        ]
     return _item(
         "ui.ani_gamer_offline_actions",
         "block" if problems else "pass",
@@ -384,7 +389,11 @@ def _ani_gamer_episode_actions_item(
         if panel.episode_fallback.isVisible() and not manual_ready:
             problems.append("403 備援區顯示時缺少有效作品或集數 MOD")
     except (AttributeError, RuntimeError, TypeError) as error:
-        problems = [f"動畫瘋作品／集數控制讀取失敗：{str(error)[:160]}"]
+        problems = [
+            bounded_redacted_text(
+                f"動畫瘋作品／集數控制讀取失敗：{error}", max_utf8_bytes=512
+            )
+        ]
     return _item(
         "ui.ani_gamer_episode_actions",
         "block" if problems else "pass",

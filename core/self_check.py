@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 import json
+import os
 from pathlib import Path
+import tempfile
 from typing import Literal
 from uuid import uuid4
 
+from contracts.diagnostic_evidence_v1 import DiagnosticEvidenceV1
+from contracts.provider_capability_v1 import BUILTIN_PROVIDER_CAPABILITY_IDS
 from core.builtin_mod_catalog import (
     BUILTIN_MOD_CHILDREN,
     BUILTIN_MOD_CATALOG,
@@ -17,12 +21,11 @@ from core.builtin_mod_catalog import (
     builtin_mod_ids,
 )
 from core.builtin_mod_snapshot import snapshot_for_context
-from core.downloads.site_quality import audit_builtin_site_quality
-from core.downloads.direct_http_policy import direct_http_url_candidate
 from core.downloads.capabilities import builtin_provider_capability
-from contracts.provider_capability_v1 import BUILTIN_PROVIDER_CAPABILITY_IDS
+from core.downloads.direct_http_policy import direct_http_url_candidate
+from core.downloads.site_quality import audit_builtin_site_quality
 from core.localization import SUPPORTED_LOCALE_CODES, normalized_core_locale
-from core.logging.redaction import redact
+from core.logging.redaction import bounded_redacted_text
 from core.mod_groups import (
     SITE_MOD_CHILDREN,
     SITE_MOD_PARENT,
@@ -40,13 +43,16 @@ from core.version import BUILD_CHANNEL, CORE_VERSION
 
 
 SelfCheckState = Literal["pass", "warning", "block"]
+_MAX_SELF_CHECK_EXPORT_BYTES = 1024 * 1024
+_MAX_DIAGNOSTIC_EVIDENCE = 16
 
 
 def _safe_error_detail(error: BaseException, limit: int = 240) -> str:
     """Keep diagnostics useful without copying secrets into exported reports."""
 
-    value = redact(f"{type(error).__name__}: {error}")
-    return str(value)[:limit]
+    return bounded_redacted_text(
+        f"{type(error).__name__}: {error}", max_utf8_bytes=limit
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +72,22 @@ class SelfCheckReport:
     items: tuple[SelfCheckItem, ...]
     generated_at: str = ""
     run_id: str = ""
+    diagnostic_evidence: tuple[DiagnosticEvidenceV1, ...] = ()
+
+    def __post_init__(self) -> None:
+        if type(self.diagnostic_evidence) is not tuple:
+            raise TypeError("diagnostic_evidence must be a tuple")
+        if any(
+            type(item) is not DiagnosticEvidenceV1
+            for item in self.diagnostic_evidence
+        ):
+            raise TypeError(
+                "diagnostic evidence items must be DiagnosticEvidenceV1"
+            )
+        if len(self.diagnostic_evidence) > _MAX_DIAGNOSTIC_EVIDENCE:
+            raise ValueError("diagnostic evidence exceeds the item limit")
+        if any(item.run_id != self.run_id for item in self.diagnostic_evidence):
+            raise ValueError("diagnostic evidence run_id does not match the report")
 
     @property
     def pass_count(self) -> int:
@@ -91,11 +113,64 @@ class SelfCheckReport:
                 "warning": self.warning_count,
                 "block": self.block_count,
             },
-            "items": [asdict(item) for item in self.items],
+            "items": [
+                {
+                    "check_id": bounded_redacted_text(
+                        item.check_id, max_utf8_bytes=128
+                    ),
+                    "state": item.state,
+                    "summary": bounded_redacted_text(
+                        item.summary, max_utf8_bytes=512
+                    ),
+                    "detail": bounded_redacted_text(
+                        item.detail, max_utf8_bytes=4096
+                    ),
+                    "remediation_id": bounded_redacted_text(
+                        item.remediation_id, max_utf8_bytes=256
+                    ),
+                }
+                for item in self.items
+            ],
+            "diagnostic_evidence": [
+                item.to_dict() for item in self.diagnostic_evidence
+            ],
         }
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=2) + "\n"
+
+    def with_diagnostic_evidence(
+        self, *items: DiagnosticEvidenceV1
+    ) -> SelfCheckReport:
+        return replace(self, diagnostic_evidence=items)
+
+
+def write_self_check_report(destination: Path, report: SelfCheckReport) -> None:
+    """Write one bounded report atomically using only an owned sibling temp file."""
+
+    destination = Path(destination)
+    payload = report.to_json().encode("utf-8")
+    if len(payload) > _MAX_SELF_CHECK_EXPORT_BYTES:
+        raise ValueError("self-check export exceeds size limit")
+    descriptor, raw_temporary = tempfile.mkstemp(
+        prefix=f".{destination.name}.",
+        suffix=".tmp",
+        dir=destination.parent,
+    )
+    temporary = Path(raw_temporary)
+    descriptor_open = True
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            descriptor_open = False
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, destination)
+    except BaseException:
+        if descriptor_open:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def _item(
@@ -106,6 +181,28 @@ def _item(
     remediation_id: str = "",
 ) -> SelfCheckItem:
     return SelfCheckItem(check_id, state, summary, detail, remediation_id)
+
+
+def _deidentified_item(item: SelfCheckItem) -> SelfCheckItem:
+    return SelfCheckItem(
+        bounded_redacted_text(item.check_id, max_utf8_bytes=128),
+        item.state,
+        bounded_redacted_text(item.summary, max_utf8_bytes=512),
+        bounded_redacted_text(item.detail, max_utf8_bytes=4096),
+        bounded_redacted_text(item.remediation_id, max_utf8_bytes=256),
+    )
+
+
+def _normalized_aware_timestamp(value: object) -> str | None:
+    if not isinstance(value, str) or not 1 <= len(value) <= 40:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed.astimezone(UTC).isoformat()
 
 
 def _registry_item(
@@ -284,7 +381,11 @@ def _locale_item(context: object) -> SelfCheckItem:
     try:
         groups = load_builtin_mod_groups(selected_locale)
     except (OSError, ValueError) as error:
-        problems.append(f"網站 MOD 語言資源無法讀取：{error}")
+        problems.append(
+            bounded_redacted_text(
+                f"網站 MOD 語言資源無法讀取：{error}", max_utf8_bytes=512
+            )
+        )
         groups = ()
     if groups and (
         {group.group_id for group in groups} != set(SITE_MOD_CHILDREN)
@@ -506,6 +607,7 @@ def load_provider_smoke_report(path: Path) -> SelfCheckItem:
     summary = document.get("summary")
     cases = document.get("cases")
     generated_at = document.get("generated_at")
+    normalized_generated_at = _normalized_aware_timestamp(generated_at)
     valid_shape = (
         document.get("schema_version") == 2
         and document.get("mode") == "live-public-content"
@@ -515,8 +617,7 @@ def load_provider_smoke_report(path: Path) -> SelfCheckItem:
         and all(type(summary[key]) is int and 0 <= summary[key] <= 100 for key in summary)
         and isinstance(cases, list)
         and len(cases) <= 100
-        and isinstance(generated_at, str)
-        and 1 <= len(generated_at) <= 80
+        and normalized_generated_at is not None
     )
     if not valid_shape:
         return _item(
@@ -542,7 +643,7 @@ def load_provider_smoke_report(path: Path) -> SelfCheckItem:
         "smoke.latest",
         "pass" if successful else "warning",
         "最近一次手動 provider smoke 通過" if successful else "最近一次手動 provider smoke 未全綠",
-        f"{generated_at}：通過 {passed}、失敗 {failed}、暫時上游 {temporary}",
+        f"{normalized_generated_at}：通過 {passed}、失敗 {failed}、暫時上游 {temporary}",
         "provider.smoke.review" if not successful else "",
     )
 
@@ -719,7 +820,7 @@ def run_self_check(
             )
         )
     else:
-        items.extend(ui_items)
+        items.extend(_deidentified_item(item) for item in ui_items)
     return SelfCheckReport(
         1,
         CORE_VERSION,

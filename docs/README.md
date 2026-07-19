@@ -5,14 +5,48 @@
 
 ## 目前狀態
 
-- 目前來源版本為開發版 34.0（核心相容版本 34.0.0），尚未封裝；歷史
-  Development 產物只作回退與稽核用途，不覆寫既有內容。
+- 目前來源版本為開發版 38.0（核心相容版本 38.0.0），已進入本機 source-freeze／Development 候選流程；34.0 source freeze 保持不變，
+  35.0～37.0 source-only Exit Gate 已完成，38.0／G38-01 為唯一
+  `ACTIVE / P1 FIXES VALIDATED / MANUAL REVALIDATION BLOCKED / SAFE_MODE`。
+  歷史 Development 產物只作回退與稽核用途，不覆寫既有內容。
 - 開發與測試成品仍維持 `SAFE_MODE`；目前沒有可宣告的 Stable 正式版。
-- 完整 pytest 已透過固定 Repository 根目錄及隔離使用者暫存的安全入口完成：
-  `1092 passed, 7 skipped`；未再廣域收集 `AppData` 或觸發 `WinError 5`。
-- source-freeze 品質閘門已驗證 Ruff／文字污染 `355 / 557` 個檔案、MOD 群組
-  `8 / 4`、網站 `13 / 42 / 56`、依賴鎖 `10`、版本文件 `4` 與保留版本 `5`；
-  34.0 已完成本機 source freeze；這些證據不等於 build、push、簽署或發行授權。
+- G37 source-only Exit Gate 的最新完整 pytest 已透過固定 Repository 根目錄及隔離使用者暫存的
+  安全入口完成：`1278 passed, 7 skipped`；未廣域收集 `AppData`，測試 basetemp 位於
+  Repository 外。G38 無頭 UI／四語精準基線另計 `58 passed, 0 skipped`；焦點指示與
+  安全 badge 讀屏名稱兩項 P1 修正後相關 UI 組 `12 passed`，post-fix 完整
+  Repository `1279 passed, 7 skipped`。AniGamer targeted suite 為 `60 passed, 1 skipped`，加入
+  canonical 單集 URL 回歸後的完整 Repository 為 `1281 passed, 7 skipped`；最新 G38 Shared DoD 的
+  Ruff／文字污染 `366 / 571`、MOD `8 / 4`、網站 `13 / 42 / 56`、依賴鎖 `10`、版本文件 `4`、
+  保留版本 `5`、compileall、Version `.pyc` 零污染與 diff check 均通過；人工矩陣仍阻擋。
+- G36-01 只對 `DiscoveryItemV1`、history、recovery 與 provider failure 的六個列名 result DTO
+  接受最多 8 個有界 JSON extra；保留版本欄位、遺失必填、超深／超大內容仍拒絕，writer 不保留 extras。
+  capability token claims、Download／Provider capability、plugin manifest 與 UI descriptor 的 unknown field
+  仍由 strict regression 拒絕。
+- G36-01 最終 Shared DoD：完整 Repository `1255 passed, 7 skipped`；Ruff／文字污染
+  `363 / 566`、MOD `8 / 4`、網站 `13 / 42 / 56`、依賴鎖 `10`、版本文件 `4`、保留版本 `5`、
+  scoped compileall、Version `.pyc` 零污染與 `git diff --check` 均通過。
+- G37-01 已以 `EVIDENCE READY / NO CLAIM / SOURCE ONLY / SAFE_MODE` 完成；strict evidence v1、provider
+  exit metadata、UTF-8 有界 redaction、queue restore、原子 self-check 匯出與 WER runbook 已完成。
+  最終 G37 targeted `112 passed`，完整 Repository `1278 passed, 7 skipped`；Shared DoD 的
+  Ruff／文字污染 `365 / 570`、MOD `8 / 4`、網站 `13 / 42 / 56`、依賴鎖 `10`、版本文件 `4`、
+  保留版本 `5`、scoped compileall、Version `.pyc` 零污染與 diff check 均通過。沒有重現 native crash，
+  provider 間歇 exit 1 的 root cause 仍未知；不宣稱已修復。
+- G35-02A 新增唯讀、immutable 且有界的外部 MOD dependency graph snapshot、candidate
+  overlay 與間接 cycle validator。
+- G35-02B 新增共用且有界的跨程序 lifecycle lock、compare-and-set `ENABLE`／`DISABLE`
+  journal、鎖內狀態重讀及 fail-closed TrustStore／publisher reconciliation。
+- G35-02C 完成序列化 supervisor handle ownership、handshake cleanup failure 的 exact-handle
+  接管、短期 capability 即時撤銷、transitive dependency readiness／dependent-safe disable，
+  以及 graph 異常時 journal-first 的 runtime containment。
+- G35-02D 完成 bounded candidate transaction、fail-closed lifecycle path、dependency-first
+  startup／transaction recovery、dependent-first toggle recovery 與補償失敗後的下次啟動收斂；
+  最終相關 15 檔 targeted suite `175 passed`，原發現者重審未發現未解 P0／P1。
+- G35-02E 已同步 operator／release／roadmap 文件；Ruff／文字污染 `360 / 563`、MOD `8 / 4`、
+  網站 `13 / 42 / 56`、依賴鎖 `10`、版本文件 `4`、保留版本 `5`、compileall 與 diff 均通過。
+- 34.0 已完成本機 source freeze；35.0～37.0 Exit Gate 證據本身不構成操作授權。使用者已於
+  2026-07-19 明確授權將目前 35.0～38.0 核准變更 stage、本機 commit、固定為 Development 38.0
+  source freeze，並建立一次 SAFE_MODE 未簽署 Development 38.0 包；push、Testing／Stable、
+  簽署與發布仍未授權。
 - `tools.audit_version_docs` 會離線比對 `core/version.py`、`pyproject.toml` 與目前文件；
   版本分歧時以非零狀態結束。
 - 目前來源含 32 個內建 MOD、8 個網站父群組與 4 種介面語言。
@@ -33,6 +67,9 @@
 - [專案首頁與執行方式](../README.md)
 - [Development 34.0～40.0 唯一版本更新計畫與優先度](roadmap-development-34.0-40.0.md)
 - [Development 34.0 目前執行證據與阻擋](roadmap-development-34.0.md)
+- [Development 35.0～36.0 更新紀錄](release-35.0-36.0.md)
+- [Development 37.0～38.0 更新紀錄](release-37.0-38.0.md)
+- [原生崩潰去識別證據 Runbook](native-crash-evidence-runbook.md)
 - [Development 35→34 設定回復 Runbook](settings-pre35-rollback.md)
 - [網站父 MOD、子 MOD 與四語言契約](site-mod-group-format.md)
 - [動畫瘋整合範圍與限制](ani-gamer-feasibility.md)

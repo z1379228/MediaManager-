@@ -5,9 +5,28 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from contracts._additive_result import (
+    AdditiveResultError,
+    validate_additive_result,
+)
+
 
 class DiscoveryContractError(ValueError):
     pass
+
+
+_DISCOVERY_FIELDS = frozenset(
+    {
+        "video_id",
+        "url",
+        "title",
+        "artist",
+        "duration",
+        "language",
+        "category",
+        "thumbnail_url",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,19 +42,13 @@ class DiscoveryItemV1:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "DiscoveryItemV1":
-        required = {
-            "video_id",
-            "url",
-            "title",
-            "artist",
-            "duration",
-            "language",
-            "category",
-            "thumbnail_url",
-        }
-        if not isinstance(raw, dict) or set(raw) != required:
-            raise DiscoveryContractError("discovery result fields invalid")
-        text_fields = required - {"duration"}
+        try:
+            validate_additive_result(raw, required_fields=_DISCOVERY_FIELDS)
+        except AdditiveResultError as exc:
+            raise DiscoveryContractError(
+                "discovery result fields invalid"
+            ) from exc
+        text_fields = _DISCOVERY_FIELDS - {"duration"}
         if not all(isinstance(raw[key], str) for key in text_fields):
             raise DiscoveryContractError("discovery result text fields invalid")
         if not raw["video_id"] or not raw["url"].startswith("https://"):
@@ -52,4 +65,13 @@ class DiscoveryItemV1:
             not isinstance(duration, int) or duration < 0 or duration > 86400
         ):
             raise DiscoveryContractError("discovery result duration invalid")
-        return cls(**raw)
+        return cls(
+            video_id=raw["video_id"],
+            url=raw["url"],
+            title=raw["title"],
+            artist=raw["artist"],
+            duration=raw["duration"],
+            language=raw["language"],
+            category=raw["category"],
+            thumbnail_url=raw["thumbnail_url"],
+        )

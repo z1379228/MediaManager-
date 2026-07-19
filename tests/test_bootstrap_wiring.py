@@ -34,6 +34,17 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     assert isinstance(context.plugin_recovery, PluginTransactionRecovery)
     assert isinstance(context.plugin_updater, PluginUpdater)
     assert isinstance(context.plugin_rollback, PluginRollbackManager)
+    assert not hasattr(context, "plugin_supervisor")
+    assert (
+        context.plugin_manager.lifecycle_lock
+        is context.publisher_manager.lifecycle_lock
+        is context.plugin_installer.lifecycle_lock
+        is context.plugin_cleanup.lifecycle_lock
+        is context.plugin_recovery.lifecycle_lock
+        is context.plugin_maintenance.lifecycle_lock
+        is context.plugin_updater.lifecycle_lock
+        is context.plugin_rollback.lifecycle_lock
+    )
     providers = {
         status.provider_id: status for status in context.download_providers.statuses()
     }

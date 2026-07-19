@@ -39,6 +39,7 @@ from core.logging.logger import configure_logging
 from core.library import LibraryService
 from core.plugins.cleanup import PluginCleanupManager
 from core.plugins.installer import PluginInstaller
+from core.plugins.lifecycle import PluginLifecycleLock
 from core.plugins.manager import PluginManager
 from core.plugins.maintenance import PluginMaintenanceManager
 from core.plugins.recovery import PluginTransactionRecovery
@@ -140,7 +141,6 @@ class AppContext:
     discovery: DiscoveryService
     plugin_registry: PluginRegistry
     plugin_installer: PluginInstaller
-    plugin_supervisor: PluginSupervisor
     plugin_manager: PluginManager
     plugin_cleanup: PluginCleanupManager
     plugin_maintenance: PluginMaintenanceManager
@@ -644,7 +644,13 @@ class Bootstrap:
         if start_background:
             download_queue.start()
         plugin_registry = PluginRegistry(paths.plugin_registry)
-        plugin_installer = PluginInstaller(paths.mod, plugin_registry, trust_store)
+        plugin_lifecycle_lock = PluginLifecycleLock(paths.mod)
+        plugin_installer = PluginInstaller(
+            paths.mod,
+            plugin_registry,
+            trust_store,
+            lifecycle_lock=plugin_lifecycle_lock,
+        )
         plugin_supervisor = PluginSupervisor(paths.mod, plugin_registry)
         plugin_manager = PluginManager(
             paths.mod,
@@ -652,6 +658,7 @@ class Bootstrap:
             plugin_supervisor,
             trust_store,
             allow_executable_plugins=False,
+            lifecycle_lock=plugin_lifecycle_lock,
         )
         if automation_root is not None:
             def dispatch_automation(
@@ -774,7 +781,11 @@ class Bootstrap:
                     child_enabled = False
                 if child_enabled:
                     child_registry.set_enabled(child_id, False)
-        plugin_cleanup = PluginCleanupManager(paths.mod, plugin_registry)
+        plugin_cleanup = PluginCleanupManager(
+            paths.mod,
+            plugin_registry,
+            lifecycle_lock=plugin_lifecycle_lock,
+        )
         plugin_recovery = PluginTransactionRecovery(
             paths.mod, plugin_registry, plugin_manager
         )
@@ -812,13 +823,20 @@ class Bootstrap:
             key_id=RELEASE_KEY_ID,
         )
         plugin_maintenance = PluginMaintenanceManager(
-            paths.mod, plugin_registry, plugin_manager
+            paths.mod,
+            plugin_registry,
+            plugin_manager,
         )
         plugin_updater = PluginUpdater(
-            paths.mod, plugin_registry, plugin_installer, plugin_manager
+            paths.mod,
+            plugin_registry,
+            plugin_installer,
+            plugin_manager,
         )
         plugin_rollback = PluginRollbackManager(
-            paths.mod, plugin_registry, plugin_manager
+            paths.mod,
+            plugin_registry,
+            plugin_manager,
         )
         plugin_ui = PluginUIService(
             paths.mod,
@@ -835,16 +853,13 @@ class Bootstrap:
         lifecycle.on_shutdown(features.close)
         started_plugins: list[str] = []
         if security.mode is SecurityMode.NORMAL:
-            for record in plugin_registry.list_enabled():
-                result = plugin_manager.set_enabled(
-                    record.plugin_id, True, security.mode
-                )
+            for plugin_id, result in plugin_manager.start_enabled(security.mode):
                 if result.successful:
-                    started_plugins.append(record.plugin_id)
+                    started_plugins.append(plugin_id)
                 else:
                     audit.write(
                         "plugin.start_rejected",
-                        plugin_id=record.plugin_id,
+                        plugin_id=plugin_id,
                         errors=result.errors,
                     )
         audit.write("plugins.started", plugin_ids=started_plugins)
@@ -869,7 +884,6 @@ class Bootstrap:
             discovery=discovery,
             plugin_registry=plugin_registry,
             plugin_installer=plugin_installer,
-            plugin_supervisor=plugin_supervisor,
             plugin_manager=plugin_manager,
             plugin_cleanup=plugin_cleanup,
             plugin_maintenance=plugin_maintenance,

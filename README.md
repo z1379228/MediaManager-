@@ -1,6 +1,32 @@
 # MediaManager
 
-目前來源版本為開發版 34.0（核心相容版本 34.0.0），尚未封裝；32.1、32.0、31.0、30.2、30.1、30.0、29.5、29.4 與 29.3 保留於 `Version/Development` 作為回退版本。34.0 收斂動畫瘋官方播放回退、本機播放器狀態與 staged runtime 離線政策稽核，並維持 SAFE_MODE 與官方頁面安全邊界。
+目前來源版本為開發版 38.0（核心相容版本 38.0.0），已進入本機 source-freeze／Development 候選流程；32.1、32.0、31.0、30.2、30.1、30.0、29.5、29.4 與 29.3 保留於 `Version/Development` 作為回退版本。35.0 收斂外部 MOD dependency graph 與生命週期邊界；36.0 完成六個非特權 result DTO 的有界加法相容；37.0 已完成去識別診斷證據 Gate，38.0 保留人工驗證阻擋，並維持 SAFE_MODE。
+
+34.0 已完成本機 source freeze；Development 35.0 與 36.0 的來源 Exit Gate 已完成，
+目前來源身分同步為 38.0.0。六個列名 result DTO 只忽略已驗證、有界且不保留的 JSON extra；
+missing required、unknown schema 與 oversize 仍 fail closed，manifest、capability、路徑與簽章等
+特權契約維持 strict。使用者已明確授權將目前 35.0～38.0 核准變更 stage、本機 commit 並固定為
+Development 38.0 source freeze，且只建立一次 Development 38.0 SAFE_MODE 未簽署候選包；不授權
+push、Testing／Stable、簽署、發布或覆寫歷史版本。候選產物是否建立成功只以實際 post-build 稽核為準。
+Development 37.0 source-only Exit Gate 已完成；strict evidence v1、provider exit metadata、UTF-8
+有界 redaction、queue restore 與安全原子 self-check 匯出均有 regression。Development 38.0／G38-01
+現為唯一 `ACTIVE / P1 FIXES VALIDATED / MANUAL REVALIDATION BLOCKED / SAFE_MODE`；焦點指示與
+安全 badge 讀屏名稱已以 failing regression 修正，相關 UI 組 `12 passed`，post-fix
+完整 Repository `1279 passed, 7 skipped`。無頭四語基線
+`58 passed, 0 skipped`，但不代表實際焦點、NVDA、OS 高對比或四語全頁矩陣已驗證。原生
+`0x80000003` 仍未重現，37.0 只可標記
+`EVIDENCE READY / NO CLAIM`，不得宣稱 crash、未知 provider exit 1 或 root cause 已修復。
+
+使用者提供的 Development 37.0 截圖只作為 AniGamer 修正前基線：內嵌 Qt WebEngine 缺少
+H.264／AAC 或可用 HLS／MSE 路徑，集數查詢遇到官方 403／瀏覽器驗證時則安全降級到手動官方
+單集網址。G38 已把既有「在系統瀏覽器開啟」主操作移到 WebView 上方並保留 primary 與
+accessible semantics；另新增「403 降級→貼上 canonical `animeVideo.php?sn=...`→建立單集列」
+完整回歸，既有 production path 無需改動即通過。AniGamer targeted suite 為
+`60 passed, 1 skipped`，本輪完整 Repository 為 `1281 passed, 7 skipped`；最新 G38 Shared DoD 的
+Ruff／文字污染 `366 / 571`、MOD `8 / 4`、網站 `13 / 42 / 56`、依賴鎖 `10`、版本文件 `4`、
+保留版本 `5`、compileall、Version `.pyc` 零污染與 `git diff --check` 均通過，判定
+`EXPECTED LIMITATION / NO NETWORK POLICY CHANGE`。這不代表內嵌
+codec 已修復，也未加入 Cookie／播放串流攔截或 DRM、廣告、登入、地區限制繞過。
 
 平台無關的桌面媒體管理器。平台功能將由受隔離、具最小權限的 MOD 提供；核心負責安全、工作、儲存、網路與憑證代理。
 

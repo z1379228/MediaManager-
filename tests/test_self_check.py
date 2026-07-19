@@ -4,12 +4,19 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from core.builtin_mod_catalog import builtin_mod_ids
 from core.dependency_health import DependencyReport
 from core.dependency_snapshot import DependencySnapshot, FeatureReadiness
 from core.downloads.provider_registry import ProviderStatus
 from core.security.safe_mode import SafeMode
-from core.self_check import load_provider_smoke_report, run_self_check
+from core.self_check import (
+    SelfCheckItem,
+    load_provider_smoke_report,
+    run_self_check,
+    write_self_check_report,
+)
 
 
 class Registry:
@@ -135,6 +142,30 @@ def test_self_check_rejects_inconsistent_manual_provider_smoke(tmp_path: Path) -
     assert item.remediation_id == "smoke.report.replace"
 
 
+def test_self_check_rejects_non_timestamp_smoke_metadata(tmp_path: Path) -> None:
+    path = tmp_path / "provider-smoke.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "mode": "live-public-content",
+                "generated_at": (
+                    "2026-07-18T00:00:00Z?token=smoke-secret-value"
+                ),
+                "status": "PASS",
+                "summary": {"passed": 1, "failed": 0, "temporary_upstream": 0},
+                "cases": [{"status": "PASS"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    item = load_provider_smoke_report(path)
+
+    assert item.state == "block"
+    assert "smoke-secret-value" not in item.detail
+
+
 def test_self_check_reports_warm_download_queue_without_starting_work(
     tmp_path: Path,
 ) -> None:
@@ -235,6 +266,56 @@ def test_self_check_export_is_deidentified(tmp_path: Path) -> None:
     assert str(tmp_path) not in report.to_json()
     assert "test-fingerprint" not in report.to_json()
     assert set(document["summary"]) == {"pass", "warning", "block"}
+
+
+def test_self_check_export_redacts_untrusted_ui_item_details(tmp_path: Path) -> None:
+    item = SelfCheckItem(
+        "ui.failure",
+        "block",
+        "UI probe failed",
+        (
+            "Authorization: Bearer self-check-secret-value\n"
+            r"C:\Users\Alice\Private\media.mp4"
+        ),
+        "ui.review",
+    )
+
+    payload = run_self_check(context(tmp_path), ui_items=(item,)).to_json()
+
+    assert "[REDACTED]" in payload
+    assert "self-check-secret-value" not in payload
+    assert "Alice" not in payload
+    assert "Private" not in payload
+    assert "media.mp4" not in payload
+
+
+def test_self_check_atomic_export_preserves_destination_on_replace_failure(
+    tmp_path: Path, monkeypatch
+) -> None:
+    destination = tmp_path / "self-check.json"
+    destination.write_text("original", encoding="utf-8")
+    report = run_self_check(context(tmp_path))
+
+    def fail_replace(_source, _destination) -> None:
+        raise OSError("replace failed")
+
+    monkeypatch.setattr("core.self_check.os.replace", fail_replace)
+
+    with pytest.raises(OSError, match="replace failed"):
+        write_self_check_report(destination, report)
+
+    assert destination.read_text(encoding="utf-8") == "original"
+    assert tuple(tmp_path.glob(".self-check.json.*.tmp")) == ()
+
+
+def test_self_check_atomic_export_enforces_utf8_size_limit(tmp_path: Path) -> None:
+    class OversizedReport:
+        @staticmethod
+        def to_json() -> str:
+            return "界" * 400_000
+
+    with pytest.raises(ValueError, match="size limit"):
+        write_self_check_report(tmp_path / "self-check.json", OversizedReport())
 
 
 def test_self_check_plugin_page_does_not_run_until_button_click(

@@ -36,6 +36,13 @@ def test_manifest_v2_declares_runtime_and_ui_descriptor() -> None:
     assert manifest.ui_descriptor == "ui.json"
 
 
+def test_manifest_v2_rejects_unknown_privileged_field() -> None:
+    with pytest.raises(ManifestError, match="unknown"):
+        PluginManifest.from_dict(
+            manifest_v2(unexpected_privileged_field=True)
+        )
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [

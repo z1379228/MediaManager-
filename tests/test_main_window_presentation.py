@@ -67,7 +67,7 @@ def test_complete_main_window_builds_at_supported_minimum_size(
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
 
     from PySide6.QtGui import QPalette
-    from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget
+    from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QTabWidget
 
     paths = AppPaths.discover(portable=True, app_root=tmp_path)
     monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
@@ -86,6 +86,11 @@ def test_complete_main_window_builds_at_supported_minimum_size(
             and widget.isVisible()
         )
         tabs = window.findChild(QTabWidget)
+        security_badge = next(
+            label
+            for label in window.findChildren(QLabel)
+            if label.objectName() == "badge" and label.property("securityState")
+        )
         observed.update(
             minimum=(window.minimumWidth(), window.minimumHeight()),
             tab_count=tabs.count(),
@@ -93,6 +98,10 @@ def test_complete_main_window_builds_at_supported_minimum_size(
             surface=window.palette().color(QPalette.ColorRole.Window).name(),
             has_mod_manager=bool(window.findChildren(QTabWidget)),
             locale_count=len(window.language_group.actions()),
+            security_text=security_badge.text(),
+            security_accessible_name=security_badge.accessibleName(),
+            security_accessible_description=security_badge.accessibleDescription(),
+            security_tooltip=security_badge.toolTip(),
         )
         window.close()
         app.processEvents()
@@ -108,6 +117,11 @@ def test_complete_main_window_builds_at_supported_minimum_size(
         assert observed["surface"] == "#0a0f1d"
         assert observed["has_mod_manager"]
         assert observed["locale_count"] == 4
+        assert observed["security_accessible_name"] == (
+            f"安全狀態：{observed['security_text']}"
+        )
+        assert observed["security_accessible_description"]
+        assert observed["security_accessible_description"] == observed["security_tooltip"]
     finally:
         context.lifecycle.shutdown()
 

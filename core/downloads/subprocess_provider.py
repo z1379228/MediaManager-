@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import queue
 import subprocess
 import sys
@@ -38,16 +38,27 @@ from core.downloads.errors import (
     ProviderFailure,
     classify_provider_failure,
 )
+from core.logging.redaction import bounded_redacted_text
 
 
 _MAX_PROVIDER_MESSAGE_CHARS = 1024 * 1024
 _MAX_PROVIDER_STDERR_CHARS = 64 * 1024
 _PROVIDER_MESSAGE_BACKLOG = 128
-_PROVIDER_EXIT_DRAIN_SECONDS = 1.0
 
 
 class ProviderProtocolError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        phase: str = "",
+        exit_code: int | None = None,
+        stdout_reader_complete: bool | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.phase = phase
+        self.exit_code = exit_code
+        self.stdout_reader_complete = stdout_reader_complete
 
 
 class SubprocessDownloadProvider:
@@ -1035,8 +1046,17 @@ class SubprocessDownloadProvider:
                 truncated = stderr_truncated
             if truncated:
                 suffix = "[provider stderr truncated]"
-                return f"{value}\n{suffix}" if value else suffix
-            return value
+                suffix_bytes = len(f"\n{suffix}".encode("utf-8"))
+                retained = bounded_redacted_text(
+                    value,
+                    max_utf8_bytes=max(
+                        1, _MAX_PROVIDER_STDERR_CHARS - suffix_bytes
+                    ),
+                )
+                return f"{retained}\n{suffix}" if retained else suffix
+            return bounded_redacted_text(
+                value, max_utf8_bytes=_MAX_PROVIDER_STDERR_CHARS
+            )
 
         stdout_thread = threading.Thread(target=read_stdout, daemon=True)
         stderr_thread = threading.Thread(target=read_stderr, daemon=True)
@@ -1048,6 +1068,7 @@ class SubprocessDownloadProvider:
             process.stdin.close()
             deadline = time.monotonic() + timeout
             last_activity = time.monotonic()
+            no_result_phase = "stdout_eof"
             while True:
                 if cancel_event.is_set():
                     stop_process_tree()
@@ -1074,23 +1095,24 @@ class SubprocessDownloadProvider:
                         remaining = max(0.0, result_wait_deadline - now)
                         if remaining <= 0:
                             line = None
+                            no_result_phase = "handoff_deadline"
                         else:
                             try:
                                 line = messages.get(timeout=remaining)
                             except queue.Empty:
                                 line = None
+                                no_result_phase = "handoff_deadline"
                     else:
                         continue
                 if line is None:
                     # stdout can close just before the process reports a useful
-                    # bounded error on stderr. Give that already-ending process
-                    # a short, operation-bounded drain window before snapshotting
-                    # stderr; otherwise the result depends on reader scheduling.
+                    # bounded error on stderr. Drain within the existing operation
+                    # and idle deadlines; a shorter private deadline makes the
+                    # result depend on reader-thread scheduling under load.
                     now = time.monotonic()
                     drain_deadline = min(
                         deadline,
                         last_activity + idle_timeout,
-                        now + _PROVIDER_EXIT_DRAIN_SECONDS,
                     )
                     remaining = max(0.0, drain_deadline - now)
                     if process.poll() is None and remaining > 0:
@@ -1101,9 +1123,13 @@ class SubprocessDownloadProvider:
                     remaining = max(0.0, drain_deadline - time.monotonic())
                     if remaining > 0:
                         stderr_thread.join(timeout=remaining)
+                        stdout_thread.join(timeout=remaining)
                     error = stderr_text()
                     raise ProviderProtocolError(
-                        error or "provider exited without a result"
+                        error or "provider exited without a result",
+                        phase=no_result_phase,
+                        exit_code=process.poll(),
+                        stdout_reader_complete=not stdout_thread.is_alive(),
                     )
                 if isinstance(line, ProviderProtocolError):
                     raise line
@@ -1136,8 +1162,16 @@ class SubprocessDownloadProvider:
                         )
                     continue
                 if message["type"] == "error":
+                    failure = classify_provider_failure(message.get("error"))
+                    safe_message = bounded_redacted_text(
+                        failure.message,
+                        max_utf8_bytes=1000,
+                    )
                     raise ProviderFailure(
-                        classify_provider_failure(message.get("error"))
+                        replace(
+                            failure,
+                            message=safe_message or "provider failed",
+                        )
                     )
                 return message.get("value")
         finally:

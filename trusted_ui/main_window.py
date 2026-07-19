@@ -241,7 +241,8 @@ def run_main_window(context: object) -> int:
             mode = QLabel(mode_text)
             mode.setObjectName("badge")
             mode.setProperty("securityState", mode_state)
-            mode.setAccessibleName("安全狀態")
+            mode.setAccessibleName(f"安全狀態：{mode_text}")
+            mode.setAccessibleDescription(mode_tip)
             mode.setToolTip(mode_tip)
             header.addWidget(mode)
 

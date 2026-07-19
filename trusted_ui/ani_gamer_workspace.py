@@ -1570,19 +1570,15 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             )
             status.setMaximumHeight(56)
             layout.addWidget(status)
-            view = QWebEngineView(dialog)
-            view.setMinimumSize(640, 420)
-            view.setSizePolicy(
-                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-            )
-            view.setPage(OfficialPage(view))
-            configure_ani_gamer_web_view(view)
-            layout.addWidget(view, 1)
-            layout.setStretch(1, 1)
             actions = QHBoxLayout()
             actions.addStretch()
             fallback = QPushButton(self.t("open_official_fallback"), dialog)
             fallback.setObjectName("primary")
+            fallback.setProperty(
+                "controlId",
+                "aniGamerEmbeddedSystemBrowserFallback",
+            )
+            fallback.setAccessibleName(self.t("open_official_fallback"))
 
             def use_system_browser() -> None:
                 if open_system_browser():
@@ -1591,12 +1587,22 @@ def create_ani_gamer_workspace(context: object, parent: object = None) -> object
             fallback.clicked.connect(use_system_browser)
             actions.addWidget(fallback)
             close_button = QPushButton(self.t("cancel"), dialog)
+            close_button.setObjectName("aniGamerEmbeddedCloseButton")
+            close_button.setAccessibleName(self.t("cancel"))
             close_button.clicked.connect(dialog.close)
             actions.addWidget(close_button)
             layout.addLayout(actions)
+            view = QWebEngineView(dialog)
+            view.setMinimumSize(640, 420)
+            view.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            )
+            view.setPage(OfficialPage(view))
+            configure_ani_gamer_web_view(view)
+            layout.addWidget(view, 1)
+            layout.setStretch(2, 1)
 
             def promote_fallback() -> None:
-                fallback.setObjectName("primary")
                 fallback.setDefault(True)
                 fallback.setFocus(Qt.FocusReason.OtherFocusReason)
 

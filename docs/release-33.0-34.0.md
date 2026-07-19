@@ -3,6 +3,11 @@
 狀態：34.0 來源已完成 source freeze，尚未封裝。本文不是發行附件、Testing／Stable 宣告或
 正式簽署證據；目前仍維持 `SAFE_MODE`。
 
+> Post-freeze boundary：Development 35.0 的 G35-02A～E dependency graph、lifecycle
+> journal／trust 協調、Supervisor ownership、candidate transaction 與 recovery 不屬於本 34.0
+> freeze 或 release 內容；35.0 Exit Gate 已完成但來源仍未 stage、commit、build 或封裝，
+> 唯一狀態見 canonical roadmap 與 `release-35.0-36.0.md`。
+
 ## 33.0 基線
 
 - 收斂下載佇列、通知、依賴快照、MOD 父子狀態與首次啟動選擇流程。

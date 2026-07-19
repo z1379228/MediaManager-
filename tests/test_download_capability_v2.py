@@ -60,6 +60,24 @@ def test_direct_download_capability_construction_is_validated() -> None:
         )
 
 
+def test_download_capability_rejects_unknown_privileged_field() -> None:
+    payload = {
+        "provider_id": "youtube",
+        "sites": ["youtube"],
+        "format_presets": ["best"],
+        "subtitle_modes": ["none"],
+        "timed_comments": ["none"],
+        "supports_playlist": True,
+        "supports_segments": True,
+        "supports_resume": True,
+        "max_batch_size": 100,
+        "unexpected_privileged_field": True,
+    }
+
+    with pytest.raises(DownloadCapabilityError, match="fields"):
+        DownloadCapabilityV2.from_dict(payload)
+
+
 def test_generic_provider_does_not_claim_unverified_social_sites() -> None:
     capability = builtin_download_capability("generic-ytdlp")
 
