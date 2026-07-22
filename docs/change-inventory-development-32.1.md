@@ -31,9 +31,10 @@ source-only verify-only 已有精確 SAFE_MODE stdout。使用者於 2026-07-23 
 再明確授權 G39-08／Development 39.0.6 的 stage、本機 commit 與 source freeze；後者新增
 dry-run-first 本機歷史整理工具與 fail-closed regression，並成為目前不可變來源基線。
 2026-07-23 後續建立 Repository 外 production Ed25519 私鑰並只將公開 key ID／public key
-編入 G39-09／Development 39.0.7；此 material delta 尚未 stage、commit 或 source freeze。
+編入 G39-09／Development 39.0.7；使用者已明確授權其 stage、本機 commit 與 source freeze，
+目前 clean revision 已固定。
 這些授權不包含 push、build、EXE、Testing／Stable、Authenticode、候選簽署、發布或上傳；
-G40-01 現為 source-freeze waiting／build blocked。
+G40-01 現為 build waiting，仍缺 staged candidate／headless 證據。
 
 ## 快照與判定界線
 
@@ -198,8 +199,8 @@ G40-01 現為 source-freeze waiting／build blocked。
 | 39.0.4 | `G39-06 SOURCE VALIDATED / NO PACKAGE / SAFE_MODE` | 依 39.0.3 人工截圖，Gopeed／P2P 工作區加入 `workspaceScroll` 與 minimum-size layout contract，有限高度改用垂直捲動而不壓扁 card；非 UI `1012 passed, 6 skipped` 且來源 Gate 通過，修正版人工截圖待確認。 |
 | 39.0.5 | `G39-07 SOURCE-FROZEN / NO PACKAGE / SAFE_MODE` | Stable identity 與 UI display 固定為獨立 `1.0.0`／「正式版 1.0」；正式版 operator 拆為 receipt-bound build-only 與 Authenticode `Valid` 後 stage-built，拒絕 revision／receipt／wheel mismatch。display RED `1 failed, 3 passed`、精準封裝／版本 GREEN `45 passed`、非 UI `1019 passed, 6 skipped`，其餘來源 Gate 通過；2026-07-23 已授權 stage、本機 commit 與 source freeze，未實際 build、簽署或 push。 |
 | 39.0.6 | `G39-08 SOURCE-FROZEN / NO PACKAGE / SAFE_MODE` | 新增預設 dry-run 的本機歷史整理計畫器；要求至少兩個精確 keep、其中一個為 audit／preflight 通過的 Stable，候選含 UserData 或 link-like 內容即拒絕，apply 另需 exact confirmation，並會重驗完整計畫。精準 `9 passed`，非 UI `1029 passed, 6 skipped`；2026-07-23 已授權 stage、本機 commit 與 source freeze，尚未刪除任何版本或資料。 |
-| 39.0.7 | `G39-09 SOURCE VALIDATED / SOURCE FREEZE WAITING / NO PACKAGE / SAFE_MODE` | production Ed25519 私鑰在 Repository 外建立，只把非秘密 key ID／raw public key 編入來源；回歸要求合法 key ID 與嚴格 Base64 解碼為 32 bytes。精準 `27 passed`、非 UI `1030 passed, 6 skipped`，來源 Gate 通過；尚未 stage、commit、source freeze、build、Authenticode 或候選簽署。 |
-| 40.0 | `SOURCE FREEZE WAITING / BUILD BLOCKED` | 2026-07-22 source-only `python -B main.py --verify-only` 已 exit 0 並精確輸出 `MediaManager security mode: SAFE_MODE`。39.0.7 是目前 material source delta，必須先固定 clean revision；build／candidate、EXE、Testing／Stable、簽署、發布、上傳與 push 皆未授權。 |
+| 39.0.7 | `G39-09 SOURCE-FROZEN / NO PACKAGE / SAFE_MODE` | production Ed25519 私鑰在 Repository 外建立，只把非秘密 key ID／raw public key 編入來源；回歸要求合法 key ID 與嚴格 Base64 解碼為 32 bytes。精準 `27 passed`、非 UI `1030 passed, 6 skipped`，來源 Gate 通過；2026-07-23 已授權 stage、本機 commit 與 source freeze，未 build、Authenticode 或簽署候選。 |
+| 40.0 | `BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED` | 2026-07-22 source-only `python -B main.py --verify-only` 已 exit 0 並精確輸出 `MediaManager security mode: SAFE_MODE`。39.0.7 已固定為目前 source freeze；build／candidate、EXE、Testing／Stable、簽署、發布、上傳與 push 皆未授權。 |
 | 41.0 | `DONE BASELINE` | 安全測試與品質入口已完成；歷史清理仍不在授權範圍。 |
 | 42.0 | `SUPERSEDED BY FIX-34-02` | 本清冊即其缺少的收斂結果。 |
 | 43.0 | `HISTORICAL / PARTIALLY ABSORBED` | capability self-check、播放器／manifest 已有實作；外部／人工／候選證據分別由 G37／G38／G40 管理，未接線的 capability-to-button routing 留在 deferred backlog。 |

@@ -1,13 +1,13 @@
 # Development 39.0–40.0 更新紀錄
 
 狀態：Development 39.0.7／G39-09 為
-`SOURCE VALIDATED / SOURCE FREEZE WAITING / NO PACKAGE / SAFE_MODE`；39.0.6／G39-08 與
+`SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`；39.0.6／G39-08 與
 39.0.5／G39-07 已 source-frozen，
 39.0.4／G39-06、39.0.3／G39-05、39.0.2／G39-04、39.0.1／G39-03 與 39.0.0／G39-02 已
 `SOURCE VALIDATED / NO PACKAGE / SAFE_MODE`。
 使用者已於 2026-07-23 分別授權 Development 39.0.5 與 39.0.6 精確範圍的 stage、
-本機 commit 與 source freeze；39.0.7 的 production Ed25519 公開身分修正尚未取得
-stage／commit／source-freeze 授權。這不授權 push、build、建立 EXE、Testing／Stable、
+本機 commit 與 source freeze；使用者後續亦明確授權 39.0.7 production Ed25519 公開身分修正的
+stage、本機 commit 與 source freeze。這不授權 push、build、建立 EXE、Testing／Stable、
 Authenticode、候選簽署、發布或上傳。
 
 ## 39.0.0｜本機格式工廠第一工作包
@@ -308,7 +308,7 @@ formats、encoders、filters 與 hwaccels；排程前確認預估輸出加 256 M
 ### Dependencies、Approach 與 Compatibility
 
 - **Dependencies**：Repository 外私鑰已建立並限制為目前 Windows 使用者與 SYSTEM；公開值以
-  既有 loader 重新導出核對。後續仍依賴 39.0.7 source freeze、build-only 授權及
+  既有 loader 重新導出核對。39.0.7 source freeze 已完成；後續仍依賴 build-only 授權及
   production Authenticode `Valid`。
 - **Approach**：先加入 compiled identity 回歸並在空白設定取得 RED，再只編入公開 key ID／
   Base64 raw public key；測試同時要求既有 key ID regex 通過且 Base64 嚴格解碼為 32 bytes。
@@ -344,7 +344,7 @@ formats、encoders、filters 與 hwaccels；排程前確認預估輸出加 256 M
 ## 40.0
 
 G40-01 現為
-`SOURCE FREEZE WAITING / BUILD BLOCKED`。Development 39.0.6 的 stage、本機 commit 與
-source freeze 已完成，但 39.0.7 公開信任身分是新的 material source delta，必須先另行固定；
+`BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED`。Development 39.0.7 的
+stage、本機 commit 與 source freeze 已完成；
 build、EXE、Testing／Stable、
 簽署、candidate staging、發布、上傳與 push 仍須各自取得明確授權。

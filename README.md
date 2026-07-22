@@ -7,9 +7,9 @@
 
 - 目前來源版本為開發版 39.0（核心相容版本 39.0.7）；G39-09 已將 production
   Ed25519 的公開 key ID／public key 編入來源，狀態為
-  `SOURCE VALIDATED / SOURCE FREEZE WAITING / NO PACKAGE / SAFE_MODE`。私鑰維持在
-  Repository 外且未輸出或提交。39.0.6 source freeze 保留為不可變本機 commit；G40-01
-  在 39.0.7 固定前為 `SOURCE FREEZE WAITING / BUILD BLOCKED`。
+  `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`。私鑰維持在 Repository 外且未輸出或提交。
+  39.0.7 已固定為目前不可變本機來源；G40-01 現為
+  `BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED`。
 - 正式版目標：Stable `1.0.0`，目前 `ready: false`；尚未建立、簽署、發布或上傳。
 - 最新來源更新：
   - 格式工廠新增固定的影片、音訊、影像與字幕 preset，並加入 FFmpeg 能力、磁碟及

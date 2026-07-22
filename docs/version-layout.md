@@ -65,9 +65,8 @@ validated before staging. It also adds a dry-run-first, fail-closed local
 release-history prune planner that requires two retained releases, a
 publish-ready Stable, an exact apply confirmation, and no UserData or link-like
 candidate content. It is
-`SOURCE VALIDATED / SOURCE FREEZE WAITING / NO PACKAGE / SAFE_MODE`; G40-01 is
-`SOURCE FREEZE WAITING / BUILD BLOCKED` until this trust-identity delta is fixed
-to an authorized clean revision.
+`SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`; G40-01 is now
+`BUILD WAITING / STAGED CANDIDATE + HEADLESS SAFE_MODE EVIDENCE REQUIRED`.
 G38-01 retains its independent manual-validation blockers.
 The 38.1.8 increment records a material catalog-state correction: a
 structured failure with no accepted item retains the last usable results,

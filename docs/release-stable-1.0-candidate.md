@@ -1,6 +1,6 @@
 # MediaManager 正式版 1.0 候選狀態
 
-狀態：`ready: false / G39-09 SOURCE VALIDATED / SOURCE FREEZE WAITING / BUILD BLOCKED / NO STABLE PACKAGE / SAFE_MODE`。
+狀態：`ready: false / G39-09 SOURCE-FROZEN / BUILD WAITING / NO STABLE PACKAGE / SAFE_MODE`。
 
 本文件只記錄目前候選評估，不是 Stable 發布宣告。正式版使用獨立公開版本 `1.0.0`，目前
 開發來源相容版本為 `39.0.7`；數字大小不可跨 Development／Testing／Stable 通道比較。
@@ -30,14 +30,14 @@
 
 對 `Version/Development/38.0` 執行唯讀 `tools.release_preflight --json` 得到 `ready: false`：
 
-1. production Ed25519 公開身分已編入 39.0.7 來源，但這個 material delta 尚未 stage、commit 或
-   source freeze；因此不能用 39.0.6 revision 建立候選。
+1. production Ed25519 公開身分已編入並固定於 39.0.7 source freeze，但尚未取得 build-only
+   授權或建立綁定該 revision 的候選。
 2. `MediaManager.exe` 的 Authenticode 狀態仍為 `NotSigned`，且尚未取得 production
    Authenticode 身分或工具。
 3. 舊包缺少 `gopeed-transfer`、`p2p-transfer`，且格式工廠／Local Ad Segment Trim manifest
    與目前來源 hash 不同；因此它不是目前候選。
-4. Development 39.0.5 與 39.0.6 的 stage、本機 commit 與 source freeze 已於 2026-07-23 完成；
-   兩者保持不可變，但 39.0.7 固定前都不可當成目前 build 來源。
+4. Development 39.0.5、39.0.6 與 39.0.7 的 stage、本機 commit 與 source freeze 已於
+   2026-07-23 完成；只有最新的 39.0.7 clean revision 可作為後續 build 來源。
 5. split-phase operator 雖已通過來源／模擬失敗回歸，但尚未取得 production Authenticode 身分，
    也沒有對真實 build-only EXE 得到 `Valid`；receipt 不能替代正式簽章。
 6. 尚未建立綁定同一 revision、EXE digest、runtime、SBOM、checksum 與工具版本的新 Testing
@@ -67,9 +67,8 @@
 
 ## 重新評估與正式發布順序
 
-1. 完成 39.0.7 的來源 Gate；人工 UI 證據維持截圖優先。
-2. 另行取得 stage、本機 commit 與 39.0.7 source-freeze 授權並固定精確 clean revision；
-   commit hash 與 tree fingerprint 由交付回報保存，避免自我參照。
+1. 39.0.7 的來源 Gate、stage、本機 commit 與 source freeze 已完成；人工 UI 證據維持截圖優先。
+2. 精確 commit hash 與 tree fingerprint 由交付回報保存，避免寫回同一 source freeze 自我參照。
 3. production Ed25519 public identity 與 Repository 外私鑰已建立；仍須取得 Windows
    Authenticode 身分。私鑰不得寫入 Repository、參數紀錄、Log 或套件。
 4. 另行取得 build 授權後，以 `--channel stable --confirm-stable --build-only` 建立 receipt-bound

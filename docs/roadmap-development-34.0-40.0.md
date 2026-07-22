@@ -1,6 +1,6 @@
 # Development 34.0～40.0 唯一版本更新計畫
 
-狀態：`CANONICAL / 34.0 SOURCE-FROZEN / 35.0～37.0 EXIT GATE DONE / SOURCE ONLY / G38-01 BASELINE FROZEN + MANUAL BLOCKED / G38-02 CLOSED + REMOVED / G39-01 MEASURED + NO RELEASE / G39-02～G39-06 SOURCE VALIDATED + NO PACKAGE / G39-07 39.0.5 SOURCE-FROZEN / G39-08 39.0.6 SOURCE-FROZEN / G39-09 39.0.7 SOURCE VALIDATED + SOURCE FREEZE WAITING / G40-01 BUILD BLOCKED / SAFE_MODE`
+狀態：`CANONICAL / 34.0 SOURCE-FROZEN / 35.0～37.0 EXIT GATE DONE / SOURCE ONLY / G38-01 BASELINE FROZEN + MANUAL BLOCKED / G38-02 CLOSED + REMOVED / G39-01 MEASURED + NO RELEASE / G39-02～G39-06 SOURCE VALIDATED + NO PACKAGE / G39-07 39.0.5 SOURCE-FROZEN / G39-08 39.0.6 SOURCE-FROZEN / G39-09 39.0.7 SOURCE-FROZEN / G40-01 BUILD WAITING / SAFE_MODE`
 規劃基線：2026-07-18；Development 34.0／核心相容版本 34.0.0 已完成來源凍結，尚未封裝。
 
 本文件重新設計 34.0～40.0 的唯一執行順序，取代 35.0～40.0 單版草案的執行權；
@@ -40,7 +40,7 @@ Development 38.0。G39-01 measurement baseline 已完成且沒有可證 bottlene
   本機 commit 與 source freeze；G40-01 因而恢復 build waiting，仍缺 staged candidate／
   headless SAFE_MODE 證據。後續 production Ed25519 私鑰已在 Repository 外建立，公開
   key ID／public key 則形成唯一 G39-09／Development 39.0.7 material trust-identity delta；
-  39.0.7 尚未取得 stage／commit／source-freeze 授權，因此 G40-01 暫回 build blocked。
+  使用者已明確授權 39.0.7 stage／commit／source freeze，因此 G40-01 恢復 build waiting。
 
 ## 目標與非目標
 
@@ -82,7 +82,7 @@ Development 38.0。G39-01 measurement baseline 已完成且沒有可證 bottlene
 
 ### Unknowns
 
-- 後續 39.0.7 source-freeze／build 授權與 production Authenticode 身分尚未取得。
+- 後續 build 授權與 production Authenticode 身分尚未取得。
 - G37 完整驗證曾間歇性重現 history provider 空 stdout／stderr 退出；壓力取證為
   `phase=stdout_eof / exit_code=1 / reader_complete=true`，且 state 尚未建立。單一 stdout producer
   的 FIFO 排除 EOF 超車 result；直接 subprocess 與相同 Job Object 各 300 輪均通過，因此 exit 1
@@ -111,7 +111,7 @@ Development 38.0。G39-01 measurement baseline 已完成且沒有可證 bottlene
    `MEASURED / NO CHANGE / NO RELEASE / SAFE_MODE` 完成。G39-02 只實作有 failing regression 的
    本機格式工廠工作包；參考產品本身不構成 scope。G39-08 只建立預設 dry-run，
    並對 Stable／UserData／link-like 邊界 fail closed。G39-09 只編入非秘密 production Ed25519
-   公開身分；在 39.0.7 source freeze 前，G40-01 保持 `BUILD BLOCKED`，
+   公開身分；39.0.7 source freeze 已完成，G40-01 現為 `BUILD WAITING`，
    不得以[參考軟體功能矩陣](comparable-software-options.md)自動跨 Gate。
 
 ## 依賴執行順序與版本內 Priority
@@ -133,8 +133,8 @@ Development 38.0。G39-01 measurement baseline 已完成且沒有可證 bottlene
 | 13 | G39-06 | 39.0.4-P1 | `SOURCE VALIDATED / NO PACKAGE / SAFE_MODE` | 人工截圖證實 Gopeed／P2P 工作區在有限高度下壓扁設定 card；加入 `workspaceScroll` 與 minimum-size layout contract，空間不足時垂直捲動而不重疊。非 UI `1012 passed, 6 skipped`；修正版人工截圖待確認。 |
 | 14 | G39-07 | 39.0.5-P0 | `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE` | Stable 公開身分與 UI display 固定為獨立 1.0.0／「正式版 1.0」；release operator 拆成 receipt-bound build-only 與 Authenticode `Valid` 後 stage-built。display RED `1 failed, 3 passed`、精準封裝／版本 GREEN `45 passed`、非 UI `1019 passed, 6 skipped`；2026-07-23 已授權 stage、本機 commit 與 source freeze，未實際 build、簽署或 push。 |
 | 15 | G39-08 | 39.0.6-P0 | `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE` | 建立預設 dry-run 的本機版本歷史整理計畫；至少保留兩版且包含 publish-ready Stable，UserData、link-like、意外目錄或計畫後變更均 fail closed，apply 另需 exact confirmation 並重驗完整計畫。RED 為缺少模組的 collection error，精準 GREEN `9 passed`、非 UI `1029 passed, 6 skipped`；2026-07-23 已授權 stage、本機 commit 與 source freeze，未實際刪除。 |
-| 16 | G39-09 | 39.0.7-P0 | `SOURCE VALIDATED / SOURCE FREEZE WAITING / NO PACKAGE / SAFE_MODE` | production Ed25519 私鑰在 Repository 外建立；只把公開 key ID／raw public key 編入來源，並以 RED→GREEN 回歸要求合法 key ID 與 32-byte public key。精準 `27 passed`、非 UI `1030 passed, 6 skipped`，來源 Gate 通過；尚未 stage、commit、source freeze、build、Authenticode 或候選簽署。 |
-| 17 | G40-01 | 40.0-P0 | `SOURCE FREEZE WAITING / BUILD BLOCKED` | source-only verify-only 已有精確 SAFE_MODE stdout；39.0.7 是目前 material trust-identity delta，必須先固定 clean revision。build／candidate、EXE、Testing／Stable、簽署、發布、上傳與 push 仍須逐項明確授權。 |
+| 16 | G39-09 | 39.0.7-P0 | `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE` | production Ed25519 私鑰在 Repository 外建立；只把公開 key ID／raw public key 編入來源，並以 RED→GREEN 回歸要求合法 key ID 與 32-byte public key。精準 `27 passed`、非 UI `1030 passed, 6 skipped`，來源 Gate 通過；2026-07-23 已授權 stage、本機 commit 與 source freeze，未 build、Authenticode 或候選簽署。 |
+| 17 | G40-01 | 40.0-P0 | `BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED` | source-only verify-only 已有精確 SAFE_MODE stdout；39.0.7 已固定為目前 source freeze。build／candidate、EXE、Testing／Stable、簽署、發布、上傳與 push 仍須逐項明確授權。 |
 
 Stable-only Gate 不屬於 Development 40.0 的執行排名；只有使用者明確選擇 Stable 後，
 G40-02 才成為該獨立通道的 P0：sign-before-stage、channel-aware exact signed set、
@@ -1467,9 +1467,9 @@ IN_PROGRESS 工作；G40-01 繼續等待另行授權。
 
 ### G39-09｜production Ed25519 公開信任身分
 
-**Status**：`SOURCE VALIDATED / SOURCE FREEZE WAITING / NO PACKAGE / SAFE_MODE`。
-G39-08／39.0.6 source-freeze commit 保留不變；39.0.7 尚未取得 stage、本機 commit 或
-source-freeze 授權。
+**Status**：`SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`。
+G39-08／39.0.6 source-freeze commit 保留不變；使用者已於 2026-07-23 明確授權 39.0.7 的
+stage、本機 commit 與 source freeze。
 
 - **Goal**：將已在 Repository 外建立之 production Ed25519 身分的非秘密 key ID／raw public
   key 編入驗證來源，讓 Stable 候選只接受相符私鑰。
@@ -1493,14 +1493,14 @@ source-freeze 授權。
   verify-only 與 diff check 通過。歷史 Development 38.0 preflight 已不再報 compiled identity
   invalid，但仍因舊 MOD、缺 manifest 與 Authenticode `NotSigned` fail closed。沒有 Authenticode、
   build、簽署、stage、Stable 建立、發布、上傳或 push。
-- **Exit Gate**：來源通過後仍為 `SOURCE FREEZE WAITING`；只有取得 39.0.7 的精確
-  stage／commit／source-freeze 授權，G40-01 才可回到 build-waiting。
+- **Exit Gate**：已前進為 `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`；G40-01 恢復
+  build-waiting，但所有 build／candidate 與後續操作仍需逐項授權。
 
 ## 40.0｜可重現候選與發行完整性
 
-**Status**：`SOURCE FREEZE WAITING / BUILD BLOCKED`。
+**Status**：`BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED`。
 G39-08／39.0.6 的 stage、本機 commit 與 source freeze 已於 2026-07-23 取得明確授權；
-G39-09／39.0.7 是尚未固定的 material trust-identity delta。未取得 39.0.7 source freeze 及
+G39-09／39.0.7 的 stage、本機 commit 與 source freeze 已於 2026-07-23 取得明確授權。未取得
 build／candidate、EXE、Testing／Stable、簽署、發布、上傳或 push 的逐項明確授權前不啟動
 後續操作。Stable-only
 G40-02 仍受正式簽署身分與通道決定阻擋。

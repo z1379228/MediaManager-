@@ -6,7 +6,7 @@
 ## 目前狀態
 
 - 目前來源版本為開發版 39.0（核心相容版本 39.0.7），狀態
-  `G39-09 SOURCE VALIDATED / SOURCE FREEZE WAITING / NO PACKAGE / SAFE_MODE`。production
+  `G39-09 SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`。production
   Ed25519 的公開 key ID／public key 已編入來源；私鑰保存在 Repository 外，未輸出或提交。
   `38.1.14` 已
   `SOURCE VALIDATED / SUPERSEDED BY 38.1.15 / NO PACKAGE`；G38-02 已依使用者範圍決定
@@ -16,9 +16,9 @@
   `MEASURED / NO CHANGE / NO RELEASE / SAFE_MODE`；G39-02 因本機影像 preset 的 failing
   regression 啟動 Development 39.0.0，完整來源 Gate 已通過。使用者於 2026-07-23 已授權
   stage、本機 commit 與 Development 39.0.5 source freeze；同日也已明確授權 G39-08／39.0.6
-  的 stage、本機 commit 與 source freeze。39.0.7 是新的 material trust-identity delta，尚未取得
-  stage／commit／source-freeze 授權，因此 G40-01 為
-  `SOURCE FREEZE WAITING / BUILD BLOCKED`。push、build、EXE、
+  的 stage、本機 commit 與 source freeze。使用者後續亦明確授權 G39-09／39.0.7 的精確
+  stage、本機 commit 與 source freeze，因此 G40-01 恢復為
+  `BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED`。push、build、EXE、
   Testing／Stable、簽署、發布與上傳仍未授權。
 - 39.0.0 將既有、預設停用的 Media Convert 擴充為「本機格式工廠」第一工作包：增加
   PNG／JPEG／WebP 靜態影像轉檔與有界、去識別的 FFmpeg stderr 診斷；不自動安裝第三方
