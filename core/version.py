@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-CORE_VERSION = "39.0.6"
+CORE_VERSION = "39.0.7"
 BUILD_CHANNEL = "development"
 DEVELOPMENT_GENERATION = "39.0"
 TESTING_VERSION = "1.1.0"

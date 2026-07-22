@@ -1,9 +1,9 @@
 # MediaManager 正式版 1.0 候選狀態
 
-狀態：`ready: false / G39-08 SOURCE-FROZEN / BUILD WAITING / NO STABLE PACKAGE / SAFE_MODE`。
+狀態：`ready: false / G39-09 SOURCE VALIDATED / SOURCE FREEZE WAITING / BUILD BLOCKED / NO STABLE PACKAGE / SAFE_MODE`。
 
 本文件只記錄目前候選評估，不是 Stable 發布宣告。正式版使用獨立公開版本 `1.0.0`，目前
-開發來源相容版本為 `39.0.6`；數字大小不可跨 Development／Testing／Stable 通道比較。
+開發來源相容版本為 `39.0.7`；數字大小不可跨 Development／Testing／Stable 通道比較。
 
 ## 目前可確認的來源基線
 
@@ -13,28 +13,31 @@
   build-only／stage-built 來源 operator。
 - G39-08／39.0.6 新增 dry-run-first 本機歷史整理計畫；這是 Stable 已驗證且已上傳後的
   後置清理邊界，不是 Stable 建立步驟，目前沒有刪除任何檔案。
+- G39-09／39.0.7 已把 production Ed25519 的非秘密 key ID／public key 編入來源，並新增
+  32-byte raw public key 回歸。私鑰保存在 Repository 外；這不代表候選已簽署。
 - 目前 catalog 有 29 個內建 MOD；新 profile 只有 `speech-to-text` 與 `automation` 預設停用。
   MOD 群組稽核為 7 groups／4 locales；網站矩陣為 12 sites／33 features／49 workflows。
-- 116 個不含 PySide／GUI 操作的測試檔為 `1029 passed, 6 skipped`；歷史整理精準回歸
-  `9 passed`；
+- 39.0.7 的 116 個不含 PySide／GUI 操作測試檔合計 `1030 passed, 6 skipped`；
+  release／version 精準回歸 `27 passed`；
   Ruff／品質、依賴鎖、
   版本文件、保留版本、Repository 外 compileall、SAFE_MODE verify-only 與 diff check 均通過。
 - 修正版 UI 尚待使用者截圖確認；截圖不能取代 Tab／Shift+Tab、UIA／讀屏、Windows OS
   高對比或實際 Gopeed 互動證據。
 - 最新保留完整包仍是 `Version/Development/38.0`。它屬不可覆寫的舊 source freeze，不能冒充
-  39.0.6 或 Stable 1.0。
+  39.0.7 或 Stable 1.0。
 
 ## 實測的 Stable 阻擋
 
 對 `Version/Development/38.0` 執行唯讀 `tools.release_preflight --json` 得到 `ready: false`：
 
-1. `core/security/release_key.py` 的 production Ed25519 key id／public key 仍為空白。
-2. `MediaManager.exe` 的 Authenticode 狀態為 `NotSigned`。
+1. production Ed25519 公開身分已編入 39.0.7 來源，但這個 material delta 尚未 stage、commit 或
+   source freeze；因此不能用 39.0.6 revision 建立候選。
+2. `MediaManager.exe` 的 Authenticode 狀態仍為 `NotSigned`，且尚未取得 production
+   Authenticode 身分或工具。
 3. 舊包缺少 `gopeed-transfer`、`p2p-transfer`，且格式工廠／Local Ad Segment Trim manifest
    與目前來源 hash 不同；因此它不是目前候選。
-4. Development 39.0.5 的 stage、本機 commit 與 source freeze 已於 2026-07-23 完成；同日
-   39.0.6 的精確 stage／commit／source-freeze 也已取得明確授權並固定新的 clean revision。
-   39.0.5 保持不可變，但不可再當成目前 build 來源。
+4. Development 39.0.5 與 39.0.6 的 stage、本機 commit 與 source freeze 已於 2026-07-23 完成；
+   兩者保持不可變，但 39.0.7 固定前都不可當成目前 build 來源。
 5. split-phase operator 雖已通過來源／模擬失敗回歸，但尚未取得 production Authenticode 身分，
    也沒有對真實 build-only EXE 得到 `Valid`；receipt 不能替代正式簽章。
 6. 尚未建立綁定同一 revision、EXE digest、runtime、SBOM、checksum 與工具版本的新 Testing
@@ -45,7 +48,7 @@
 
 ## 歷史與清理政策
 
-- `README.md` 已只保留目前 Development 39.0.6、Stable 1.0 候選、最新能力、安全界線與操作入口；
+- `README.md` 已只保留目前 Development 39.0.7、Stable 1.0 候選、最新能力、安全界線與操作入口；
   舊版細節改由 `docs/README.md` 的唯讀索引與區間 release／roadmap 文件承接。這是資訊收斂，
   不是刪除公開歷史或供應鏈證據。
 - GitHub Releases 上已公開的 EXE、`SHA256SUMS.txt`、`release-info.json`、tag 與附件不可刪除或
@@ -64,11 +67,11 @@
 
 ## 重新評估與正式發布順序
 
-1. 39.0.6 來源 Gate 已完成；人工 UI 證據維持截圖優先。
-2. 2026-07-23 已取得 stage、本機 commit 與 39.0.6 source-freeze 授權並固定精確 clean
-   revision；commit hash 與 tree fingerprint 由交付回報保存，避免自我參照。
-3. 取得 production Ed25519 public identity 與外部私鑰、Windows Authenticode 身分；私鑰不得
-   寫入 Repository、參數紀錄、Log 或套件。
+1. 完成 39.0.7 的來源 Gate；人工 UI 證據維持截圖優先。
+2. 另行取得 stage、本機 commit 與 39.0.7 source-freeze 授權並固定精確 clean revision；
+   commit hash 與 tree fingerprint 由交付回報保存，避免自我參照。
+3. production Ed25519 public identity 與 Repository 外私鑰已建立；仍須取得 Windows
+   Authenticode 身分。私鑰不得寫入 Repository、參數紀錄、Log 或套件。
 4. 另行取得 build 授權後，以 `--channel stable --confirm-stable --build-only` 建立 receipt-bound
    handoff；外部套用並驗證 Authenticode `Valid` 後，另行取得 stage-built 授權再執行
    `--channel stable --confirm-stable --stage-built <work>`。不得沿用單步 Stable build-and-stage。

@@ -1,12 +1,14 @@
 # Development 39.0–40.0 更新紀錄
 
-狀態：Development 39.0.6／G39-08 為
-`SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`；39.0.5／G39-07 已 source-frozen，
+狀態：Development 39.0.7／G39-09 為
+`SOURCE VALIDATED / SOURCE FREEZE WAITING / NO PACKAGE / SAFE_MODE`；39.0.6／G39-08 與
+39.0.5／G39-07 已 source-frozen，
 39.0.4／G39-06、39.0.3／G39-05、39.0.2／G39-04、39.0.1／G39-03 與 39.0.0／G39-02 已
 `SOURCE VALIDATED / NO PACKAGE / SAFE_MODE`。
-使用者已於 2026-07-23 分別授權 Development 39.0.5 與本輪 39.0.6 精確範圍的 stage、
-本機 commit 與 source freeze；39.0.6 是目前後續 Gate 的不可變來源基線。這不授權 push、
-build、建立 EXE、Testing／Stable、簽署、發布或上傳。
+使用者已於 2026-07-23 分別授權 Development 39.0.5 與 39.0.6 精確範圍的 stage、
+本機 commit 與 source freeze；39.0.7 的 production Ed25519 公開身分修正尚未取得
+stage／commit／source-freeze 授權。這不授權 push、build、建立 EXE、Testing／Stable、
+Authenticode、候選簽署、發布或上傳。
 
 ## 39.0.0｜本機格式工廠第一工作包
 
@@ -293,6 +295,40 @@ formats、encoders、filters 與 hwaccels；排程前確認預估輸出加 256 M
   canonical 內建 MOD 預設狀態校正，但未以未執行的 GUI 測試宣稱通過。本工作沒有實際使用
   `--apply`。
 
+## 39.0.7｜production Ed25519 公開身分固定
+
+### Goal、Scope 與 Priority
+
+- **Goal**：把已由 operator 在 Repository 外建立的 production Ed25519 身分之非秘密
+  key ID／raw public key 固定到正式驗證來源，讓候選 preflight 能拒絕錯誤或不相符的私鑰。
+- **Scope**：只修改 `core/security/release_key.py` 的公開資料、Development 修正號、
+  相符回歸與目前文件；私鑰、密碼、PIN、Token、Authenticode 憑證及本機私鑰路徑不進入來源。
+- **Priority**：P0；空白 compiled identity 會讓所有 Stable preflight 必然 fail closed。
+
+### Dependencies、Approach 與 Compatibility
+
+- **Dependencies**：Repository 外私鑰已建立並限制為目前 Windows 使用者與 SYSTEM；公開值以
+  既有 loader 重新導出核對。後續仍依賴 39.0.7 source freeze、build-only 授權及
+  production Authenticode `Valid`。
+- **Approach**：先加入 compiled identity 回歸並在空白設定取得 RED，再只編入公開 key ID／
+  Base64 raw public key；測試同時要求既有 key ID regex 通過且 Base64 嚴格解碼為 32 bytes。
+- **Compatibility**：Development 來源身分升為 `39.0.7`；Stable 仍是 `1.0.0`、Testing 仍是
+  `1.1.0`，UserData、MOD protocol、release manifest 格式與私鑰格式均不變。
+
+### Risk、Rollback 與 Validation
+
+- **Risk**：編入錯誤 public key 會讓正確候選無法簽署或啟動；因此來源與 operator 私鑰已用
+  既有 loader 比對 public key，簽署工具仍會在寫入 manifest 前拒絕不相符私鑰。
+- **Rollback**：在 build 前回復公開身分、39.0.7 版本、回歸與文件即可；不刪除 operator 私鑰、
+  UserData、歷史版本或 39.0.6 source-freeze commit。
+- **Validation**：compiled identity regression 在空白設定得到 `1 failed, 6 passed`；套用公開值後
+  精準 release／version `27 passed`，116 個非 UI 測試檔合計 `1030 passed, 6 skipped`。
+  quality audit `363 / 560`、MOD `7 / 4`、網站 `12 / 33 / 49`、依賴 `10`、版本文件 `4`、
+  保留版本 `5`、Repository 外 compileall `363`、SAFE_MODE verify-only 與 diff check 通過。
+  對歷史 Development 38.0 的 preflight 已不再回報 compiled identity invalid，但仍因舊 MOD、
+  manifest 缺失與 Authenticode `NotSigned` 正確失敗。尚未 build、簽署、stage、建立 Stable、
+  發布或上傳。
+
 ## 參考模板判定
 
 - [FFmpeg](https://ffmpeg.org/download.html)：主要本機引擎；能力必須依實際 build 查證。
@@ -308,6 +344,7 @@ formats、encoders、filters 與 hwaccels；排程前確認預估輸出加 256 M
 ## 40.0
 
 G40-01 現為
-`BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED`。Development 39.0.6 的 stage、
-本機 commit 與 source freeze 已於 2026-07-23 取得明確授權；build、EXE、Testing／Stable、
+`SOURCE FREEZE WAITING / BUILD BLOCKED`。Development 39.0.6 的 stage、本機 commit 與
+source freeze 已完成，但 39.0.7 公開信任身分是新的 material source delta，必須先另行固定；
+build、EXE、Testing／Stable、
 簽署、candidate staging、發布、上傳與 push 仍須各自取得明確授權。

@@ -54,7 +54,7 @@ AniGamer removal. `38.1.16` is the final 38.x source-only identity with
 `SOURCE VALIDATED / PACKAGING INPUT HARDENED / NO PACKAGE / SAFE_MODE`.
 G38-02 is `CLOSED / CANCELLED BY USER SCOPE DECISION / REMOVED / NO RELEASE`.
 G39-01 is complete as `MEASURED / NO CHANGE / NO RELEASE / SAFE_MODE`.
-Development `39.0.6` is the current source identity for G39-08. It retains the
+Development `39.0.7` is the current source identity for G39-09. It retains the
 G39-04 localhost-only Gopeed／P2P runtime MODs, optional Speech to Text runtime
 dependencies, additive format-workshop presets, and new-profile built-in defaults,
 removes the unsupported Gopeed `rawUrl` request field, and adds a minimum-size
@@ -65,8 +65,9 @@ validated before staging. It also adds a dry-run-first, fail-closed local
 release-history prune planner that requires two retained releases, a
 publish-ready Stable, an exact apply confirmation, and no UserData or link-like
 candidate content. It is
-`SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`; G40-01 is now
-`BUILD WAITING / STAGED CANDIDATE + HEADLESS SAFE_MODE EVIDENCE REQUIRED`.
+`SOURCE VALIDATED / SOURCE FREEZE WAITING / NO PACKAGE / SAFE_MODE`; G40-01 is
+`SOURCE FREEZE WAITING / BUILD BLOCKED` until this trust-identity delta is fixed
+to an authorized clean revision.
 G38-01 retains its independent manual-validation blockers.
 The 38.1.8 increment records a material catalog-state correction: a
 structured failure with no accepted item retains the last usable results,
@@ -202,6 +203,13 @@ The default mode is read-only; apply requires exact operator confirmation and
 refuses missing or invalid retained releases, a non-ready Stable, UserData, and
 link-like candidates. Reverting 39.0.6 removes only this planner, its tests,
 version identity, and documentation; it does not delete local history.
+
+Development 39.0.7 compiles only the non-secret production Ed25519 key id and
+raw public key, while the private key remains outside the repository. Its
+regression requires the existing key-id contract and an exact 32-byte decoded
+public key. Reverting 39.0.7 restores the blank compiled identity and therefore
+intentionally blocks Stable preflight; it does not delete or expose the external
+private key.
 
 Patch releases continue to share the same local minor folder (`4.0.1` stages to
 `Version/Development/4.0`) for compatibility with retained releases and offline

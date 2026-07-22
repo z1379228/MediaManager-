@@ -5,8 +5,10 @@
 
 ## 目前狀態
 
-- 目前來源版本為開發版 39.0（核心相容版本 39.0.6），狀態
-  `G39-08 SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`。`38.1.14` 已
+- 目前來源版本為開發版 39.0（核心相容版本 39.0.7），狀態
+  `G39-09 SOURCE VALIDATED / SOURCE FREEZE WAITING / NO PACKAGE / SAFE_MODE`。production
+  Ed25519 的公開 key ID／public key 已編入來源；私鑰保存在 Repository 外，未輸出或提交。
+  `38.1.14` 已
   `SOURCE VALIDATED / SUPERSEDED BY 38.1.15 / NO PACKAGE`；G38-02 已依使用者範圍決定
   `CLOSED / CANCELLED BY USER SCOPE DECISION / REMOVED / NO RELEASE`。既有 UserData、歷史紀錄、
   38.1.0～38.1.14 證據與不可變 Development 38.0 產物保留。G38-01 人工可存取性矩陣仍
@@ -14,8 +16,9 @@
   `MEASURED / NO CHANGE / NO RELEASE / SAFE_MODE`；G39-02 因本機影像 preset 的 failing
   regression 啟動 Development 39.0.0，完整來源 Gate 已通過。使用者於 2026-07-23 已授權
   stage、本機 commit 與 Development 39.0.5 source freeze；同日也已明確授權 G39-08／39.0.6
-  的 stage、本機 commit 與 source freeze，因此 G40-01 恢復為
-  `BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED`。push、build、EXE、
+  的 stage、本機 commit 與 source freeze。39.0.7 是新的 material trust-identity delta，尚未取得
+  stage／commit／source-freeze 授權，因此 G40-01 為
+  `SOURCE FREEZE WAITING / BUILD BLOCKED`。push、build、EXE、
   Testing／Stable、簽署、發布與上傳仍未授權。
 - 39.0.0 將既有、預設停用的 Media Convert 擴充為「本機格式工廠」第一工作包：增加
   PNG／JPEG／WebP 靜態影像轉檔與有界、去識別的 FFmpeg stderr 診斷；不自動安裝第三方
@@ -53,6 +56,11 @@
   保留至少兩個精確版本、其中至少一個是 audit／preflight 通過的 Stable，並對候選內
   UserData 或 link-like 內容 fail closed。精準 `9 passed`，116 個非 UI 測試檔
   `1029 passed, 6 skipped`；本輪尚未刪除任何版本、使用者資料或已公開附件。
+- G39-09／39.0.7 將 production Ed25519 的非秘密公開身分編入
+  `core/security/release_key.py`，並以回歸鎖定 key ID 格式與 raw public key 必須正好
+  32 bytes。精準 release／version `27 passed`，116 個非 UI 測試檔合計
+  `1030 passed, 6 skipped`，來源 Gate 通過；這不包含 Authenticode、build、候選簽署、
+  Stable 建立、發布或上傳。
 - 38.1.16 以完整性釘選清冊逐檔建立 PyInstaller data inputs；純展開證據為
   `87 pinned / 87 expanded / 0 unexpected / 0 missing / 0 contaminating`。未執行 build，
   因此尚未宣稱新 EXE 內容已驗證。
