@@ -1,6 +1,6 @@
 # Development 34.0～40.0 唯一版本更新計畫
 
-狀態：`CANONICAL / 34.0 SOURCE-FROZEN / 35.0～37.0 EXIT GATE DONE / SOURCE ONLY / G38-01 BASELINE FROZEN + MANUAL BLOCKED / G38-02 CLOSED + REMOVED / G39-01 MEASURED + NO RELEASE / G39-02～G39-06 SOURCE VALIDATED + NO PACKAGE / G39-07 39.0.5 SOURCE-FROZEN / G40-01 BUILD WAITING / SAFE_MODE`
+狀態：`CANONICAL / 34.0 SOURCE-FROZEN / 35.0～37.0 EXIT GATE DONE / SOURCE ONLY / G38-01 BASELINE FROZEN + MANUAL BLOCKED / G38-02 CLOSED + REMOVED / G39-01 MEASURED + NO RELEASE / G39-02～G39-06 SOURCE VALIDATED + NO PACKAGE / G39-07 39.0.5 SOURCE-FROZEN / G39-08 39.0.6 SOURCE-FROZEN / G40-01 BUILD WAITING / SAFE_MODE`
 規劃基線：2026-07-18；Development 34.0／核心相容版本 34.0.0 已完成來源凍結，尚未封裝。
 
 本文件重新設計 34.0～40.0 的唯一執行順序，取代 35.0～40.0 單版草案的執行權；
@@ -34,8 +34,11 @@ Development 38.0。G39-01 measurement baseline 已完成且沒有可證 bottlene
   單一 G39-06／Development 39.0.4 版面修正。正式版候選評估再證實 Stable 公開身分錯用核心號、
   build 後立即 stage 沒有 Authenticode 窗口，故啟動 G39-07／Development 39.0.5；其來源修正與
   Gate 已完成。使用者於 2026-07-23 明確授權 stage、本機 commit 與 Development 39.0.5 source
-  freeze；build、EXE、Testing／Stable、簽署、發布、上傳與 push 未授權。G40-01 因而只完成
-  source-freeze precondition，仍等待 build／candidate 授權與 staged verify／headless SAFE_MODE 證據。
+  freeze；build、EXE、Testing／Stable、簽署、發布、上傳與 push 未授權。後續唯讀整理證實
+  `Version` 中存在含 UserData 的舊版本，且 Repository 沒有對應的失敗優先清理工具，
+  因此啟動唯一 G39-08／Development 39.0.6。使用者於 2026-07-23 明確授權其 stage、
+  本機 commit 與 source freeze；G40-01 因而恢復 build waiting，仍缺 staged candidate／
+  headless SAFE_MODE 證據。
 
 ## 目標與非目標
 
@@ -103,7 +106,8 @@ Development 38.0。G39-01 measurement baseline 已完成且沒有可證 bottlene
 7. G38-01 人工矩陣仍個別保持 `MANUAL BLOCKED`；G38-02 已由明確 scope 決策關閉並移除。
    G39-01 已保存固定 workload measurement baseline；沒有可證瓶頸，故以
    `MEASURED / NO CHANGE / NO RELEASE / SAFE_MODE` 完成。G39-02 只實作有 failing regression 的
-   本機格式工廠工作包；參考產品本身不構成 scope。G40-01 在 source freeze 後保持 `BUILD WAITING`，
+   本機格式工廠工作包；參考產品本身不構成 scope。G39-08 只建立預設 dry-run，
+   並對 Stable／UserData／link-like 邊界 fail closed。G40-01 已在新 source freeze 後恢復 `BUILD WAITING`，
    不得以[參考軟體功能矩陣](comparable-software-options.md)自動跨 Gate。
 
 ## 依賴執行順序與版本內 Priority
@@ -124,7 +128,8 @@ Development 38.0。G39-01 measurement baseline 已完成且沒有可證 bottlene
 | 12 | G39-05 | 39.0.3-P1 | `SOURCE VALIDATED / NO PACKAGE / SAFE_MODE` | 移除 Gopeed 官方 `Request` schema 不接受的 `rawUrl`，以 exact request-body regression 鎖定 direct create 與 P2P resolve 共用 payload；非 UI `1011 passed, 6 skipped`，不擴張 transport scope。 |
 | 13 | G39-06 | 39.0.4-P1 | `SOURCE VALIDATED / NO PACKAGE / SAFE_MODE` | 人工截圖證實 Gopeed／P2P 工作區在有限高度下壓扁設定 card；加入 `workspaceScroll` 與 minimum-size layout contract，空間不足時垂直捲動而不重疊。非 UI `1012 passed, 6 skipped`；修正版人工截圖待確認。 |
 | 14 | G39-07 | 39.0.5-P0 | `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE` | Stable 公開身分與 UI display 固定為獨立 1.0.0／「正式版 1.0」；release operator 拆成 receipt-bound build-only 與 Authenticode `Valid` 後 stage-built。display RED `1 failed, 3 passed`、精準封裝／版本 GREEN `45 passed`、非 UI `1019 passed, 6 skipped`；2026-07-23 已授權 stage、本機 commit 與 source freeze，未實際 build、簽署或 push。 |
-| 15 | G40-01 | 40.0-P0 | `SOURCE FREEZE AUTHORIZED / BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED` | source-only verify-only 已有精確 SAFE_MODE stdout，39.0.5 source freeze 已授權，但既有 38.0 包不是目前來源候選。build／candidate、EXE、Testing／Stable、簽署、發布、上傳與 push 仍須逐項明確授權；後續只可從本輪 exact source freeze 產生一次不可覆寫候選。 |
+| 15 | G39-08 | 39.0.6-P0 | `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE` | 建立預設 dry-run 的本機版本歷史整理計畫；至少保留兩版且包含 publish-ready Stable，UserData、link-like、意外目錄或計畫後變更均 fail closed，apply 另需 exact confirmation 並重驗完整計畫。RED 為缺少模組的 collection error，精準 GREEN `9 passed`、非 UI `1029 passed, 6 skipped`；2026-07-23 已授權 stage、本機 commit 與 source freeze，未實際刪除。 |
+| 16 | G40-01 | 40.0-P0 | `BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED` | source-only verify-only 已有精確 SAFE_MODE stdout；39.0.6 已固定為目前 source freeze。build／candidate、EXE、Testing／Stable、簽署、發布、上傳與 push 仍須逐項明確授權。 |
 
 Stable-only Gate 不屬於 Development 40.0 的執行排名；只有使用者明確選擇 Stable 後，
 G40-02 才成為該獨立通道的 P0：sign-before-stage、channel-aware exact signed set、
@@ -1414,11 +1419,53 @@ IN_PROGRESS 工作；G40-01 繼續等待另行授權。
 - **Exit Gate**：來源工作標記 `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`。只有另行授權並提供
   production 身分後，才可在 G40 執行真實 build／sign／stage／preflight。
 
+### G39-08｜本機版本歷史整理安全邊界
+
+**Status**：`SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`。39.0.5 source-freeze commit 保留不變；
+使用者已於 2026-07-23 明確授權這個 material source delta 的 stage、本機 commit 與 source freeze。
+
+- **Goal**：在 Stable 1.0 已驗證、已上傳且上傳後 digest 一致時，為本機舊版本提供一份
+  先審閱、後確認的精確刪除計畫；預設永遠不刪除。
+- **Scope**：只處理 `Version` 下 legacy `X.Y` 與三個 release track 的精確版本資料夾；
+  不處理 Git 追蹤的 release／roadmap 文件、GitHub Releases、UserData、`.work` 或 `dist`。
+- **Priority**：P0；使用者的最終目標包含清理舊檔，而唯讀盤點證實 Development 16.1
+  內嵌 UserData，且 audit log 與當前 UserData 不相同，不可使用 broad delete。
+- **Dependencies**：至少兩個使用者明列的保留版本，其中至少一個 Stable 必須同時通過
+  `audit_versions` 與 `release_preflight`；實際清理另需上傳後 digest 證據與獨立授權。
+- **Approach**：`tools.prune_local_history` 默認 dry-run，輸出精確候選、檔案數與 bytes。
+  discovery 只接受版本資料夾；候選含 UserData、symlink、junction／reparse point、
+  無法讀取內容或重掃結果變化即整批拒絕。apply 需要精確
+  `DELETE-LOCAL-RELEASE-HISTORY` 確認，且不接受單一 keep 或自動推論。
+- **Compatibility**：Development 核心升為 `39.0.6`；Stable `1.0.0`、Testing `1.1.0`、UserData
+  schema、MOD protocol 與已公開附件不變。
+- **Risk**：刪除後無法從本機就地 rollback；因此 dry-run 本身不將 Stable preflight 視為
+  upload 證據，真正 apply 仍必須由 G40 operator 先驗證備份／上傳。
+- **Protected-data evidence**：唯讀盤點確認 `Version/Development/16.1/UserData` 有 6 個檔案、
+  86,566 bytes；5 個與目前 UserData 的同路徑檔案相同，舊 `Logs/audit.jsonl` 則不同且不是
+  目前檔案的行前綴。它必須在 prune 前獨立保存到 `Version` 外並以逐檔 hash 驗證，不可直接
+  覆寫目前 audit 或把整個版本當成一般候選刪除。
+- **Capacity evidence**：2026-07-23 `Version` 快照有 42 個 release 目錄、3,983 個檔案、
+  15,344,278,530 bytes；排除預計保留的 `Development/38.0` 後，41 個現有候選為
+  3,866 個檔案、14,789,775,742 bytes。這只是上限估算，未滿足 Stable／UserData／upload
+  Gate 前不可 apply。
+- **Rollback**：apply 前可完整回復工具、regression、39.0.6 身分與文件，不影響本機歷史。
+  apply 後只能從已驗證備份復原，所以目前不執行。
+- **Validation**：先以缺少 `tools.prune_local_history` 得到 collection RED；實作後精準
+  regression `9 passed`，包含 dry-run 後保留版失效時拒絕 apply。116 個非 UI 測試檔
+  `1029 passed, 6 skipped`；quality audit `363 / 560`、MOD `7 / 4`、網站 `12 / 33 / 49`、
+  依賴 `10`、版本文件 `4`、保留版本 `5`、Repository 外 compileall、SAFE_MODE verify-only
+  與 diff Gate 均通過。24 個含 Qt／PySide GUI 操作的測試檔依截圖優先政策未重跑；一次誤納
+  GUI 的廣泛 runner 曾以兩個 stale「預設停用」測試假設失敗，測試來源已依 canonical 內建
+  MOD 預設狀態校正，但該未重跑的 GUI 組不列為通過證據。
+- **Exit Gate**：已前進為 `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`；G40-01 恢復 build-waiting
+  狀態，但 build／candidate 及其後續操作仍需逐項授權。
+
 ## 40.0｜可重現候選與發行完整性
 
-**Status**：`SOURCE FREEZE AUTHORIZED / BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED`。
-G39-07 的 stage、本機 commit 與 source freeze 已於 2026-07-23 授權；未取得 build／candidate、
-EXE、Testing／Stable、簽署、發布、上傳或 push 的逐項明確授權前不啟動後續操作。Stable-only
+**Status**：`BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED`。
+G39-08／39.0.6 的 stage、本機 commit 與 source freeze 已於 2026-07-23 取得明確授權；未取得
+build／candidate、EXE、Testing／Stable、簽署、發布、上傳或 push 的逐項明確授權前不啟動
+後續操作。Stable-only
 G40-02 仍受正式簽署身分與通道決定阻擋。
 
 - **Goal**：在另行授權後，從 clean revision 產生可驗證、可回退且明確為 unsigned

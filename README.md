@@ -5,8 +5,10 @@
 
 ## 目前狀態
 
-- 目前來源版本為開發版 39.0（核心相容版本 39.0.5）；G39-07 狀態為
-  `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`。
+- 目前來源版本為開發版 39.0（核心相容版本 39.0.6）；G39-08 已於 2026-07-23 取得
+  stage、本機 commit 與 source-freeze 授權，狀態為 `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`。
+  39.0.5 source freeze 保留為不可變本機 commit，但已由 39.0.6 取代；G40-01 現為
+  `BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED`。
 - 正式版目標：Stable `1.0.0`，目前 `ready: false`；尚未建立、簽署、發布或上傳。
 - 最新來源更新：
   - 格式工廠新增固定的影片、音訊、影像與字幕 preset，並加入 FFmpeg 能力、磁碟及
@@ -16,8 +18,11 @@
   - Speech to Text 的 `whisper-cli` 與語音模型保持選用；未安裝不影響核心功能。
   - Stable 發行操作已拆成 receipt-bound `build-only` 與 Authenticode 驗證後的
     `stage-built`，避免先產生 checksum 再修改 EXE。
-- 最新非 UI 驗證：`1019 passed, 6 skipped`；封裝與版本精準回歸
-  `45 passed`。Ruff、quality audit、MOD、網站、依賴鎖、版本文件、保留版本、
+  - 本機歷史整理新增 dry-run-first `tools.prune_local_history`；只會規劃 `Version`
+    內精確版本目錄，必須保留至少兩版且包含已通過 preflight 的 Stable，任一候選
+    含 UserData、junction、reparse point 或 link 即整批拒絕。預設不刪除任何檔案。
+- 最新非 UI 驗證：116 個測試檔 `1029 passed, 6 skipped`；歷史整理精準回歸
+  `9 passed`。Ruff、quality audit、MOD、網站、依賴鎖、版本文件、保留版本、
   Repository 外 compileall、SAFE_MODE verify-only 與 `git diff --check` 均已通過。
 - 動畫瘋整合已於 Development 38.1.15 依範圍決定從目前來源及 runtime 註冊移除；
   舊 UserData、工程證據及不可變 Development 38.0 基線仍保留，且不會轉接到通用下載器。

@@ -417,6 +417,11 @@ def test_facebook_and_mega_workspaces_enable_and_route_independently(
         app.processEvents()
         assert mega_panel.scroll_area.horizontalScrollBar().maximum() == 0
         assert mega_panel.scroll_area.verticalScrollBar().maximum() > 0
+        assert facebook_panel.enabled.isChecked()
+        assert mega_panel.enabled.isChecked()
+        facebook_panel.enabled.setChecked(False)
+        mega_panel.enabled.setChecked(False)
+        app.processEvents()
         assert not facebook_panel.enabled.isChecked()
         assert not mega_panel.enabled.isChecked()
         assert facebook_panel.workspace_title.text() == "Facebook 下載工作區"

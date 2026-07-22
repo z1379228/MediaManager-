@@ -40,7 +40,7 @@ def test_repository_version_documentation_is_consistent() -> None:
 
     assert report.valid, report.errors
     assert report.checked == 4
-    assert report.core_version == "39.0.5"
+    assert report.core_version == "39.0.6"
 
 
 def test_audit_rejects_canonical_source_mismatch(tmp_path: Path) -> None:

@@ -1,10 +1,12 @@
 # Development 39.0–40.0 更新紀錄
 
-狀態：Development 39.0.5／G39-07 為
-`SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`；39.0.4／G39-06、39.0.3／G39-05、39.0.2／G39-04、39.0.1／G39-03 與 39.0.0／G39-02 已
+狀態：Development 39.0.6／G39-08 為
+`SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`；39.0.5／G39-07 已 source-frozen，
+39.0.4／G39-06、39.0.3／G39-05、39.0.2／G39-04、39.0.1／G39-03 與 39.0.0／G39-02 已
 `SOURCE VALIDATED / NO PACKAGE / SAFE_MODE`。
-使用者已於 2026-07-23 授權本輪精確範圍的 stage、本機 commit 與 Development 39.0.5 source
-freeze；這不授權 push、build、建立 EXE、Testing／Stable、簽署、發布或上傳。
+使用者已於 2026-07-23 分別授權 Development 39.0.5 與本輪 39.0.6 精確範圍的 stage、
+本機 commit 與 source freeze；39.0.6 是目前後續 Gate 的不可變來源基線。這不授權 push、
+build、建立 EXE、Testing／Stable、簽署、發布或上傳。
 
 ## 39.0.0｜本機格式工廠第一工作包
 
@@ -243,6 +245,54 @@ formats、encoders、filters 與 hwaccels；排程前確認預估輸出加 256 M
   此純文件更新不升修正號；version docs 與相符回歸 `19 passed`、compileall、版本稽核、
   SAFE_MODE verify-only 及 diff check 通過。
 
+## 39.0.6｜本機歷史安全整理計畫器
+
+### Goal、Scope 與 Priority
+
+- **Goal**：在 Stable 1.0 已驗證並上傳後，為「本機只保留目前與上一版」提供
+  可審閱、可回復、預設不刪除的精確計畫，避免人工 wildcard 誤刪 UserData 或供應鏈證據。
+- **Scope**：新增 `tools.prune_local_history` 及其 regression；僅處理 `Version` 根目錄的
+  legacy `X.Y` 與 `Development/`、`Testing/`、`Stable/` 精確版本資料夾。不處理
+  `docs/`、GitHub Releases、UserData、`.work`、`dist` 或外部附件。
+- **Priority**：P0；本機歷史已含內嵌 UserData，且使用者最終目標包含刪除舊檔，
+  必須在任何不可逆操作前補上失敗優先邊界。
+
+### Dependencies、Approach 與 Compatibility
+
+- **Dependencies**：精確的保留版本清單、至少一個已通過 `audit_versions` 與
+  `release_preflight` 的 Stable、上傳後 digest 證據，以及實際刪除的獨立明確授權。
+- **Approach**：預設 dry-run；要求至少兩個唯一且精確的 `--keep`，其中一個
+  必須為 publish-ready Stable。所有候選先計數與重掃，發現 UserData、symlink、junction、
+  reparse point、意外根目錄內容或中途變更即整批拒絕；apply 前會重驗保留版與
+  Stable preflight，並另需精確
+  `DELETE-LOCAL-RELEASE-HISTORY` 確認字串。
+- **Compatibility**：Development 來源身分升為 `39.0.6`；Stable `1.0.0`、Testing `1.1.0`、
+  UserData schema、MOD protocol 與已保留的 release 內容均不變。
+
+### Risk、Rollback 與 Validation
+
+- **Risk**：刪除本質上無法從本機還原；因此工具不會推論 Stable、不自動遷移
+  UserData、不刪除 Git 追蹤文件，也不將「已建立 Stable」當成「已上傳」。後者仍由
+  G40 operator 在 apply 前人工核對。
+- **Protected-data evidence**：唯讀盤點確認 `Version/Development/16.1/UserData` 有 6 個檔案、
+  86,566 bytes；其中 5 個與目前 `UserData` 的同路徑檔案完全一致，但舊 `Logs/audit.jsonl`
+  與目前檔案不同，且不是目前檔案的行前綴。它不得被合併覆寫或隨版本直接刪除；真正
+  prune 前必須先保存到獨立、非 `Version` 的使用者資料／備份位置並驗證逐檔 hash。
+- **Capacity evidence**：2026-07-23 唯讀快照為 42 個 release 目錄、3,983 個檔案、
+  15,344,278,530 bytes。排除預計保留的 `Development/38.0` 後，現有 41 個候選合計
+  3,866 個檔案、14,789,775,742 bytes；這只是清理上限，不代表可越過 Stable、UserData
+  或上傳後 digest Gate。
+- **Rollback**：在 apply 前只需回復工具、測試、39.0.6 身分與文件；尚未刪除任何檔案。
+  apply 後只能從已核對的外部備份／上傳附件復原，因此未取得該證據與授權時不執行。
+- **Validation**：RED 為缺少模組時 collection error；實作後精準回歸 `9 passed`，
+  包含 dry-run 後保留版失效時 apply 拒絕且候選仍存在。
+  116 個非 UI 測試檔 `1029 passed, 6 skipped`；quality audit `363 / 560`、MOD `7 / 4`、
+  網站 `12 / 33 / 49`、依賴 `10`、版本文件 `4`、保留版本 `5`、Repository 外 compileall、
+  SAFE_MODE verify-only 與 diff Gate 均通過。依截圖優先政策，24 個含 Qt／PySide GUI 操作的測試檔
+  未重跑；一次誤納 GUI 的廣泛 runner 曾以兩個 stale「預設停用」測試假設失敗，測試來源已依
+  canonical 內建 MOD 預設狀態校正，但未以未執行的 GUI 測試宣稱通過。本工作沒有實際使用
+  `--apply`。
+
 ## 參考模板判定
 
 - [FFmpeg](https://ffmpeg.org/download.html)：主要本機引擎；能力必須依實際 build 查證。
@@ -257,7 +307,7 @@ formats、encoders、filters 與 hwaccels；排程前確認預估輸出加 256 M
 
 ## 40.0
 
-G40-01 前進為
-`SOURCE FREEZE AUTHORIZED / BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED`。
-Development 39.0.5 的 stage、本機 commit 與 source freeze 已逐項授權；build、EXE、
-Testing／Stable、簽署、candidate staging、發布、上傳與 push 仍須各自取得明確授權。
+G40-01 現為
+`BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED`。Development 39.0.6 的 stage、
+本機 commit 與 source freeze 已於 2026-07-23 取得明確授權；build、EXE、Testing／Stable、
+簽署、candidate staging、發布、上傳與 push 仍須各自取得明確授權。

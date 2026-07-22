@@ -54,16 +54,19 @@ AniGamer removal. `38.1.16` is the final 38.x source-only identity with
 `SOURCE VALIDATED / PACKAGING INPUT HARDENED / NO PACKAGE / SAFE_MODE`.
 G38-02 is `CLOSED / CANCELLED BY USER SCOPE DECISION / REMOVED / NO RELEASE`.
 G39-01 is complete as `MEASURED / NO CHANGE / NO RELEASE / SAFE_MODE`.
-Development `39.0.5` is the current source identity for G39-07. It retains the
+Development `39.0.6` is the current source identity for G39-08. It retains the
 G39-04 localhost-only Gopeed／P2P runtime MODs, optional Speech to Text runtime
 dependencies, additive format-workshop presets, and new-profile built-in defaults,
 removes the unsupported Gopeed `rawUrl` request field, and adds a minimum-size
 scroll contract to prevent the Transfer workspace from collapsing at limited
 window heights. It also fixes Stable's independent public identity at `1.0.0`
 and provides a receipt-bound build-only／stage-built operator so Authenticode is
-validated before staging. It remains
-`SOURCE VALIDATED / NO PACKAGE / SAFE_MODE`; G40-01 remains
-`WAITING / AUTHORIZATION + STAGED VERIFY/HEADLESS SAFE_MODE EVIDENCE REQUIRED`.
+validated before staging. It also adds a dry-run-first, fail-closed local
+release-history prune planner that requires two retained releases, a
+publish-ready Stable, an exact apply confirmation, and no UserData or link-like
+candidate content. It is
+`SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`; G40-01 is now
+`BUILD WAITING / STAGED CANDIDATE + HEADLESS SAFE_MODE EVIDENCE REQUIRED`.
 G38-01 retains its independent manual-validation blockers.
 The 38.1.8 increment records a material catalog-state correction: a
 structured failure with no accepted item retains the last usable results,
@@ -193,6 +196,12 @@ and wheel SHA-256; Stable staging additionally requires Authenticode `Valid`.
 Reverting 39.0.5 restores the previous identity/operator, regression, version,
 and documentation; it does not delete UserData, retained versions, public assets,
 or an unissued signing work directory.
+
+Development 39.0.6 adds the local-history prune planner and regression suite.
+The default mode is read-only; apply requires exact operator confirmation and
+refuses missing or invalid retained releases, a non-ready Stable, UserData, and
+link-like candidates. Reverting 39.0.6 removes only this planner, its tests,
+version identity, and documentation; it does not delete local history.
 
 Patch releases continue to share the same local minor folder (`4.0.1` stages to
 `Version/Development/4.0`) for compatibility with retained releases and offline
