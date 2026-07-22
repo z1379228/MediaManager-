@@ -33,6 +33,49 @@ listed SHA-256 digest matches.
 Authenticode changes PE bytes. Applying it after `SHA256SUMS.txt` or the Ed25519
 manifest has been generated invalidates those records and is forbidden.
 
+## How to provide the production identity safely
+
+Only the following public values may be supplied to Codex or committed to this
+repository:
+
+```text
+key_id: <stable identifier>
+public_key_base64: <Base64 encoding of the raw 32-byte Ed25519 public key>
+```
+
+The key id must match `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`. The public value must
+decode to exactly 32 bytes. These values are not secrets, but changing either
+one changes the compiled trust identity and therefore requires a new source
+revision, validation and source freeze.
+
+Keep the Ed25519 private key in an operator-controlled path outside the
+repository, `.work`, `Version`, build directories and synced chat attachments.
+Do not paste the private key, its raw seed, a certificate private key, password,
+PIN, token or recovery material into a Codex task, command history, log or
+versioned file. When the final staged directory exists, the operator supplies
+that local path directly to `tools.sign_release`:
+
+```powershell
+.\.venv\Scripts\python.exe -m tools.sign_release `
+  --root Version\Stable\1.0 `
+  --private-key <absolute-private-key-path-outside-repository>
+```
+
+Authenticode credentials are handled separately. After `build-only`, sign the
+exact `.work\Stable\1.0-attempt-*\MediaManager.exe` with the organization-approved
+external signing tool or service. Do not give Codex the certificate private key,
+PIN or service token. Return only the work-directory path and non-secret status
+evidence; MediaManager independently requires this command to report `Valid`:
+
+```powershell
+Get-AuthenticodeSignature -LiteralPath `
+  <receipt-work-directory>\MediaManager.exe | Select-Object Status, StatusMessage
+```
+
+If no production Ed25519 identity or trusted Authenticode signing identity exists,
+stop before `build-only`. A disposable key, self-signed certificate, copied
+signature or relaxed preflight cannot be used for Stable.
+
 ## Metadata anchors
 
 Stable 簽章檔案集合由 `stable_signed_files()` 產生，除執行期檔案外也包含版本相符的
@@ -42,7 +85,7 @@ wheel、`release-info.json` 與 `SHA256SUMS.txt`。因此公開下載附件的�
 
 ## Current tooling status
 
-Development 39.0.5 provides the tested split-phase Stable operator. The old
+Development 39.0.6 provides the tested split-phase Stable operator. The old
 single-command Stable procedure remains prohibited. After stage／commit／source
 freeze and build authorization, create only the receipt-bound handoff:
 
