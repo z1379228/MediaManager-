@@ -8,6 +8,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from contracts.discovery_v1 import DiscoveryItemV1
 from contracts.search_v2 import SearchCapabilityV2, SearchPageV2, SearchQueryV2
+from core.logging.redaction import bounded_redacted_text
 
 SearchCallable = Callable[[SearchQueryV2], SearchPageV2]
 _MAX_SEARCH_SOURCES = 16
@@ -112,7 +113,11 @@ class SearchAdapterRegistry:
                 failures.append(
                     SearchAdapterFailure(
                         provider_id,
-                        str(error)[:300] or type(error).__name__,
+                        bounded_redacted_text(
+                            str(error),
+                            max_utf8_bytes=300,
+                        )
+                        or type(error).__name__,
                         category,
                     )
                 )

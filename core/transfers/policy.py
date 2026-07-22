@@ -1,14 +1,13 @@
-"""Fail-closed policy contracts for optional Gopeed and P2P MODs.
+"""Fail-closed policy contracts for the optional Gopeed and P2P MODs.
 
 This module deliberately contains no network client, torrent engine, process
-launcher, port opener, or token persistence.  It validates a future MOD's
-configuration before that MOD can be considered for installation or runtime
-registration.
+launcher, port opener, or token persistence. It validates the runtime MOD
+configuration before an explicit user action may contact localhost Gopeed.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import urlsplit
@@ -60,7 +59,7 @@ class GopeedBridgeConfig:
 
     enabled: bool = False
     endpoint: str = "http://127.0.0.1:9999"
-    token: str = ""
+    token: str = field(default="", repr=False)
     request_timeout_seconds: int = 10
     max_tasks: int = 1
     auto_start: bool = False
@@ -69,7 +68,7 @@ class GopeedBridgeConfig:
 
 @dataclass(frozen=True, slots=True)
 class P2PTransferPolicy:
-    """Bounded policy data for a future, separately installed P2P MOD."""
+    """Bounded policy data for the separately gated P2P runtime MOD."""
 
     enabled: bool = False
     storage_root: Path | None = None
@@ -204,8 +203,8 @@ def validate_p2p_transfer_policy(value: object) -> P2PTransferPolicy:
     """Validate P2P limits and explicit legal/network choices.
 
     This does not start an engine.  It rejects built-in search and automatic
-    port forwarding so a future MOD must provide its own explicit UI and
-    security review before it can be registered.
+    port forwarding; the runtime MOD therefore exposes only explicit,
+    user-supplied links through its trusted UI.
     """
 
     raw = _mapping(value, _P2P_KEYS, "P2P")
@@ -254,6 +253,10 @@ def validate_p2p_transfer_policy(value: object) -> P2PTransferPolicy:
     seeding_enabled = _bool(raw.get("seeding_enabled", False), "P2P seeding_enabled")
     if not legal_use_confirmed:
         raise TransportBoundaryError("P2P requires explicit legal-use confirmation")
+    if not upload_enabled or upload_limit <= 0:
+        raise TransportBoundaryError(
+            "P2P requires explicit upload acknowledgement and a positive upload limit"
+        )
     if seeding_enabled and (not upload_enabled or upload_limit <= 0):
         raise TransportBoundaryError("P2P seeding requires an upload limit")
     listen_port_value = raw.get("listen_port")

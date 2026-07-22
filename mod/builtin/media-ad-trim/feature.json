@@ -3,7 +3,7 @@
   "provider_id": "media-ad-trim",
   "display_name": "Local Ad Segment Trim",
   "kind": "local-feature",
-  "default_enabled": false,
+  "default_enabled": true,
   "parent_provider_id": "media-convert",
   "permissions": [
     "storage.user-selected.read",

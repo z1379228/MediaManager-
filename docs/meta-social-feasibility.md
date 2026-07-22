@@ -2,10 +2,11 @@
 
 Review date: 2026-07-16
 Current decision: the official-page and export bridges remain. The current
-source includes a separate, disabled-by-default Facebook public-video MOD;
-Instagram is now a disabled-by-default parent MOD with separate official-page
+source includes a separate Facebook public-video MOD enabled on new profiles;
+Instagram is now a new-profile-enabled parent MOD with separate official-page
 and data-export child MODs. Development 12.2 gives Threads the same independent
 parent/child official-tools structure without adding a download provider.
+Existing saved enable/disable choices remain unchanged.
 
 ## Evidence
 

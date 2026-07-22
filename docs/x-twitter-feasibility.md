@@ -4,8 +4,8 @@ Review date: 2026-07-16
 
 ## Decision
 
-The current source provides an independent, disabled-by-default `twitter`
-parent MOD with two trusted child MODs:
+The current source provides an independent, new-profile-enabled `twitter`
+parent MOD with two trusted child MODs; existing saved choices are preserved:
 
 - `twitter-page` validates an official `x.com` or `twitter.com` status URL,
   canonicalizes it to HTTPS on `x.com`, and opens it only after a user click.

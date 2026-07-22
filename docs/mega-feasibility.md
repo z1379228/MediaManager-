@@ -1,7 +1,8 @@
 # MEGA website MOD feasibility
 
-Status: the current source implements a disabled-by-default public file/folder
-adapter backed by the official `mega-get` command.
+Status: the current source implements a public file/folder adapter that is
+enabled on new profiles and backed by the official `mega-get` command. Saved
+user choices remain authoritative.
 
 ## Why MEGA needs a dedicated MOD
 

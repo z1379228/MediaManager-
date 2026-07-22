@@ -60,8 +60,11 @@ def test_official_social_workspace_gates_child_tools_and_opens_only_validated_ur
     context = Bootstrap(portable=True).initialize()
     panel = None
     try:
-        assert not context.features.is_enabled(site_family)
-        set_builtin_mod_enabled(context, site_family, True)
+        assert context.features.is_enabled(site_family)
+        assert context.features.is_enabled(page_id)
+        assert context.features.is_enabled(export_id)
+        set_builtin_mod_enabled(context, page_id, False)
+        set_builtin_mod_enabled(context, export_id, False)
         panel = create_official_social_workspace(
             context,
             site_family=site_family,

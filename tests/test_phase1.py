@@ -137,6 +137,15 @@ class PhaseOneTests(unittest.TestCase):
             ):
                 self.assertNotIn(secret, result)
 
+    def test_bounded_redaction_is_idempotent_for_cookie_marker(self) -> None:
+        value = "Cookie: session=cookie-secret-value"
+
+        once = bounded_redacted_text(value)
+        twice = bounded_redacted_text(once)
+
+        self.assertEqual(once, "Cookie: [REDACTED]")
+        self.assertEqual(twice, once)
+
     def test_redacts_absolute_paths_without_hiding_diagnostic_fields(self) -> None:
         value = (
             r"failed at C:\Users\Alice,Smith\Private\media.mp4 "

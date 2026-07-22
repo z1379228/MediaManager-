@@ -1,4 +1,7 @@
-from core.site_routing import SiteRoute, classify_site_url
+from core.site_routing import (
+    SiteRoute,
+    classify_site_url,
+)
 
 
 def test_youtube_and_music_share_one_family_with_strict_resource_kinds() -> None:
@@ -60,17 +63,6 @@ def test_other_sites_get_distinct_families_and_provider_roles() -> None:
     assert classify_site_url(
         "https://www.mega.nz/folder/AbCdEf12#abcdefghijklmnop"
     ) == SiteRoute("mega", "public-folder", "mega", None)
-    assert classify_site_url(
-        "https://ani.gamer.com.tw/animeRef.php?sn=123"
-    ) == SiteRoute("ani-gamer", "series", None, "ani-gamer-search")
-    assert classify_site_url(
-        "https://ani.gamer.com.tw/animeVideo.php?sn=456"
-    ) == SiteRoute(
-        "ani-gamer",
-        "episode",
-        None,
-        "ani-gamer-episodes",
-    )
 
 
 def test_non_media_pages_do_not_claim_a_download_owner() -> None:
@@ -94,6 +86,20 @@ def test_bilibili_search_subdomain_rejects_non_search_or_ambiguous_urls() -> Non
         "https://search.bilibili.com/all?keyword=one&page=2",
         "https://search.bilibili.com/video/BV1example?keyword=one",
         "https://search.bilibili.com.evil.test/all?keyword=one",
+    ):
+        assert classify_site_url(url) is None
+
+
+def test_retired_ani_gamer_routes_are_unowned() -> None:
+    for url in (
+        "https://ani.gamer.com.tw/animeRef.php?sn=123",
+        "https://ani.gamer.com.tw/animeVideo.php?sn=456",
+        "https://ani.gamer.com.tw/animeRef.php?sn=123&extra=1",
+        "https://ani.gamer.com.tw/animeVideo.php?sn=456&download=1",
+        "https://ani.gamer.com.tw/animeVideo.php?sn=456&sn=457",
+        "https://ani.gamer.com.tw/animeVideo.php?SN=456",
+        "https://ani.gamer.com.tw/animeVideo.php?%73n=456",
+        "https://ani.gamer.com.tw/animeVideo.php?sn=%34%35%36",
     ):
         assert classify_site_url(url) is None
 

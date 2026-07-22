@@ -145,8 +145,10 @@ def create_builtin_mod_panel(context: object, parent: object = None) -> object:
     page.addWidget(summary)
 
     feature_guide = QLabel(
-        "使用方式：Media Convert 需先安裝 FFmpeg；Speech to Text 需 whisper-cli "
-        "與語音模型；Automation 必須先啟用 Automation MOD，再到自動化頁建立規則。"
+        "使用方式：格式工廠需先安裝 FFmpeg；Speech to Text 可先啟用並管理模型，"
+        "開始轉錄前才需要選用的 whisper-cli 與語音模型；Gopeed / P2P 只連線至"
+        "使用者自行啟動的 localhost Gopeed；Automation 必須先啟用 Automation MOD，"
+        "再到自動化頁建立規則。"
     )
     feature_guide.setObjectName("modUsageGuide")
     feature_guide.setWordWrap(True)

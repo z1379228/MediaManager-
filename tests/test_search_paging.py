@@ -30,7 +30,7 @@ def test_provider_next_cursor_is_bound_to_the_requested_provider() -> None:
 
     assert provider_next_cursor(response, "youtube-search") == "youtube-token"
     assert provider_next_cursor(response, "bilibili-search") == "bili-token"
-    assert provider_next_cursor(response, "ani-gamer-search") == ""
+    assert provider_next_cursor(response, "missing-search") == ""
 
 
 def test_provider_next_cursor_rejects_oversized_tokens() -> None:

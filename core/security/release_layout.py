@@ -1,5 +1,7 @@
 """Files that must be present in a complete MediaManager release."""
 
+from pathlib import Path
+
 from core.downloads.builtin_integrity import BUILTIN_PROVIDER_HASHES
 
 SOURCE_RELEASE_FILES = (
@@ -27,16 +29,6 @@ SOURCE_RELEASE_FILES = (
     "mod/builtin/bilibili-search/provider.py",
     "mod/builtin/bilibili-search/provider.json",
     "mod/builtin/bilibili-danmaku/feature.json",
-    "mod/builtin/ani-gamer/feature.json",
-    "mod/builtin/ani-gamer/group.json",
-    "mod/builtin/ani-gamer/locales/en.json",
-    "mod/builtin/ani-gamer/locales/ja.json",
-    "mod/builtin/ani-gamer/locales/zh-CN.json",
-    "mod/builtin/ani-gamer/locales/zh-TW.json",
-    "mod/builtin/ani-gamer-search/provider.py",
-    "mod/builtin/ani-gamer-search/provider.json",
-    "mod/builtin/ani-gamer-episodes/provider.py",
-    "mod/builtin/ani-gamer-episodes/provider.json",
     "mod/builtin/generic-ytdlp/provider.py",
     "mod/builtin/generic-ytdlp/provider.json",
     "mod/builtin/generic-ytdlp/site-matrix.json",
@@ -87,6 +79,37 @@ PINNED_BUILTIN_RELEASE_FILES = tuple(
 SOURCE_RELEASE_FILES += tuple(
     path for path in PINNED_BUILTIN_RELEASE_FILES if path not in SOURCE_RELEASE_FILES
 )
+
+
+def pinned_builtin_pyinstaller_datas(
+    root: Path,
+) -> tuple[tuple[str, str], ...]:
+    """Return exact PyInstaller data entries for integrity-pinned built-ins.
+
+    PyInstaller recursively expands directory data entries, including ignored
+    bytecode and tool caches that are outside the signed release inventory.
+    Resolve every pinned file explicitly so unlisted workspace residue cannot
+    change an executable without changing the source fingerprint.
+    """
+
+    source_root = root.resolve()
+    datas: list[tuple[str, str]] = []
+    for name in PINNED_BUILTIN_RELEASE_FILES:
+        relative_path = Path(*name.split("/"))
+        source = source_root / relative_path
+        if source.is_symlink() or not source.is_file():
+            raise FileNotFoundError(
+                f"pinned built-in release file is missing or unsafe: {name}"
+            )
+        resolved = source.resolve()
+        try:
+            resolved.relative_to(source_root)
+        except ValueError as exc:
+            raise ValueError(
+                f"pinned built-in release file escapes the source root: {name}"
+            ) from exc
+        datas.append((str(resolved), relative_path.parent.as_posix()))
+    return tuple(datas)
 
 GENERATED_RELEASE_FILES = (
     "dependency-inventory.json",

@@ -17,6 +17,23 @@ class ConversionState(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class ConversionCapabilities:
+    """Observed capabilities of the selected local FFmpeg executable."""
+
+    ffmpeg_version: str = ""
+    build_configuration: str = ""
+    formats: frozenset[str] = frozenset()
+    encoders: frozenset[str] = frozenset()
+    filters: frozenset[str] = frozenset()
+    hwaccels: frozenset[str] = frozenset()
+    errors: tuple[str, ...] = ()
+
+    @property
+    def supports_h264_nvenc(self) -> bool:
+        return "h264_nvenc" in self.encoders
+
+
+@dataclass(frozen=True, slots=True)
 class ConversionRequest:
     sources: tuple[Path, ...]
     output: Path

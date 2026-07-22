@@ -10,9 +10,10 @@ line. Disabling the MOD is persisted in `mod/provider-state.json`; disabled MODs
 cannot analyze URLs or receive new tasks.
 
 Queue state is atomically stored in `Data/download-queue.json`. Tasks that were
-`QUEUED` or `RUNNING` when the application stopped are restored as `QUEUED`.
-Completed, failed, and cancelled tasks remain as history. Only failed or
-cancelled tasks can be retried manually.
+`QUEUED`, `RUNNING`, or `RETRYING` when the application stopped are restored as
+`PAUSED`; reopening the application never restarts network work automatically.
+Completed, failed, and cancelled tasks remain as history. Paused tasks require
+an explicit resume, while failed or cancelled tasks can be retried manually.
 
 A segment uses optional start and end times in seconds. The YouTube MOD passes
 that range to yt-dlp and asks FFmpeg to force keyframes at cuts. MediaManager
@@ -147,7 +148,7 @@ website cannot change before the next live smoke check.
 
 ## Bilibili and danmaku XML
 
-The dedicated, disabled-by-default `bilibili` MOD accepts explicit
+The dedicated `bilibili` MOD is enabled on new profiles and accepts explicit
 `bilibili.com` and `b23.tv` hosts. It does not use the generic provider and has
 its own `network.bilibili` permission. Initial support covers metadata,
 multi-part list expansion, the shared format/segment queue and ordinary

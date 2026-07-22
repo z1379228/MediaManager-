@@ -15,7 +15,6 @@ from core.downloads.models import DownloadRequest, DownloadState, DownloadTask
 from core.downloads.provider_registry import ProviderStatus
 from core.storage.paths import AppPaths
 from trusted_ui.download_panel import create_download_panel
-from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.main_window import apply_download_prefill, configure_workspace_tabs
 from trusted_ui.mega_workspace import create_mega_workspace
 from trusted_ui.search_panel import create_search_panel, search_source_for_url
@@ -91,15 +90,13 @@ def test_search_source_is_inferred_only_from_exact_official_hosts() -> None:
         )
         == "bilibili-search"
     )
-    assert (
-        search_source_for_url("https://ani.gamer.com.tw/animeRef.php?sn=123")
-        == "ani-gamer-search"
-    )
+    assert search_source_for_url(
+        "https://ani.gamer.com.tw/animeRef.php?sn=123"
+    ) == ""
     assert search_source_for_url("https://www.youtube.com.evil.test/watch?v=x") == ""
     assert search_source_for_url("https://music.youtube.com.evil.test/watch?v=x") == ""
     assert search_source_for_url("https://www.youtube-nocookie.com/watch?v=x") == ""
     assert search_source_for_url("https://user@www.bilibili.com/video/x") == ""
-    assert search_source_for_url("http://ani.gamer.com.tw/animeRef.php?sn=123") == ""
 
 
 def test_workspace_tab_bar_disables_native_base_line(monkeypatch) -> None:
@@ -235,6 +232,7 @@ def test_empty_workspace_actions_are_disabled(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
 
     from PySide6.QtWidgets import QApplication, QCheckBox, QPushButton
+    from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 
     app = QApplication.instance() or QApplication([])
     context = Bootstrap(portable=True).initialize()
@@ -242,19 +240,15 @@ def test_empty_workspace_actions_are_disabled(tmp_path, monkeypatch) -> None:
     youtube_panel = None
     bilibili_panel = None
     try:
+        set_builtin_mod_enabled(context, "bilibili", False)
         search_panel = create_search_panel(context)
         youtube_source = search_panel.search_source.findData("youtube-search")
-        ani_gamer_source = search_panel.search_source.findData("ani-gamer-search")
         assert youtube_source >= 0
-        assert ani_gamer_source < 0
         assert search_panel.search_source.itemText(youtube_source).startswith(
             "YouTube 搜尋"
         )
         assert search_panel.search_source.findData("bilibili-search") < 0
         assert "Bilibili 搜尋需先啟用 Bilibili 主 MOD" in (
-            search_panel.search_source_summary.text()
-        )
-        assert "動畫瘋官方搜尋需先啟用 動畫瘋 主 MOD" in (
             search_panel.search_source_summary.text()
         )
         search_buttons = {
@@ -585,6 +579,7 @@ def test_video_player_mod_is_opt_in_and_cleans_up_on_disable(
     context = Bootstrap(portable=True).initialize()
     panel = None
     try:
+        context.discovery.set_enabled("youtube-player", False)
         panel = create_search_panel(context)
         assert not context.discovery.is_enabled("youtube-player")
         assert panel.video_button.isHidden()
@@ -707,7 +702,7 @@ def test_youtube_workspace_rejects_meta_and_spoofed_urls(
         app.processEvents()
 
 
-def test_site_search_mods_toggle_independently_and_never_use_youtube_actions(
+def test_bilibili_search_mod_toggles_independently_and_never_uses_youtube_actions(
     tmp_path, monkeypatch
 ) -> None:
     pytest.importorskip("PySide6")
@@ -724,17 +719,15 @@ def test_site_search_mods_toggle_independently_and_never_use_youtube_actions(
     monkeypatch.setattr(QMessageBox, "warning", warning)
     context = Bootstrap(portable=True).initialize()
     context.download_providers.set_enabled("bilibili", True)
-    set_builtin_mod_enabled(context, "ani-gamer", True)
+    context.discovery.set_enabled("bilibili-search", False)
     panel = None
     try:
         panel = create_search_panel(context)
         assert panel.search_source.findData("youtube-search") >= 0
         assert panel.search_source.findData("bilibili-search") >= 0
-        assert panel.search_source.findData("ani-gamer-search") >= 0
         assert "一次查一個網站" in panel.search_source_summary.text()
         assert context.discovery.is_enabled("youtube-search")
         assert not context.discovery.is_enabled("bilibili-search")
-        assert not context.discovery.is_enabled("ani-gamer-search")
 
         bilibili_index = panel.search_source.findData("bilibili-search")
         assert bilibili_index >= 0
@@ -771,11 +764,9 @@ def test_site_search_mods_toggle_independently_and_never_use_youtube_actions(
         information.reset_mock()
 
         panel.enabled.setChecked(False)
-        panel.ani_gamer_search_enabled.setChecked(True)
         app.processEvents()
         assert not context.discovery.is_enabled("youtube-search")
         assert context.discovery.is_enabled("bilibili-search")
-        assert context.discovery.is_enabled("ani-gamer-search")
 
         bilibili_index = panel.search_source.findData("bilibili-search")
         assert bilibili_index >= 0
@@ -870,13 +861,6 @@ def test_site_search_mods_toggle_independently_and_never_use_youtube_actions(
         assert "Bilibili 搜尋" in warning.call_args.args[2]
         assert "provider exited without a result" in warning.call_args.args[2]
 
-        ani_index = panel.search_source.findData("ani-gamer-search")
-        assert ani_index >= 0
-        panel.search_source.setCurrentIndex(ani_index)
-        app.processEvents()
-        assert panel.next_search_cursor == ""
-        assert not panel.next_page_button.isEnabled()
-
         replacement = Mock()
         similar = Mock()
         video_provider = Mock()
@@ -894,43 +878,6 @@ def test_site_search_mods_toggle_independently_and_never_use_youtube_actions(
         # Video preview is already disabled for this source and exits quietly.
         assert information.call_count == 2
         assert panel.busy_action == ""
-
-        panel.query.setText("anime")
-        panel.search()
-        assert routed_sources == [
-            ("bilibili-search",),
-            ("ani-gamer-search",),
-        ]
-        ani_result = DiscoveryItemV1.from_dict(
-            {
-                "video_id": "ani-123",
-                "url": "https://ani.gamer.com.tw/animeRef.php?sn=123",
-                "title": "AniGamer result",
-                "artist": "巴哈姆特動畫瘋",
-                "duration": None,
-                "language": "",
-                "category": "video",
-                "thumbnail_url": "",
-            }
-        )
-        panel.show_results(
-            FederatedSearchResult(
-                (ani_result,), (), ("ani-gamer-search",)
-            ),
-            "",
-        )
-        panel.table.selectRow(0)
-        app.processEvents()
-        assert panel.selected_result_source() == "ani-gamer-search"
-        assert panel.table.item(0, 5).text() == "動畫瘋官方搜尋"
-        assert not panel.download_button.isEnabled()
-        assert not panel.preview_button.isEnabled()
-        assert panel.open_button.isEnabled()
-
-        previous_information_calls = information.call_count
-        panel.download_selected()
-        queue_add.assert_not_called()
-        assert information.call_count == previous_information_calls + 1
     finally:
         if panel is not None:
             panel.close()

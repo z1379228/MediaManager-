@@ -38,7 +38,6 @@ FACEBOOK_HOSTS = frozenset(
     }
 )
 MEGA_HOSTS = frozenset({"mega.nz", "www.mega.nz"})
-ANI_GAMER_HOSTS = frozenset({"ani.gamer.com.tw"})
 INSTAGRAM_HOSTS = frozenset({"instagram.com", "www.instagram.com", "m.instagram.com"})
 THREADS_HOSTS = frozenset(
     {"threads.com", "www.threads.com", "threads.net", "www.threads.net"}
@@ -215,29 +214,6 @@ def _mega_route(path: str, query: str, fragment: str) -> SiteRoute | None:
     return SiteRoute("mega", kind, "mega", None)
 
 
-def _ani_gamer_route(path: str, query: str) -> SiteRoute | None:
-    values = _query_values(query)
-    if values is None:
-        return None
-    serial = (values.get("sn") or ("",))[0]
-    if not serial.isascii() or not serial.isdigit() or not 1 <= len(serial) <= 16:
-        return None
-    if path == "/animeRef.php":
-        kind = "series"
-        provider_id = "ani-gamer-search"
-    elif path == "/animeVideo.php":
-        kind = "episode"
-        provider_id = "ani-gamer-episodes"
-    else:
-        return None
-    return SiteRoute(
-        "ani-gamer",
-        kind,
-        None,
-        provider_id,
-    )
-
-
 def _social_route(site_family: str, path: str, query: str) -> SiteRoute | None:
     """Route official social pages without treating them as download URLs."""
 
@@ -320,8 +296,6 @@ def classify_site_url(value: object) -> SiteRoute | None:
         return _bilibili_route(host, parsed.path, parsed.query)
     if host in FACEBOOK_HOSTS:
         return _facebook_route(host, parsed.path, parsed.query)
-    if host in ANI_GAMER_HOSTS:
-        return _ani_gamer_route(parsed.path, parsed.query)
     if host in INSTAGRAM_HOSTS:
         return _social_route("instagram", parsed.path, parsed.query)
     if host in THREADS_HOSTS:

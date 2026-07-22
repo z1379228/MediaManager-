@@ -32,6 +32,18 @@
       "estimate_ratio": 0.45,
       "args": ["-map", "0:v:0", "-map", "0:a?", "-c:v", "libx265", "-preset", "medium", "-crf", "28", "-c:a", "aac", "-b:a", "160k"]
     },
+    "video-vp9-webm": {
+      "strategy": "VP9 / Opus WebM 轉檔",
+      "extensions": [".webm"],
+      "estimate_ratio": 0.5,
+      "args": ["-map", "0:v:0", "-map", "0:a?", "-c:v", "libvpx-vp9", "-crf", "31", "-b:v", "0", "-c:a", "libopus", "-b:a", "128k"]
+    },
+    "video-mpeg4-avi": {
+      "strategy": "MPEG-4 / MP3 AVI 相容轉檔",
+      "extensions": [".avi"],
+      "estimate_ratio": 0.75,
+      "args": ["-map", "0:v:0", "-map", "0:a?", "-c:v", "mpeg4", "-q:v", "4", "-c:a", "libmp3lame", "-b:a", "192k"]
+    },
     "audio-mp3": {
       "strategy": "MP3 192 kbps",
       "extensions": [".mp3"],
@@ -43,6 +55,59 @@
       "extensions": [".flac"],
       "estimate_ratio": 0.55,
       "args": ["-vn", "-c:a", "flac"]
+    },
+    "audio-aac": {
+      "strategy": "AAC 192 kbps（M4A）",
+      "extensions": [".m4a"],
+      "estimate_ratio": 0.15,
+      "args": ["-vn", "-c:a", "aac", "-b:a", "192k"]
+    },
+    "audio-opus": {
+      "strategy": "Opus 128 kbps",
+      "extensions": [".opus"],
+      "estimate_ratio": 0.1,
+      "args": ["-vn", "-c:a", "libopus", "-b:a", "128k"]
+    },
+    "audio-wav": {
+      "strategy": "WAV PCM 16-bit",
+      "extensions": [".wav"],
+      "estimate_ratio": 1.0,
+      "args": ["-vn", "-c:a", "pcm_s16le"]
+    },
+    "image-png": {
+      "strategy": "靜態影像轉為 PNG",
+      "source_extensions": [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"],
+      "extensions": [".png"],
+      "estimate_ratio": 1.2,
+      "args": ["-frames:v", "1", "-update", "1", "-an", "-c:v", "png"]
+    },
+    "image-jpeg": {
+      "strategy": "靜態影像轉為 JPEG（高品質）",
+      "source_extensions": [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"],
+      "extensions": [".jpg", ".jpeg"],
+      "estimate_ratio": 0.5,
+      "args": ["-frames:v", "1", "-update", "1", "-an", "-c:v", "mjpeg", "-q:v", "2"]
+    },
+    "image-webp": {
+      "strategy": "靜態影像轉為 WebP",
+      "source_extensions": [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"],
+      "extensions": [".webp"],
+      "estimate_ratio": 0.35,
+      "args": ["-frames:v", "1", "-update", "1", "-an", "-c:v", "libwebp", "-q:v", "85"]
+    },
+    "image-bmp": {
+      "strategy": "靜態影像轉為 BMP",
+      "source_extensions": [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"],
+      "extensions": [".bmp"],
+      "estimate_ratio": 1.5,
+      "args": ["-frames:v", "1", "-update", "1", "-an", "-c:v", "bmp"]
+    },
+    "image-tiff": {
+      "strategy": "靜態影像轉為 TIFF",
+      "source_extensions": [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"],
+      "extensions": [".tif", ".tiff"],
+      "estimate_ratio": 1.3,
+      "args": ["-frames:v", "1", "-update", "1", "-an", "-c:v", "tiff"]
     },
     "subtitle-srt": {
       "strategy": "抽取第一條字幕為 SRT",

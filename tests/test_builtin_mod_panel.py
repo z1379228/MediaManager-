@@ -38,8 +38,6 @@ def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
         (
             ProviderStatus("youtube-search", "Search", True),
             ProviderStatus("bilibili-search", "Bilibili Search", False),
-            ProviderStatus("ani-gamer-search", "AniGamer Search", False),
-            ProviderStatus("ani-gamer-episodes", "AniGamer Episodes", False),
             ProviderStatus("youtube-player", "Player", False),
             ProviderStatus("youtube-history", "History", False),
             ProviderStatus("youtube-recovery", "Recovery", True),
@@ -47,9 +45,6 @@ def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
             ProviderStatus("youtube-auto-split", "Split", True),
         ),
         (
-            FeatureStatus("ani-gamer", "AniGamer", False),
-            FeatureStatus("ani-gamer-offline", "AniGamer Offline", False),
-            FeatureStatus("ani-gamer-player", "AniGamer Player", False),
             FeatureStatus("bilibili-danmaku", "Bilibili Danmaku", False),
             FeatureStatus("instagram", "Instagram", False),
             FeatureStatus("instagram-page", "Instagram Page", False),
@@ -63,10 +58,12 @@ def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
             FeatureStatus("media-convert", "Media Convert", False),
             FeatureStatus("media-ad-trim", "Local Ad Segment Trim", False),
             FeatureStatus("speech-to-text", "Speech to Text", False),
+            FeatureStatus("gopeed-transfer", "Gopeed Bridge", False),
+            FeatureStatus("p2p-transfer", "P2P Transfer", False),
             FeatureStatus("automation", "Automation", False),
         ),
     )
-    assert len(rows) == 32
+    assert len(rows) == 29
     assert all(row.available for row in rows)
     assert sum(row.enabled for row in rows) == 5
     player = next(row for row in rows if row.provider_id == "youtube-player")
@@ -76,11 +73,9 @@ def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
 def test_builtin_mod_rows_keep_missing_expected_mod_visible() -> None:
     rows = builtin_mod_rows((), (), ())
     assert tuple(row.provider_id for row in rows) == (
-        "ani-gamer-player",
         "youtube",
         "generic-ytdlp",
         "bilibili",
-        "ani-gamer",
         "facebook",
         "mega",
         "direct-http",
@@ -90,9 +85,6 @@ def test_builtin_mod_rows_keep_missing_expected_mod_visible() -> None:
         "youtube-search",
         "bilibili-search",
         "bilibili-danmaku",
-        "ani-gamer-search",
-        "ani-gamer-episodes",
-        "ani-gamer-offline",
         "youtube-player",
         "youtube-history",
         "youtube-recovery",
@@ -107,6 +99,8 @@ def test_builtin_mod_rows_keep_missing_expected_mod_visible() -> None:
         "media-convert",
         "media-ad-trim",
         "speech-to-text",
+        "gopeed-transfer",
+        "p2p-transfer",
         "automation",
     )
     assert not any(row.available for row in rows)
@@ -170,8 +164,6 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
                 for provider_id in (
                     "youtube-search",
                     "bilibili-search",
-                        "ani-gamer-search",
-                        "ani-gamer-episodes",
                     "youtube-player",
                     "youtube-history",
                     "youtube-recovery",
@@ -182,9 +174,6 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
         ),
         features=StatusSource(
             (
-                FeatureStatus("ani-gamer", "AniGamer", False),
-                FeatureStatus("ani-gamer-offline", "AniGamer Offline", False),
-                FeatureStatus("ani-gamer-player", "AniGamer Player", False),
                 FeatureStatus("bilibili-danmaku", "Bilibili Danmaku", False),
                 FeatureStatus("instagram", "Instagram", False),
                 FeatureStatus("instagram-page", "Instagram Page", False),
@@ -200,6 +189,8 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
                     "media-ad-trim", "Local Ad Segment Trim", False
                 ),
                 FeatureStatus("speech-to-text", "Speech to Text", False),
+                FeatureStatus("gopeed-transfer", "Gopeed Bridge", False),
+                FeatureStatus("p2p-transfer", "P2P Transfer", False),
                 FeatureStatus("automation", "Automation", False),
             )
         ),
@@ -221,8 +212,8 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
     assert len(toggles) == 19
     assert {toggle.text() for toggle in toggles} == {"啟用"}
     assert summary.text() == (
-        "內建 MOD 32/32 已載入 · 10 個已啟用 · "
-        f"8 個網站父 MOD · 規劃中 {len(PLANNED_MODS)} 個"
+        "內建 MOD 29/29 已載入 · 8 個已啟用 · "
+        f"7 個網站父 MOD · 規劃中 {len(PLANNED_MODS)} 個"
     )
     youtube = next(
         tree.topLevelItem(index)
@@ -347,8 +338,11 @@ def test_plugin_manager_defaults_to_actionable_builtin_mods(
             for toggle in dialog.findChildren(QCheckBox)
             if toggle.objectName() == "builtinModToggle-bilibili"
         )
-        assert not context.download_providers.is_enabled("bilibili")
+        assert context.download_providers.is_enabled("bilibili")
         assert bilibili.text() == "啟用"
+        bilibili.click()
+        app.processEvents()
+        assert not context.download_providers.is_enabled("bilibili")
         bilibili.click()
         app.processEvents()
         assert context.download_providers.is_enabled("bilibili")

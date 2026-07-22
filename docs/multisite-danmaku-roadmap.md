@@ -103,11 +103,21 @@ functions supplied by the service and prohibit reproduction as well as
 advertising, playback and stream bypass. The installed yt-dlp 2026.7.4
 extractor set also has no Bahamut or AniGamer extractor.
 
-The only delivered integration is therefore an official-playback bridge in the
+The 1.7.1 delivered integration was therefore an official-playback bridge in the
 candidate MOD catalog. It accepts only the HTTPS homepage or canonical
 `/animeVideo.php?sn=<digits>` page on `ani.gamer.com.tw`, then asks the operating
 system to open that page. It does not inspect endpoints, import cookies, parse
 streams, download video or export danmaku, and it makes no background request.
+
+G38-02 supersedes only that baseline's blanket no-cookie statement with one
+limited exception. A user may actively paste a Cookie that stays in process
+memory and is sent only by catalog/episode discovery to the exact
+`https://ani.gamer.com.tw` authority. MediaManager does not read browser
+profiles or Cookie databases, auto-update the Cookie, or accept Cloudflare
+tokens. The Cookie is not injected into Qt WebEngine or the system browser and
+is not available to download, offline-save or danmaku flows. This exception
+does not bypass login, DRM, advertising, payment, region or Cloudflare controls
+and does not inspect, intercept or capture playback streams.
 
 Download support may be reconsidered only if Bahamut publishes an authorized
 download/export API or an offline-use licence with a compatible integration
@@ -125,14 +135,14 @@ path. See `docs/ani-gamer-feasibility.md` for the evidence and decision record.
 ## Delivery order
 
 1. Search thumbnails and selected-item 30-second audio preview. **Complete.**
-2. Optional, disabled-by-default `youtube-player` MOD with bounded local video
+2. Optional, independently switchable `youtube-player` MOD with bounded local video
    preview. **Complete.**
 3. Shared format/subtitle/thumbnail result contract. **Complete.** Discovery,
    playlist and media-option contracts are versioned and transport-neutral.
 4. `generic-ytdlp` provider with a tested site matrix. **Initial Beta complete
    in 1.5.0.** Vimeo, Dailymotion, SoundCloud, TikTok and Twitch use
    an explicit host allowlist, separate generic-network permission and offline
-   extractor/contract tests. It remains disabled by default; live smoke status
+   extractor/contract tests. It is enabled on new profiles; live smoke status
    must be recorded before any site graduates from Beta.
 5. Bilibili provider and XML danmaku sidecar. **Initial delivery complete in
    1.6.0.** The provider has an explicit host allowlist and independent network

@@ -68,7 +68,6 @@ def builtin_provider_capability(provider_id: str) -> ProviderCapabilityV1:
         "facebook": ("facebook", ("preview", "download"), True, False, False, 100),
         "mega": ("mega", ("download", "offline-archive"), False, False, True, 50),
         "direct-http": ("direct-http", ("download", "offline-archive"), False, False, True, 100),
-        "ani-gamer": ("ani-gamer", ("search", "preview", "offline-archive", "local-playback"), True, True, True, 100),
     }
     try:
         site, operations, official, local, archive, batch = declarations[provider_id]

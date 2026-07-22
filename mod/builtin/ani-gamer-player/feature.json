@@ -1,7 +1,0 @@
-{
-  "schema_version": 1,
-  "provider_id": "ani-gamer-player",
-  "display_name": "AniGamer Official Player",
-  "kind": "site-addon",
-  "parent_provider_id": "ani-gamer"
-}

@@ -1,3 +1,4 @@
+import json
 import subprocess
 from pathlib import Path
 
@@ -17,6 +18,36 @@ from core.version import CORE_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _write_receipt_bound_work(
+    root: Path,
+    *,
+    revision: str = "a" * 40,
+    channel: str = "stable",
+) -> tuple[Path, Path, Path]:
+    public_version = build_version.release_identity_version(channel)
+    paths = version_build_paths(
+        root,
+        CORE_VERSION,
+        channel=channel,
+        release_version=public_version,
+        attempt_id="signed",
+    )
+    paths.executable_output.mkdir(parents=True)
+    paths.wheel_output.mkdir(parents=True)
+    executable = paths.executable_output / "MediaManager.exe"
+    wheel = paths.wheel_output / f"mediamanager-{CORE_VERSION}-py3-none-any.whl"
+    executable.write_bytes(b"signed executable")
+    wheel.write_bytes(b"wheel")
+    build_version.write_build_receipt(
+        paths,
+        version=CORE_VERSION,
+        release_version=public_version,
+        channel=channel,
+        source_revision=revision,
+    )
+    return paths.work, executable, wheel
 
 
 def test_build_version_sources_match_and_override_is_rejected() -> None:
@@ -341,6 +372,161 @@ def test_external_temp_root_is_isolated_and_cleaned_after_failed_build(
     assert (preserved_sibling / "keep.txt").read_text(encoding="utf-8") == "keep"
 
 
+def test_build_only_preserves_receipt_bound_artifacts(
+    tmp_path: Path, monkeypatch
+) -> None:
+    python = tmp_path / "runtime" / "python.exe"
+    python.parent.mkdir()
+    python.write_bytes(b"python")
+    python.with_name("pyinstaller.exe").write_bytes(b"pyinstaller")
+    monkeypatch.setattr(build_version, "validate_build_version", lambda *_args: None)
+    monkeypatch.setattr(
+        build_version, "validate_clean_source", lambda *_args: "a" * 40
+    )
+    monkeypatch.setattr(
+        build_version, "portable_release_tools", lambda *_args, **_kwargs: {}
+    )
+    monkeypatch.setattr(build_version.secrets, "token_hex", lambda _size: "buildonly")
+    monkeypatch.setattr(build_version.sys, "executable", str(python))
+    paths = version_build_paths(
+        tmp_path,
+        CORE_VERSION,
+        channel="stable",
+        release_version="1.0.0",
+        attempt_id="buildonly",
+    )
+
+    def fake_run(command, **_kwargs):
+        if Path(command[0]).name.lower() == "pyinstaller.exe":
+            paths.executable_output.mkdir(parents=True, exist_ok=True)
+            (paths.executable_output / "MediaManager.exe").write_bytes(b"unsigned")
+        else:
+            paths.wheel_output.mkdir(parents=True, exist_ok=True)
+            (
+                paths.wheel_output
+                / f"mediamanager-{CORE_VERSION}-py3-none-any.whl"
+            ).write_bytes(b"wheel")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(build_version.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        build_version,
+        "stage_version",
+        lambda *_args, **_kwargs: pytest.fail("build-only must not stage"),
+    )
+
+    result = build_version.build_version(
+        tmp_path,
+        CORE_VERSION,
+        portable_runtime=False,
+        channel="stable",
+        confirm_stable=True,
+        stage_output=False,
+    )
+
+    assert result == paths.work
+    assert paths.work.is_dir()
+    receipt = json.loads((paths.work / "build-receipt.json").read_text("utf-8"))
+    assert receipt["release_version"] == "1.0.0"
+    assert receipt["source_revision"] == "a" * 40
+
+
+def test_stage_built_stable_requires_valid_authenticode(
+    tmp_path: Path, monkeypatch
+) -> None:
+    work, _, _ = _write_receipt_bound_work(tmp_path)
+    monkeypatch.setattr(build_version, "validate_build_version", lambda *_args: None)
+    monkeypatch.setattr(
+        build_version, "validate_clean_source", lambda *_args: "a" * 40
+    )
+
+    with pytest.raises(PermissionError, match="NotSigned"):
+        build_version.stage_built_version(
+            tmp_path,
+            work,
+            channel="stable",
+            confirm_stable=True,
+            portable_runtime=False,
+            authenticode_checker=lambda _path: "NotSigned",
+        )
+
+
+def test_stage_built_stable_uses_1_0_identity_and_exact_artifacts(
+    tmp_path: Path, monkeypatch
+) -> None:
+    work, executable, wheel = _write_receipt_bound_work(tmp_path)
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(build_version, "validate_build_version", lambda *_args: None)
+    monkeypatch.setattr(
+        build_version, "validate_clean_source", lambda *_args: "a" * 40
+    )
+    monkeypatch.setattr(
+        build_version, "portable_release_tools", lambda *_args, **_kwargs: {}
+    )
+
+    def fake_stage(root: Path, **kwargs) -> Path:
+        captured.update({"root": root, **kwargs})
+        return tmp_path / "Version" / "Stable" / "1.0"
+
+    monkeypatch.setattr(build_version, "stage_version", fake_stage)
+
+    result = build_version.stage_built_version(
+        tmp_path,
+        work,
+        channel="stable",
+        confirm_stable=True,
+        portable_runtime=False,
+        authenticode_checker=lambda _path: "Valid",
+    )
+
+    assert result == tmp_path / "Version" / "Stable" / "1.0"
+    assert captured["release_version"] == "1.0.0"
+    assert captured["executable"] == executable
+    assert captured["wheel"] == wheel
+    assert captured["channel"] == "stable"
+
+
+def test_stage_built_rejects_source_revision_mismatch(
+    tmp_path: Path, monkeypatch
+) -> None:
+    work, _, _ = _write_receipt_bound_work(tmp_path, revision="a" * 40)
+    monkeypatch.setattr(build_version, "validate_build_version", lambda *_args: None)
+    monkeypatch.setattr(
+        build_version, "validate_clean_source", lambda *_args: "b" * 40
+    )
+
+    with pytest.raises(ValueError, match="does not match"):
+        build_version.stage_built_version(
+            tmp_path,
+            work,
+            channel="stable",
+            confirm_stable=True,
+            portable_runtime=False,
+            authenticode_checker=lambda _path: "Valid",
+        )
+
+
+def test_stage_built_rejects_wheel_changed_after_receipt(
+    tmp_path: Path, monkeypatch
+) -> None:
+    work, _, wheel = _write_receipt_bound_work(tmp_path)
+    wheel.write_bytes(b"tampered wheel")
+    monkeypatch.setattr(build_version, "validate_build_version", lambda *_args: None)
+    monkeypatch.setattr(
+        build_version, "validate_clean_source", lambda *_args: "a" * 40
+    )
+
+    with pytest.raises(ValueError, match="does not match the build receipt"):
+        build_version.stage_built_version(
+            tmp_path,
+            work,
+            channel="stable",
+            confirm_stable=True,
+            portable_runtime=False,
+            authenticode_checker=lambda _path: "Valid",
+        )
+
+
 def test_external_temp_collision_preserves_existing_directory(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -421,4 +607,27 @@ def test_main_forwards_selected_temp_root(tmp_path: Path, monkeypatch, capsys) -
 
     assert build_version.main() == 0
     assert captured["temp_root"] == tmp_path
+    assert captured["stage_output"] is True
     assert "artifact" in capsys.readouterr().out
+
+
+def test_main_build_only_retains_signing_handoff(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_build(root: Path, version: str, **kwargs) -> Path:
+        captured.update({"root": root, "version": version, **kwargs})
+        return tmp_path / "build-only"
+
+    monkeypatch.setattr(build_version, "build_version", fake_build)
+    monkeypatch.setattr(
+        build_version.sys,
+        "argv",
+        ["build_version", "--build-only", "--channel", "stable", "--confirm-stable"],
+    )
+
+    assert build_version.main() == 0
+    assert captured["stage_output"] is False
+    assert captured["channel"] == "stable"
+    assert "build-only" in capsys.readouterr().out

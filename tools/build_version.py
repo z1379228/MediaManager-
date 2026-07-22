@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import secrets
 import re
@@ -13,7 +15,7 @@ import time
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
+from collections.abc import Callable, Mapping
 
 from core.version import (
     BUILD_CHANNEL,
@@ -22,7 +24,11 @@ from core.version import (
     release_track,
 )
 from tools.portable_runtime import cached_ffmpeg_paths, cached_runtime_path
+from tools.release_preflight import authenticode_status
 from tools.stage_version import stage_version, version_folder_name
+
+
+BUILD_RECEIPT_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,6 +207,139 @@ def remove_build_tree(path: Path, *, attempts: int = 3) -> None:
             time.sleep(0.1 * attempt)
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def write_build_receipt(
+    paths: VersionBuildPaths,
+    *,
+    version: str,
+    release_version: str,
+    channel: str,
+    source_revision: str,
+) -> Path:
+    """Bind a build-only handoff to its clean source revision and wheel bytes."""
+
+    wheel = paths.wheel_output / f"mediamanager-{version}-py3-none-any.whl"
+    executable = paths.executable_output / "MediaManager.exe"
+    if not executable.is_file() or executable.is_symlink():
+        raise FileNotFoundError(f"build executable missing or unsafe: {executable}")
+    if not wheel.is_file() or wheel.is_symlink():
+        raise FileNotFoundError(f"build wheel missing or unsafe: {wheel}")
+    receipt = paths.work / "build-receipt.json"
+    receipt.write_text(
+        json.dumps(
+            {
+                "schema_version": BUILD_RECEIPT_SCHEMA_VERSION,
+                "core_version": version,
+                "release_version": release_version,
+                "build_channel": channel,
+                "source_revision": source_revision,
+                "wheel_sha256": _sha256(wheel),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return receipt
+
+
+def _validated_built_artifacts(
+    root: Path,
+    work: Path,
+    *,
+    version: str,
+    release_version: str,
+    channel: str,
+    source_revision: str,
+) -> tuple[Path, Path]:
+    work = work.resolve()
+    expected_parent = (root / ".work" / release_track(channel)).resolve()
+    folder = re.escape(version_folder_name(release_version))
+    if work.parent != expected_parent or not re.fullmatch(
+        rf"{folder}-attempt-[a-z0-9-]{{1,32}}", work.name
+    ):
+        raise ValueError("built work directory is outside the selected release track")
+    if not work.is_dir() or work.is_symlink():
+        raise FileNotFoundError(f"built work directory is missing or unsafe: {work}")
+    receipt_path = work / "build-receipt.json"
+    try:
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError("build receipt is missing or invalid") from exc
+    expected = {
+        "schema_version": BUILD_RECEIPT_SCHEMA_VERSION,
+        "core_version": version,
+        "release_version": release_version,
+        "build_channel": channel,
+        "source_revision": source_revision,
+    }
+    if not isinstance(receipt, dict) or any(
+        receipt.get(key) != value for key, value in expected.items()
+    ):
+        raise ValueError("build receipt does not match the selected release source")
+    executable = work / "exe" / "MediaManager.exe"
+    wheel = work / "wheel" / f"mediamanager-{version}-py3-none-any.whl"
+    if not executable.is_file() or executable.is_symlink():
+        raise FileNotFoundError(f"build executable missing or unsafe: {executable}")
+    if not wheel.is_file() or wheel.is_symlink():
+        raise FileNotFoundError(f"build wheel missing or unsafe: {wheel}")
+    if receipt.get("wheel_sha256") != _sha256(wheel):
+        raise ValueError("built wheel does not match the build receipt")
+    return executable, wheel
+
+
+def stage_built_version(
+    root: Path,
+    work: Path,
+    version: str = CORE_VERSION,
+    *,
+    portable_runtime: bool = True,
+    channel: str = BUILD_CHANNEL,
+    confirm_stable: bool = False,
+    authenticode_checker: Callable[[Path], str] = authenticode_status,
+) -> Path:
+    """Stage a receipt-bound build after an external Authenticode signing step."""
+
+    root = root.resolve()
+    if channel == "stable" and not confirm_stable:
+        raise PermissionError("stable packaging requires explicit user confirmation")
+    validate_build_version(root, version)
+    source_revision = validate_clean_source(root)
+    public_version = release_identity_version(channel)
+    executable, wheel = _validated_built_artifacts(
+        root,
+        work,
+        version=version,
+        release_version=public_version,
+        channel=channel,
+        source_revision=source_revision,
+    )
+    if channel == "stable":
+        status = authenticode_checker(executable)
+        if status != "Valid":
+            raise PermissionError(
+                f"stable executable Authenticode signature is not valid: {status}"
+            )
+    return stage_version(
+        root,
+        version=version,
+        release_version=public_version,
+        executable=executable,
+        wheel=wheel,
+        portable_tools=portable_release_tools(root, enabled=portable_runtime),
+        channel=channel,
+        confirm_stable=confirm_stable,
+    )
+
+
 def _record_cleanup_failure(
     failure: BaseException | None,
     errors: list[tuple[Path, OSError]],
@@ -227,6 +366,7 @@ def build_version(
     channel: str = BUILD_CHANNEL,
     confirm_stable: bool = False,
     temp_root: Path | None = None,
+    stage_output: bool = True,
 ) -> Path:
     root = root.resolve()
     if channel == "stable" and not confirm_stable:
@@ -234,7 +374,7 @@ def build_version(
             "stable packaging requires explicit user confirmation"
         )
     validate_build_version(root, version)
-    validate_clean_source(root)
+    source_revision = validate_clean_source(root)
     generated_targets = (root / "build", root / "mediamanager.egg-info")
     preexisting_targets = tuple(
         target
@@ -312,6 +452,15 @@ def build_version(
         )
         executable = paths.executable_output / "MediaManager.exe"
         wheel = paths.wheel_output / f"mediamanager-{version}-py3-none-any.whl"
+        if not stage_output:
+            write_build_receipt(
+                paths,
+                version=version,
+                release_version=public_version,
+                channel=channel,
+                source_revision=source_revision,
+            )
+            return paths.work
         return stage_version(
             root,
             version=version,
@@ -328,7 +477,9 @@ def build_version(
     finally:
         cleanup_errors: list[tuple[Path, OSError]] = []
         cleanup_targets = (
-            [paths.work] if work_created and not keep_work else []
+            [paths.work]
+            if work_created and not keep_work and stage_output
+            else []
         )
         # ``build`` and ``mediamanager.egg-info`` are fixed setuptools paths
         # under the source root.  A different process may create them after
@@ -369,6 +520,17 @@ def main() -> int:
         default=BUILD_CHANNEL,
     )
     parser.add_argument("--confirm-stable", action="store_true")
+    operation = parser.add_mutually_exclusive_group()
+    operation.add_argument(
+        "--build-only",
+        action="store_true",
+        help="retain receipt-bound artifacts for Authenticode signing before staging",
+    )
+    operation.add_argument(
+        "--stage-built",
+        type=Path,
+        help="stage a receipt-bound build directory after external signing",
+    )
     parser.add_argument(
         "--without-portable-runtime",
         action="store_true",
@@ -380,8 +542,17 @@ def main() -> int:
         help="Writable user-local root for isolated build temporary directories",
     )
     args = parser.parse_args()
-    print(
-        build_version(
+    if args.stage_built is not None:
+        result = stage_built_version(
+            args.root,
+            args.stage_built,
+            args.version,
+            portable_runtime=not args.without_portable_runtime,
+            channel=args.channel,
+            confirm_stable=args.confirm_stable,
+        )
+    else:
+        result = build_version(
             args.root,
             args.version,
             keep_work=args.keep_work,
@@ -389,8 +560,9 @@ def main() -> int:
             channel=args.channel,
             confirm_stable=args.confirm_stable,
             temp_root=args.temp_root,
+            stage_output=not args.build_only,
         )
-    )
+    print(result)
     return 0
 
 

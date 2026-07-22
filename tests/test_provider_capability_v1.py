@@ -10,11 +10,12 @@ from core.downloads.capabilities import builtin_provider_capability
 
 
 def test_builtin_capability_round_trips_without_network_permissions() -> None:
-    declaration = builtin_provider_capability("ani-gamer")
+    declaration = builtin_provider_capability("facebook")
     restored = ProviderCapabilityV1.from_dict(declaration.to_dict())
 
     assert restored == declaration
-    assert "local-playback" in restored.operations
+    assert restored.operations == ("preview", "download")
+    assert restored.supports_local_playback is False
     assert restored.requires_official_page is True
 
 

@@ -23,30 +23,9 @@ class PlannedMod:
     state: str = "製作中"
 
 
-# Ordering is intentional: priority first, then the agreed implementation order.
-# Entries here are visible planning facts only. They must never be passed to a
-# provider registry or gain an enable control until a real implementation and
-# its security/integrity tests exist.
-PLANNED_MODS = (
-    PlannedMod(
-        "gopeed-transfer",
-        "Gopeed Bridge",
-        "P2",
-        "本機傳輸橋接 MOD",
-        "由使用者明確交給已安裝的本機 Gopeed，核心不內建傳輸引擎",
-        "本機 API 授權、版本契約及連接埠／token 預設關閉政策",
-        "安全基線完成／未啟用",
-    ),
-    PlannedMod(
-        "p2p-transfer",
-        "P2P Transfer",
-        "P2",
-        "P2P 傳輸 MOD",
-        "BitTorrent／Magnet 選檔、優先級與頻寬控制，清楚顯示上傳與做種",
-        "法律確認、網路／儲存配額與隔離；不包含 torrent 搜尋或自動開埠",
-        "安全基線完成／未啟用",
-    ),
-)
+# Gopeed Bridge and P2P Transfer became runtime MODs in Development 39.0.2.
+# Keep this tuple only for work that is still not runnable.
+PLANNED_MODS: tuple[PlannedMod, ...] = ()
 
 PLANNED_MOD_IDS = frozenset(item.provider_id for item in PLANNED_MODS)
 
@@ -63,9 +42,8 @@ class PriorityWorkItem:
     acceptance: str
 
 
-# This is a development queue, not a provider registry. P0/P1 entries refer
-# to existing runtime MODs that need regression or boundary work; P2 entries
-# remain candidates until their implementation and security tests exist.
+# This is a development queue, not a provider registry. Entries refer to
+# existing runtime MODs that still have regression or boundary work.
 PRIORITY_WORK_ITEMS = (
     PriorityWorkItem(
         "youtube-regression",
@@ -82,14 +60,6 @@ PRIORITY_WORK_ITEMS = (
         "已完成離線驗證",
         "bilibili、bilibili-search、bilibili-danmaku",
         "不借用 YouTube 工作區；分 P 有名稱；XML／ASS／MKV 選項在子 MOD 關閉時仍安全退回",
-    ),
-    PriorityWorkItem(
-        "ani-gamer-flow",
-        "動畫瘋分類、作品與集數流程",
-        "P0",
-        "已完成離線驗證",
-        "ani-gamer、ani-gamer-search、ani-gamer-episodes、ani-gamer-offline",
-        "近期熱播／新上架／分類、作品選取與集數狀態一致；403／Cloudflare 只顯示官方入口",
     ),
     PriorityWorkItem(
         "language-ui-contract",
@@ -130,22 +100,6 @@ PRIORITY_WORK_ITEMS = (
         "已完成離線驗證",
         "speech-to-text",
         "whisper-cli／模型缺失可明確選取安裝或匯入；不自動下載、不在乾淨啟動執行",
-    ),
-    PriorityWorkItem(
-        "gopeed-transfer",
-        "Gopeed Bridge",
-        "P2",
-        "安全基線完成／未啟用",
-        "gopeed-transfer",
-        "先完成本機 API 授權、token 生命週期與預設關閉政策，再評估獨立 MOD",
-    ),
-    PriorityWorkItem(
-        "p2p-transfer",
-        "P2P／Torrent 傳輸",
-        "P2",
-        "安全基線完成／未啟用",
-        "p2p-transfer",
-        "另建法律、網路、儲存配額與隔離模型；不進入網站下載核心或自動開埠",
     ),
 )
 

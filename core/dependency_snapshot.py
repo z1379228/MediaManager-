@@ -19,6 +19,7 @@ class FeatureReadiness:
     provider_id: str
     ready: bool
     missing: tuple[str, ...]
+    optional_missing: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,18 +105,27 @@ class DependencySnapshotService:
             for status in report.statuses
             if status.available
         }
-        return tuple(
-            FeatureReadiness(
-                descriptor.provider_id,
-                not (missing := tuple(
-                    dependency_id
-                    for dependency_id in descriptor.dependency_ids
-                    if dependency_id not in available
-                )),
-                missing,
+        readiness = []
+        for descriptor in BUILTIN_MOD_CATALOG:
+            missing = tuple(
+                dependency_id
+                for dependency_id in descriptor.dependency_ids
+                if dependency_id not in available
             )
-            for descriptor in BUILTIN_MOD_CATALOG
-        )
+            optional_missing = tuple(
+                dependency_id
+                for dependency_id in descriptor.optional_dependency_ids
+                if dependency_id not in available
+            )
+            readiness.append(
+                FeatureReadiness(
+                    descriptor.provider_id,
+                    not missing,
+                    missing,
+                    optional_missing,
+                )
+            )
+        return tuple(readiness)
 
     def refresh(self) -> DependencySnapshot:
         with self._lock:

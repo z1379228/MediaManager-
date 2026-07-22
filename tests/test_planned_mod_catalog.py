@@ -11,28 +11,25 @@ from trusted_ui.planned_mod_catalog import (
 
 
 def test_planned_mod_catalog_is_ordered_and_separate_from_runtime_mods() -> None:
-    assert tuple(item.provider_id for item in PLANNED_MODS) == (
-        "gopeed-transfer",
-        "p2p-transfer",
-    )
-    assert tuple(item.priority for item in PLANNED_MODS) == (
-        "P2",
-        "P2",
-    )
+    assert PLANNED_MODS == ()
+    assert PLANNED_MOD_IDS == frozenset()
+    assert {"gopeed-transfer", "p2p-transfer"} <= BUILTIN_MOD_IDS
     assert not PLANNED_MOD_IDS & BUILTIN_MOD_IDS
     assert len(PLANNED_MOD_IDS) == len(PLANNED_MODS)
-    assert {item.state for item in PLANNED_MODS} == {"安全基線完成／未啟用"}
 
 
 def test_official_bridges_stay_separate_from_pending_download_mods() -> None:
     assert not PLANNED_MOD_IDS & {
-        "ani-gamer",
-        "ani-gamer-search",
         "instagram",
         "threads",
     }
-    assert "ani-gamer-offline" not in PLANNED_MOD_IDS
-    assert "ani-gamer-offline" in BUILTIN_MOD_IDS
+    assert not {
+        "ani-gamer",
+        "ani-gamer-search",
+        "ani-gamer-episodes",
+        "ani-gamer-offline",
+        "ani-gamer-player",
+    } & (PLANNED_MOD_IDS | BUILTIN_MOD_IDS)
     assert "bilibili-danmaku" not in PLANNED_MOD_IDS
     assert not {"facebook", "mega"} & PLANNED_MOD_IDS
 
@@ -43,13 +40,10 @@ def test_priority_work_queue_is_sorted_without_registering_backlog_items() -> No
         "P0",
         "P0",
         "P0",
-        "P0",
         "P1",
         "P1",
         "P1",
         "P1",
-        "P2",
-        "P2",
     )
     assert ordered == tuple(sorted(ordered, key=lambda item: (item.priority, item.item_id)))
     assert len(PRIORITY_WORK_ITEM_IDS) == len(PRIORITY_WORK_ITEMS)
@@ -58,7 +52,6 @@ def test_priority_work_queue_is_sorted_without_registering_backlog_items() -> No
 
 def test_priority_work_queue_supports_deterministic_filters() -> None:
     assert tuple(item.item_id for item in priority_work_items("P0")) == (
-        "ani-gamer-flow",
         "bilibili-regression",
         "language-ui-contract",
         "youtube-regression",
@@ -68,7 +61,7 @@ def test_priority_work_queue_supports_deterministic_filters() -> None:
 
 def test_p0_work_items_have_offline_validation_status() -> None:
     p0_items = priority_work_items("P0")
-    assert len(p0_items) == 4
+    assert len(p0_items) == 3
     assert {item.state for item in p0_items} == {"已完成離線驗證"}
     assert all(item.scope and item.acceptance for item in p0_items)
 
@@ -80,10 +73,6 @@ def test_p1_work_items_have_offline_validation_status() -> None:
     assert all(item.scope and item.acceptance for item in p1_items)
 
 
-def test_p2_work_items_only_complete_the_safe_boundary() -> None:
-    p2_items = priority_work_items("P2")
-    assert tuple(item.item_id for item in p2_items) == (
-        "gopeed-transfer",
-        "p2p-transfer",
-    )
-    assert {item.state for item in p2_items} == {"安全基線完成／未啟用"}
+def test_completed_transfer_mods_are_not_left_in_the_planned_queue() -> None:
+    assert priority_work_items("P2") == ()
+    assert not {"gopeed-transfer", "p2p-transfer"} & PRIORITY_WORK_ITEM_IDS

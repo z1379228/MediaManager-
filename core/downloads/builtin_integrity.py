@@ -5,39 +5,22 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "provider.py": "cd8473f4e323278cbd40ca16598268256918c86bb64a5176b470a141810a994a",
         "provider.json": "001b249260a75bb7f284b4cbc53b0d91a646a35d4dfc7027e3a273a757d448c7",
     },
-    "ani-gamer": {
-        "feature.json": "8007aeb21bcb58e3e22bee8fbd25174c2b35c84aaa89bb89fb8625a0d38b32bb",
-        "group.json": "d05493ab106f79eedb0e657fdad3bc203346b98aa5f676d34fe070445b80e8ea",
-        "locales/en.json": "93fee49d09079d1c0fff9f1798d7ae386359c13daa308ca4c02c882a37b792b0",
-        "locales/ja.json": "e4ba1cb202c37899aa8340f6d9a0bbc28ba951a31f8e610c56f248d345b935c4",
-        "locales/zh-CN.json": "b68e007305c09dbe758b01ff81d33539eb714ced33fdb5ee8ab9e11b59784084",
-        "locales/zh-TW.json": "46952d8804e8bceff1ac4af4001fad4e198305ee8f41346f9d7420bf74cfcf96",
-        "site-matrix.json": "8b4bbeda5c691faed15f98e7429adb624fcb38bb88ffedeca317c70843dedcbd",
-    },
-    "ani-gamer-offline": {
-        "feature.json": "3a02e563cab84182ce821ec92409e7d82ed1b658e7dcb98caaf09f69fc1140ef",
-    },
-    "ani-gamer-player": {
-        "feature.json": "b74ed80c2410f551058bf316d97a1e28c58a6adae68a62687a3bfd3056d5c366",
-    },
-    "ani-gamer-search": {
-        "provider.py": "8019a2f0ece26834e162b430bb4deceb7e6598fa5ad566be3a07e828bd115653",
-        "provider.json": "ea87fe49c16e3a273afe28f7f17e85e69160fd6500b63a72897f1fecca72babe",
-    },
-    "ani-gamer-episodes": {
-        "provider.py": "51b10c119fda766318738ba26b5dba08c0a7bdc1dcb08878d5604b3f5a2e2860",
-        "provider.json": "9abb62a3379a4a7cbf3b306ff3c3405ebf9258b9f91edf0ac05126f26e570923",
-    },
     "automation": {
         "feature.json": "47fe2b5f6277a064ae404b466819e4383b5928862698a4a0c7f44675ff144f4e",
         "policy.json": "3f73591d23b4b01f49abb2e9812710d23e07c8cd219d1e52f37715b22dca380f",
     },
     "media-convert": {
-        "feature.json": "82ebdfa5d8b10c7fbab28166a0aa294f8ad85288e7b248b6ef272f05184d92cf",
-        "presets.json": "b4f222a0fcf8e90a4333ac4d85c4aaa8da2ba2d88953031eaab6f8788bc4c076",
+        "feature.json": "94acc1e77de17499ae118c2c89f3430f3b04721772851823841376c490f62946",
+        "presets.json": "f22eb6ea674e5993d3ca4993c3767247d317c63a84e7c676b1955e4dc3c7b564",
     },
     "media-ad-trim": {
-        "feature.json": "41ed53afbcdba49d047133be164b51fdf6f27df77c6965d9f67eb6a387a13d8d",
+        "feature.json": "49db63e4ae5e3b499702603537bd21495797dfe19e69f588f3570d97c510e69e",
+    },
+    "gopeed-transfer": {
+        "feature.json": "26fd15d5dea7a3a66d21985926dc8d79026af1daae60ae9bc7d0b96786b2cc76",
+    },
+    "p2p-transfer": {
+        "feature.json": "65b1ba694184a3657e9f41f216b2357defde11f1a4a7055999561dae4574bc92",
     },
     "speech-to-text": {
         "adapter.json": "0d155d02eadc79b42abc12479bf5ceee79e3739b6bb43e20ea9d1ffc71403046",

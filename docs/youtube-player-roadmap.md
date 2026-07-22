@@ -3,8 +3,8 @@
 ## Product rule
 
 Audio preview remains a lightweight search feature. In-app video playback is a
-separate, independently switchable `youtube-player` MOD and is disabled by
-default.
+separate, independently switchable `youtube-player` MOD. It is enabled on new
+profiles while preserving any existing saved choice.
 
 When disabled, the MOD:
 

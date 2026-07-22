@@ -43,16 +43,185 @@ command fails before packaging when they differ or when `--version` attempts to
 override that configured value; this prevents `release-info.json` and wheel
 metadata from describing different releases.
 
-Patch releases share the same local folder (`4.0.1` still stages to
-`Version/4.0`) because local storage keeps only the current patch for that minor
-line. A published GitHub tag or attachment is immutable: publishing `v4.0.1`
-must create a new Release and must never replace the existing `v4.0.0` assets.
+Development source identity and the UI use the full `X.Y.Z` version. `X.Y.0` is
+the first source baseline for that feature line; every subsequent material code
+fix increments `Z` (`38.1.0` -> `38.1.1` -> `38.1.2` -> `38.1.3` -> `38.1.4` -> `38.1.5` -> `38.1.6` -> `38.1.7` -> `38.1.8` -> `38.1.9` -> `38.1.10` -> `38.1.11` -> `38.1.12` -> `38.1.13` -> `38.1.14` -> `38.1.15` -> `38.1.16`). Documentation, screenshot,
+or evidence-only updates do not increment the correction number.
+
+For the retired 38.1 integration line, `38.1.14` is
+`SOURCE VALIDATED / SUPERSEDED BY 38.1.15 / NO PACKAGE`; `38.1.15` records the
+AniGamer removal. `38.1.16` is the final 38.x source-only identity with
+`SOURCE VALIDATED / PACKAGING INPUT HARDENED / NO PACKAGE / SAFE_MODE`.
+G38-02 is `CLOSED / CANCELLED BY USER SCOPE DECISION / REMOVED / NO RELEASE`.
+G39-01 is complete as `MEASURED / NO CHANGE / NO RELEASE / SAFE_MODE`.
+Development `39.0.5` is the current source identity for G39-07. It retains the
+G39-04 localhost-only Gopeed／P2P runtime MODs, optional Speech to Text runtime
+dependencies, additive format-workshop presets, and new-profile built-in defaults,
+removes the unsupported Gopeed `rawUrl` request field, and adds a minimum-size
+scroll contract to prevent the Transfer workspace from collapsing at limited
+window heights. It also fixes Stable's independent public identity at `1.0.0`
+and provides a receipt-bound build-only／stage-built operator so Authenticode is
+validated before staging. It remains
+`SOURCE VALIDATED / NO PACKAGE / SAFE_MODE`; G40-01 remains
+`WAITING / AUTHORIZATION + STAGED VERIFY/HEADLESS SAFE_MODE EVIDENCE REQUIRED`.
+G38-01 retains its independent manual-validation blockers.
+The 38.1.8 increment records a material catalog-state correction: a
+structured failure with no accepted item retains the last usable results,
+selection, and episodes, while partial success and a genuinely empty successful
+response keep their prior semantics. The 38.1.9 increment records a separate
+episode-response ownership correction: after the user changes the selected
+series, an older asynchronous success or failure response is discarded instead
+of being applied to the new series. The 38.1.10 increment then requires the raw
+AniGamer series or episode query to be exactly `sn=<ASCII digits>`, rejecting
+extra, duplicate, case-aliased, and percent-encoded forms before provider,
+handoff, history, or offline consumers. The 38.1.11 increment adds the shared
+canonical item identity invariant: series IDs must equal `ani-{sn}`, episode
+IDs must equal `ani-episode-{sn}`; history and offline metadata enforce the same
+identity on both write and read; and stale episode row handoffs fail closed while
+the workspace is busy or closing. Built-in providers already emit those IDs, and
+current-series and direct-episode contexts keep their prior semantics. The
+38.1.12 increment is a separate handoff-observability correction. All four
+`episode_opened` locale messages receive the exact canonical `{url}`, and both
+selected-episode and history-entry handoffs format the same URL that was offered
+to the OS. The message says only that the OS accepted the open request; it does
+not claim that the official page loaded or playback started. Existing 38.1.11
+screenshots do not count as 38.1.12 live evidence because their success message
+did not contain that URL. None of these corrections imports
+browser state, retries invisibly, changes provider traffic, or bypasses
+verification. Reverting 38.1.11 means reverting the identity validator,
+consumer wiring, history/offline read checks, busy/closing guards, regressions,
+version, and documentation
+together; there is no data migration and it never overwrites the immutable Development
+38.0 folder.
+Reverting 38.1.12 means reverting the four locale strings, `{url}` handoff
+wiring, regressions, version, and documentation together. It does not migrate
+or delete data, change Cookie or stream handling, add download capability, or
+overwrite the immutable Development 38.0 folder. No 38.1.12 stage, commit,
+source freeze, build, package, or push has been performed.
+The 38.1.13 increment corrects a separate compatibility-dialog observability
+defect. The dialog previously used `catalog_opened` for every route, while an OS
+rejection or opener `RuntimeError` updated only the main status hidden behind
+the dialog. It now uses `episode_opened` for an exact episode route and includes
+the exact canonical URL, uses `series_opened` for an exact series route, and
+mirrors each success or failure message into dialog-local status. This does not
+change provider, network, Cookie, download, or stream behavior. The focused
+regression recorded RED `1 failed in 1.27s` and GREEN `1 passed in 0.71s`;
+the related focused group passed `3` tests, the expanded non-GUI group passed
+`115` with `1` skipped, and the version/documentation group passed `19` tests.
+All remaining source gates passed; a 38.1.13 manual screenshot is still pending.
+Reverting 38.1.13 means reverting the route-aware dialog messages,
+dialog-local status mirroring, regression, version, and documentation together.
+It does not migrate or delete data or overwrite the immutable Development 38.0
+folder. No 38.1.13 stage, commit, source freeze, build, package, or push has
+been performed.
+The 38.1.14 increment corrects a Python argument-binding conflict in the
+official handoff helper. Its transport positional parameter was named `url`,
+while episode calls also supplied a message placeholder as keyword `url=`;
+Python therefore raised a multiple-values `TypeError` before the helper body,
+OS opener, or dialog-local status could run. Renaming only the transport
+parameter and its internal references to `official_url` preserves the message
+placeholder and all route, translation, and handoff semantics. This does not
+change provider, network, Cookie, download, or stream behavior. The pre-fix
+runtime group recorded `1 failed, 162 passed, 1 skipped in 8.99s`; the new
+focused regression recorded RED `1 failed in 1.20s`, and the focused handoff
+group recorded GREEN `4 passed in 1.08s`. A later related non-UI and version
+group recorded `134 passed, 1 skipped, 1 failed in 6.79s` before the documents
+were synchronized; that sole failure reported README and docs README still at
+38.1.13. After synchronization, the same related non-GUI and version group
+passed `135` tests with `1` skipped in `1.87s`; the remaining source gates also
+passed. Source validation is complete, while the 38.1.14 manual screenshot
+remains pending. Reverting 38.1.14 means reverting
+the helper parameter and internal references, regression, version, and
+documentation together. It does not migrate or delete data or overwrite the
+immutable Development 38.0 folder. No 38.1.14 stage, commit, source freeze,
+build, package, or push has been performed.
+
+The 38.1.15 increment records the user-directed removal of the AniGamer MOD,
+workspace, and runtime registration from current source. Existing user data,
+historical evidence, and the immutable Development 38.0 package remain in
+place; retired routes are not rewired to generic Direct HTTP. This source-only
+change has no package. Rollback means restoring the complete validated 38.1.14
+source and registrations together; it never deletes user data or overwrites a
+retained Version folder.
+
+The 38.1.16 increment replaces recursive PyInstaller collection of
+`mod/builtin` with the exact integrity-pinned release inventory. This prevents
+ignored bytecode and local tool caches from silently entering a new executable.
+It does not delete those local files or modify the immutable Development 38.0
+package. Rollback restores the helper, spec contract, regression, version, and
+documentation together; no package was built for this source-only correction.
+
+Development 39.0.0 is a new feature baseline rather than a 38.1 correction.
+It extends the existing disabled-by-default Media Convert workspace with local
+PNG, JPEG, and WebP still-image conversion and bounded redacted FFmpeg failure
+evidence. Existing conversion IDs and output rules remain compatible. Reverting
+39.0.0 removes the three additive presets and diagnostics while leaving user
+source files and any already-created outputs untouched.
+
+Development 39.0.1 adds local capability evidence, a 256 MiB conversion disk
+reserve, and ffprobe stream validation before committing a temporary output.
+It does not add a binary, cloud fallback, or new provider contract. Reverting
+39.0.1 restores the 39.0.0 conversion service and UI while leaving source files,
+UserData, and already-completed outputs untouched.
+
+Development 39.0.2 adds the localhost-only Gopeed Bridge／P2P Transfer MODs,
+marks whisper-cli and the speech model as optional Speech to Text runtime
+dependencies, names the trusted conversion workspace `格式工廠`, and adds
+WebM／AVI, AAC／Opus／WAV, and BMP／TIFF presets. On a new profile, every built-in
+MOD except Automation and Speech to Text starts enabled; saved user choices are
+preserved. Reverting 39.0.2 removes those additive registrations and restores
+39.0.1 defaults without deleting Gopeed tasks, downloaded data, models,
+UserData, source files, or completed conversion outputs.
+
+Development 39.0.3 removes the unsupported `rawUrl` member from Gopeed create
+and resolve request bodies so they conform to the official OpenAPI `Request`
+schema. Reverting 39.0.3 restores only that request-shape implementation,
+regression, version, and documentation; it does not delete external Gopeed
+tasks, downloaded data, models, UserData, source files, or conversion outputs.
+
+Development 39.0.4 wraps the trusted Gopeed／P2P workspace in the existing
+`workspaceScroll` pattern and applies the content layout's minimum-size contract.
+At limited heights the page scrolls vertically instead of collapsing its cards.
+Reverting 39.0.4 restores the previous UI shell, regression, version, and
+documentation; it does not delete tasks, downloads, UserData, or external Gopeed
+configuration.
+
+Development 39.0.5 maps Stable to its independent public identity `1.0.0` and
+splits the formal release operator into receipt-bound build-only and stage-built
+steps. The handoff binds channel, core/release versions, clean source revision,
+and wheel SHA-256; Stable staging additionally requires Authenticode `Valid`.
+Reverting 39.0.5 restores the previous identity/operator, regression, version,
+and documentation; it does not delete UserData, retained versions, public assets,
+or an unissued signing work directory.
+
+Patch releases continue to share the same local minor folder (`4.0.1` stages to
+`Version/Development/4.0`) for compatibility with retained releases and offline
+update contracts. Only the latest patch selected before the first stage is
+packaged for that minor line. Staging fails closed when the folder already
+exists; it never overwrites an earlier candidate. A published GitHub tag or
+attachment is also immutable: publishing `v4.0.1` must create a new Release and
+must never replace the existing `v4.0.0` assets.
 
 Build and stage the current version with:
 
 ```powershell
 .\.venv\Scripts\python.exe -m tools.build_version
 ```
+
+Stable uses the split operator and may run only after the corresponding explicit
+authorizations and production signing identities are available:
+
+```powershell
+.\.venv\Scripts\python.exe -m tools.build_version `
+  --channel stable --confirm-stable --build-only
+# Apply and independently verify Authenticode on the exact work-directory EXE.
+.\.venv\Scripts\python.exe -m tools.build_version `
+  --channel stable --confirm-stable --stage-built <receipt-work-directory>
+```
+
+`--stage-built` rejects a different release track, source revision, receipt,
+wheel digest, or non-`Valid` Authenticode status. These commands do not replace
+the final Ed25519 manifest, SBOM/checksum, copied-folder, or preflight gates.
 
 Windows 環境若因 Python／pip `TEMP`、`TMP` 暫存 ACL 出現 `WinError 5`，
 可指定使用者可寫入的一次性建置暫存根目錄：
@@ -77,9 +246,9 @@ Use `--without-portable-runtime` only for a deliberately reduced build.
 Temporary PyInstaller and wheel output stays under `.work/<major>.<minor>` and is
 removed after a successful build. Use `--keep-work` only when build diagnostics are needed.
 Each version folder contains the EXE, wheel, portable tools, built-in MOD files,
-`release-info.json`, and `SHA256SUMS.txt`. Re-staging the same version uses a
-transactional staging directory and removes stale files from the older staged
-copy. Build caches are not included.
+`release-info.json`, and `SHA256SUMS.txt`. The transactional staging directory is
+used only while creating or recovering the first staged copy; an existing
+retained version folder is never replaced. Build caches are not included.
 
 日常只稽核目前版與上一版：
 

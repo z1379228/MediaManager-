@@ -215,8 +215,6 @@ class SubprocessDownloadProvider:
             },
             "youtube-search": {"network.youtube", "process.javascript"},
             "bilibili-search": {"network.bilibili"},
-            "ani-gamer-search": {"network.ani-gamer"},
-            "ani-gamer-episodes": {"network.ani-gamer"},
             "youtube-player": {
                 "network.youtube",
                 "storage.temp.write",
@@ -362,8 +360,6 @@ class SubprocessDownloadProvider:
         permission = {
             "youtube-search": "network.youtube",
             "bilibili-search": "network.bilibili",
-            "ani-gamer-search": "network.ani-gamer",
-            "ani-gamer-episodes": "network.ani-gamer",
             "test": "network.youtube",
         }.get(self.provider_id)
         if permission is None:
@@ -447,14 +443,15 @@ class SubprocessDownloadProvider:
             False,
         )
         normalized = query.normalized(capability)
+        payload = {
+            "operation": "search",
+            "query": normalized.query,
+            "limit": normalized.page_size,
+            "content_type": normalized.content_type,
+            "cursor": normalized.cursor,
+        }
         result = self._execute(
-            {
-                "operation": "search",
-                "query": normalized.query,
-                "limit": normalized.page_size,
-                "content_type": normalized.content_type,
-                "cursor": normalized.cursor,
-            },
+            payload,
             None,
             threading.Event(),
             timeout=self.analyze_timeout,
@@ -943,6 +940,7 @@ class SubprocessDownloadProvider:
         *,
         timeout: float,
         idle_timeout: float,
+        sensitive_values: tuple[str, ...] = (),
     ):
         self._verify_expected_files()
         payload = dict(payload)
@@ -983,6 +981,12 @@ class SubprocessDownloadProvider:
         stderr_size = 0
         stderr_truncated = False
         stderr_lock = threading.Lock()
+
+        def redact_sensitive_values(value: str) -> str:
+            for sensitive_value in sensitive_values:
+                if sensitive_value:
+                    value = value.replace(sensitive_value, "[REDACTED]")
+            return value
 
         def stop_process_tree(*, force: bool = False) -> None:
             # On Windows, closing the kill-on-close Job Object is what stops
@@ -1044,6 +1048,7 @@ class SubprocessDownloadProvider:
             with stderr_lock:
                 value = "".join(stderr_parts).strip()
                 truncated = stderr_truncated
+            value = redact_sensitive_values(value)
             if truncated:
                 suffix = "[provider stderr truncated]"
                 suffix_bytes = len(f"\n{suffix}".encode("utf-8"))
@@ -1164,7 +1169,7 @@ class SubprocessDownloadProvider:
                 if message["type"] == "error":
                     failure = classify_provider_failure(message.get("error"))
                     safe_message = bounded_redacted_text(
-                        failure.message,
+                        redact_sensitive_values(failure.message),
                         max_utf8_bytes=1000,
                     )
                     raise ProviderFailure(

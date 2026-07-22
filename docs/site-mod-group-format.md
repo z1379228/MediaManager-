@@ -29,7 +29,8 @@
   `ani-gamer-search`、負責分頁集數導覽的 `ani-gamer-episodes`，以及只保存選取單集
   公開索引、封面與使用者本機媒體的 `ani-gamer-offline`。主 MOD 未啟用時不顯示
   子 MOD；搜尋子 MOD 關閉時不發出目錄或搜尋請求，集數子 MOD 關閉時不讀取作品
-  集數，番劇儲存子 MOD 關閉時保存與匯入按鈕不可用。官方播放仍由官網處理。
+  集數，番劇儲存子 MOD 關閉時保存與匯入按鈕不可用。G38-02 的動畫瘋 Cookie 只存於
+  程序記憶體，停用父 MOD 或結束程式時清除；官方播放仍由官網處理。
 - `facebook` 與 `mega` 是沒有子 MOD 的獨立主 MOD；兩者預設
   停用，啟用後才建立各自下載工作區。Facebook 不與 Instagram／Threads 共用下載
   provider；MEGA 也不經 `generic-ytdlp`。
@@ -41,8 +42,13 @@
 - Facebook：只處理使用者提供的公開影片頁，無音訊格式、字幕、分段或播放清單控制。
 - MEGA：只處理公開檔案／整個公開資料夾傳輸與種類辨識，不顯示影音格式、字幕、試聽或播放清單。
 - 動畫瘋：官方公開目錄、分類、搜尋、封面、分頁集數導覽、官方播放入口，以及選取
-  單集的公開索引／本機媒體保存；不提供網站串流下載、廣告處理、Cookie 匯入或
-  串流擷取。
+  單集的公開索引／本機媒體保存。G38-02 是唯一 Cookie 例外：只接受使用者主動貼上、
+  只存於程序記憶體，且只供目錄／集數 discovery 對精確的
+  `https://ani.gamer.com.tw` 使用。
+- 動畫瘋 Cookie 不得來自瀏覽器 profile／Cookie DB，不自動更新且不接受 Cloudflare
+  token；不得注入 WebEngine／系統瀏覽器，也不得供 downloader、離線保存或彈幕使用。
+  動畫瘋仍不提供串流攔截／擷取、網站串流下載、廣告處理，或登入、DRM、付費、地區、
+  Cloudflare 等限制的規避。
 
 ## 網域隔離
 

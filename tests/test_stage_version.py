@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from core.security import release_layout
 from core.security.release_layout import (
     DEFAULT_RELEASE_FILES,
     PINNED_BUILTIN_RELEASE_FILES,
@@ -21,6 +22,61 @@ def test_release_layout_includes_every_pinned_builtin_mod_file() -> None:
     }
 
     assert release_mod_files == set(PINNED_BUILTIN_RELEASE_FILES)
+
+
+def test_pyinstaller_builtin_datas_use_only_the_pinned_allowlist(
+    tmp_path: Path,
+) -> None:
+    helper = getattr(release_layout, "pinned_builtin_pyinstaller_datas", None)
+    assert callable(helper)
+
+    for name in PINNED_BUILTIN_RELEASE_FILES:
+        path = tmp_path / Path(*name.split("/"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(name.encode("utf-8"))
+    retired_cache = (
+        tmp_path
+        / "mod"
+        / "builtin"
+        / "retired-provider"
+        / "__pycache__"
+        / "provider.cpython-314.pyc"
+    )
+    retired_cache.parent.mkdir(parents=True, exist_ok=True)
+    retired_cache.write_bytes(b"retired bytecode")
+    unlisted_cache = (
+        tmp_path
+        / "mod"
+        / "builtin"
+        / "generic-ytdlp"
+        / "~"
+        / ".cache"
+        / "state.json"
+    )
+    unlisted_cache.parent.mkdir(parents=True, exist_ok=True)
+    unlisted_cache.write_bytes(b"unlisted cache")
+
+    datas = helper(tmp_path)
+    relative_sources = {
+        Path(source).resolve().relative_to(tmp_path.resolve()).as_posix()
+        for source, _destination in datas
+    }
+
+    assert relative_sources == set(PINNED_BUILTIN_RELEASE_FILES)
+    assert all("__pycache__" not in source for source in relative_sources)
+    assert all(not source.endswith((".pyc", ".pyo")) for source in relative_sources)
+    assert retired_cache.relative_to(tmp_path).as_posix() not in relative_sources
+    assert unlisted_cache.relative_to(tmp_path).as_posix() not in relative_sources
+
+
+def test_pyinstaller_builtin_datas_fail_closed_when_a_pinned_file_is_missing(
+    tmp_path: Path,
+) -> None:
+    helper = getattr(release_layout, "pinned_builtin_pyinstaller_datas", None)
+    assert callable(helper)
+
+    with pytest.raises(FileNotFoundError, match="pinned built-in release file"):
+        helper(tmp_path)
 
 
 def _prepare_source(root: Path, version: str = "1.2.3") -> None:

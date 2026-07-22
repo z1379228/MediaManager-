@@ -22,12 +22,18 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     assert isinstance(context.library, LibraryService)
     assert isinstance(context.features, FeatureModRegistry)
     assert context.conversion is not None
-    assert not context.features.is_enabled("media-convert")
-    assert not context.features.is_enabled("media-ad-trim")
+    assert context.features.is_enabled("media-convert")
+    assert context.features.is_enabled("media-ad-trim")
     assert context.transcription is not None
     assert not context.features.is_enabled("speech-to-text")
     assert context.automation is not None
     assert not context.features.is_enabled("automation")
+    assert context.gopeed is not None
+    assert context.p2p_transfer is not None
+    assert context.features.is_enabled("gopeed-transfer")
+    assert context.features.is_enabled("p2p-transfer")
+    assert not context.gopeed.is_configured
+    assert not context.p2p_transfer.is_configured
     assert isinstance(context.discovery, DiscoveryService)
     assert isinstance(context.plugin_cleanup, PluginCleanupManager)
     assert isinstance(context.plugin_maintenance, PluginMaintenanceManager)
@@ -49,11 +55,11 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
         status.provider_id: status for status in context.download_providers.statuses()
     }
     assert providers["youtube"].enabled
-    assert not providers["generic-ytdlp"].enabled
-    assert not providers["bilibili"].enabled
-    assert not providers["facebook"].enabled
-    assert not providers["mega"].enabled
-    assert not providers["direct-http"].enabled
+    assert providers["generic-ytdlp"].enabled
+    assert providers["bilibili"].enabled
+    assert providers["facebook"].enabled
+    assert providers["mega"].enabled
+    assert providers["direct-http"].enabled
     assert set(providers) == {
         "youtube",
         "generic-ytdlp",
@@ -74,7 +80,7 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
         )
         == "facebook"
     )
-    assert not context.download_providers.is_enabled("facebook")
+    assert context.download_providers.is_enabled("facebook")
     context.download_providers.set_enabled("facebook", True)
     context.download_providers.set_enabled("mega", True)
     context.download_providers.set_enabled("direct-http", True)
@@ -105,8 +111,6 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     assert {status.provider_id for status in context.discovery.statuses()} == {
         "youtube-search",
         "bilibili-search",
-        "ani-gamer-search",
-        "ani-gamer-episodes",
         "youtube-player",
         "youtube-history",
         "youtube-recovery",
@@ -114,13 +118,8 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
         "youtube-auto-split",
     }
     assert context.discovery.is_enabled("youtube-search")
-    assert not context.discovery.is_enabled("bilibili-search")
-    assert not context.discovery.is_enabled("ani-gamer-search")
-    assert not context.discovery.is_enabled("ani-gamer-episodes")
+    assert context.discovery.is_enabled("bilibili-search")
     assert {status.provider_id for status in context.features.statuses()} == {
-        "ani-gamer",
-        "ani-gamer-offline",
-        "ani-gamer-player",
         "bilibili-danmaku",
         "instagram",
         "instagram-page",
@@ -134,16 +133,71 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
         "media-convert",
         "media-ad-trim",
         "speech-to-text",
+        "gopeed-transfer",
+        "p2p-transfer",
         "automation",
     }
-    assert not context.features.is_enabled("instagram")
-    assert not context.features.is_enabled("ani-gamer-offline")
-    assert not context.features.is_enabled("instagram-page")
-    assert not context.features.is_enabled("threads")
-    assert not context.features.is_enabled("threads-page")
-    assert not context.features.is_enabled("twitter")
-    assert not context.features.is_enabled("twitter-page")
+    assert context.features.is_enabled("instagram")
+    assert context.features.is_enabled("instagram-page")
+    assert context.features.is_enabled("threads")
+    assert context.features.is_enabled("threads-page")
+    assert context.features.is_enabled("twitter")
+    assert context.features.is_enabled("twitter-page")
     context.lifecycle.shutdown()
+
+
+def test_bootstrap_ignores_retired_ani_gamer_state_without_mutating_other_mods(
+    tmp_path, monkeypatch
+) -> None:
+    import json
+
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    paths.mod.mkdir(parents=True, exist_ok=True)
+    discovery_state = paths.mod / "discovery-state.json"
+    feature_state = paths.mod / "feature-state.json"
+    discovery_state.write_text(
+        json.dumps(
+            {
+                "ani-gamer-search": True,
+                "ani-gamer-episodes": True,
+                "youtube-search": False,
+                "youtube-history": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    feature_state.write_text(
+        json.dumps(
+            {
+                "ani-gamer": True,
+                "ani-gamer-offline": True,
+                "ani-gamer-player": True,
+                "instagram": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    try:
+        runtime_ids = {
+            *(status.provider_id for status in context.download_providers.statuses()),
+            *(status.provider_id for status in context.discovery.statuses()),
+            *(status.provider_id for status in context.features.statuses()),
+        }
+        assert not {value for value in runtime_ids if value.startswith("ani-gamer")}
+        assert not context.discovery.is_enabled("youtube-search")
+        assert context.discovery.is_enabled("youtube-history")
+        assert context.features.is_enabled("instagram")
+        assert json.loads(discovery_state.read_text(encoding="utf-8"))[
+            "ani-gamer-search"
+        ] is True
+        assert json.loads(feature_state.read_text(encoding="utf-8"))[
+            "ani-gamer"
+        ] is True
+    finally:
+        context.lifecycle.shutdown()
 
 
 def test_bootstrap_applies_supported_language_to_mod_ui(tmp_path, monkeypatch) -> None:
@@ -224,12 +278,13 @@ def test_clean_bootstrap_starts_no_optional_provider_process(
         )
         assert providers
         assert all(not provider._processes for provider in providers)
-        assert not context.features.is_enabled("ani-gamer")
-        assert not context.features.is_enabled("ani-gamer-offline")
-        assert not context.features.is_enabled("ani-gamer-player")
-        assert not context.features.is_enabled("bilibili-danmaku")
-        assert not context.features.is_enabled("media-convert")
-        assert not context.features.is_enabled("media-ad-trim")
+        assert context.features.is_enabled("bilibili-danmaku")
+        assert context.features.is_enabled("media-convert")
+        assert context.features.is_enabled("media-ad-trim")
+        assert context.features.is_enabled("gopeed-transfer")
+        assert context.features.is_enabled("p2p-transfer")
+        assert not context.gopeed.is_configured
+        assert not context.p2p_transfer.is_configured
         assert not context.features.is_enabled("speech-to-text")
         assert not context.features.is_enabled("automation")
     finally:

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "provider_id": "gopeed-transfer",
+  "display_name": "Gopeed Bridge",
+  "kind": "local-feature",
+  "default_enabled": true,
+  "permissions": [
+    "network.localhost.gopeed",
+    "storage.user-selected.write"
+  ],
+  "auto_start_external_process": false,
+  "persist_api_token": false,
+  "force_delete_external_files": false
+}

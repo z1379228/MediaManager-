@@ -2,9 +2,9 @@
 
 Review date: 2026-07-16
 Current decision: MediaManager provides an official post and data-export bridge
-only. Development 12.2 exposes those tools as a disabled-by-default Threads
-parent MOD with separate official-post and data-export child MODs. It does not
-enable a Threads download provider.
+only. The current source enables the Threads parent and its official-post and
+data-export child MODs on new profiles while preserving existing saved choices.
+It does not enable a Threads download provider.
 
 ## Evidence
 

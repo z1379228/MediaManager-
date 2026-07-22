@@ -1,53 +1,74 @@
 # MediaManager 正式版 1.0 候選狀態
 
-目前結論為 `ready: false`。本文件是候選評估，不是 Stable 發布宣告；所有正式版門檻
-通過且使用者明確確認前，不建立、簽署、包裝或上傳 `Version/Stable/1.0`。
+狀態：`ready: false / G39-07 SOURCE-FROZEN / NO STABLE PACKAGE / SAFE_MODE`。
+
+本文件只記錄目前候選評估，不是 Stable 發布宣告。正式版使用獨立公開版本 `1.0.0`，目前
+開發來源相容版本為 `39.0.5`；數字大小不可跨 Development／Testing／Stable 通道比較。
 
 ## 目前可確認的來源基線
 
-- 目前來源顯示為開發版 16.1，核心相容版本 16.1.0；最新完整成品是
-  `Version/Development/16.1`，開發與測試流程維持 `SAFE_MODE`。
-- GitHub 的 `test-v1.0.0` 是較早 revision 的不可覆寫測試附件。目前來源已再新增
-  其後的網站父子 MOD、樹狀管理與動畫瘋番劇儲存，因此來源與已發布附件不能
-  視為同一候選成品。
-- 網站父子生命週期、工作區、網址路由與搜尋來源分離；目前共有 31 個內建 MOD、
-  8 個網站群組及每組 4 個語言檔。
-- Ruff、MOD 群組稽核與文字污染檢查通過；Pytest 848 項通過，另有 2 項 Windows
-  symlink 測試因帳戶權限跳過。
-- 開發版 16.0 已建立 EXE、`release-info.json` 與 `SHA256SUMS.txt`，copied-folder
-  三種 CLI 與 GUI smoke 通過；封裝 provider smoke 為 7/7。這些仍只證明 Development
-  成品一致，不能取代 Stable 的 production 簽章及候選證據。動畫瘋官方頁目前可能要求
-  Cloudflare 瀏覽器驗證，14.2 已提供不繞過驗證的官方作品／單集網址貼入降級流程。
+- G39-06／Development 39.0.4 已修正 Gopeed／P2P 有限高度下 card 被壓扁重疊的版面缺口；
+  來源使用既有 `workspaceScroll` 與 minimum-size layout contract。G39-07／39.0.5 再將 Stable
+  公開身分與 UI display 固定為 `1.0.0`／「正式版 1.0」，並完成 receipt-bound
+  build-only／stage-built 來源 operator。
+- 目前 catalog 有 29 個內建 MOD；新 profile 只有 `speech-to-text` 與 `automation` 預設停用。
+  MOD 群組稽核為 7 groups／4 locales；網站矩陣為 12 sites／33 features／49 workflows。
+- 114 個不含 PySide／GUI 操作的測試檔為 `1019 passed, 6 skipped`；封裝精準回歸 `45 passed`；
+  Ruff／品質、依賴鎖、
+  版本文件、保留版本、Repository 外 compileall、SAFE_MODE verify-only 與 diff check 均通過。
+- 修正版 UI 尚待使用者截圖確認；截圖不能取代 Tab／Shift+Tab、UIA／讀屏、Windows OS
+  高對比或實際 Gopeed 互動證據。
+- 最新保留完整包仍是 `Version/Development/38.0`。它屬不可覆寫的舊 source freeze，不能冒充
+  39.0.5 或 Stable 1.0。
 
-## 仍然阻擋 Stable 1.0 的項目
+## 實測的 Stable 阻擋
 
-1. 程式內沒有可用的 production Ed25519 release key id 與 public key。
-2. `MediaManager.exe` 的 Windows Authenticode 狀態仍為 `NotSigned`。
-3. 必須從最終來源 revision 重建新的 Testing 候選，並讓 evidence 綁定成品 digest、
-   產生時間與發布工具版本；既有 `test-v1.0.0` 不可覆寫或冒充新候選。
-4. 16.1 Development 已完成成品驗證，但仍必須從最終提交 revision 建立新的 Testing
-   候選。Development 的 copied-folder 與本機 SHA-256 不能取代該候選的升級、
-   回退、全綠網址 smoke 與上傳前後 SHA-256 比對。
-5. `generic-ytdlp` 仍是預設停用的舊 Beta 多網域相容 provider；它不影響 YouTube／
-   Bilibili 工作區隔離，但正式版前仍應評估是否保留或逐站遷移。
+對 `Version/Development/38.0` 執行唯讀 `tools.release_preflight --json` 得到 `ready: false`：
 
-因此目前必須維持 Development 與 `SAFE_MODE`。production Ed25519 私鑰及 Windows
-code-signing 身分是外部發布條件，不得用測試金鑰、略過檢查或手動改狀態取代。
+1. `core/security/release_key.py` 的 production Ed25519 key id／public key 仍為空白。
+2. `MediaManager.exe` 的 Authenticode 狀態為 `NotSigned`。
+3. 舊包缺少 `gopeed-transfer`、`p2p-transfer`，且格式工廠／Local Ad Segment Trim manifest
+   與目前來源 hash 不同；因此它不是目前候選。
+4. Development 39.0.5 的 stage、本機 commit 與 source freeze 已於 2026-07-23 取得明確授權；
+   本輪 commit 即固定通過來源 Gate 的精確 revision。後續 build 仍只能從該 clean revision 開始。
+5. split-phase operator 雖已通過來源／模擬失敗回歸，但尚未取得 production Authenticode 身分，
+   也沒有對真實 build-only EXE 得到 `Valid`；receipt 不能替代正式簽章。
+6. 尚未建立綁定同一 revision、EXE digest、runtime、SBOM、checksum 與工具版本的新 Testing
+   候選，也未完成 copied-folder current→previous→current、headless SAFE_MODE 與上傳前後 digest。
 
-## 重新評估流程
+不得以 Development 38.0、既有 Testing 1.0／1.1、測試金鑰、手動改狀態或移除 preflight
+檢查替代上述證據。
 
-1. 提交目前最終原始碼並讓 GitHub CI 全部通過。
-2. 以該 revision 建立新的 Testing 版本號，重新產生 `release-info.json` 與
-   `SHA256SUMS.txt`；不得覆寫 `test-v1.0.0`。
-3. 重新執行 Ruff、Pytest、copied-folder、MOD 群組、升級、回退及完整版本稽核。
-4. 取得 production Ed25519 與 Authenticode 發布身分，依正式簽署順序處理成品。
-5. `tools.release_preflight` 必須回傳 `READY`。
-6. 由使用者明確確認後，才可建立或上傳 Stable 1.0。
+## 歷史與清理政策
 
-新的 Testing 候選建立後，使用其實際資料夾執行診斷；下列 `<版本>` 必須替換成新版本，
-不可對舊附件回填新證據：
+- `README.md` 已只保留目前 Development 39.0.5、Stable 1.0 候選、最新能力、安全界線與操作入口；
+  舊版細節改由 `docs/README.md` 的唯讀索引與區間 release／roadmap 文件承接。這是資訊收斂，
+  不是刪除公開歷史或供應鏈證據。
+- GitHub Releases 上已公開的 EXE、`SHA256SUMS.txt`、`release-info.json`、tag 與附件不可刪除或
+  覆寫；保留版本目錄的 checksum 證據亦不得改寫。
+- `Version` 與 `UserData` 被 `.gitignore` 忽略，但分別包含不可變成品與使用者資料；禁止使用
+  `git clean -fdX` 或 broad wildcard 清理。
+- 可另行清理的只有已確認無程序持有、無 rollback／稽核價值的 cache、pytest temp 與 build
+  residue；每個根目錄須先確認絕對路徑並採白名單刪除。
+- 對使用者只需在 README、目前 release note 與本文件呈現最新更新資訊；歷史工程文件可以
+  標為 Historical／Deprecated 或移至封存索引，但不以刪除公開證據換取介面整潔。
 
-```powershell
-.\.venv\Scripts\python.exe -m tools.release_preflight --root Version\Testing\<版本> --json
-.\.venv\Scripts\python.exe -m tools.release_candidate --root Version\Testing\<版本> --evidence .work\stable-1.0-evidence.json --suggest-stable 1.0.0
-```
+## 重新評估與正式發布順序
+
+1. 先用 39.0.5 完成修正版 UI 截圖與必要人工矩陣；若發現缺口先修正並重新執行來源 Gate。
+2. 使用 2026-07-23 已授權的本機 commit 固定 39.0.5 精確 source-freeze revision，並在任何
+   後續 build 前重驗 clean HEAD；commit hash 與 tree fingerprint 由交付回報保存，避免自我參照。
+3. 取得 production Ed25519 public identity 與外部私鑰、Windows Authenticode 身分；私鑰不得
+   寫入 Repository、參數紀錄、Log 或套件。
+4. 另行取得 build 授權後，以 `--channel stable --confirm-stable --build-only` 建立 receipt-bound
+   handoff；外部套用並驗證 Authenticode `Valid` 後，另行取得 stage-built 授權再執行
+   `--channel stable --confirm-stable --stage-built <work>`。不得沿用單步 Stable build-and-stage。
+5. 在 stage 後產生 SHA-256／SBOM，使用 production Ed25519 簽署最終 exact set；任何簽署後修改
+   都使候選失效。
+6. 執行完整版本稽核、copied-folder、headless、候選 evidence 與上傳前 digest；
+   `tools.release_preflight` 必須回傳 `READY`。
+7. 再取得 Stable 建立、發布與上傳目的地的明確授權，建立新的 Stable 1.0 Release；不得覆寫
+   既有版本或先刪除歷史附件。
+
+只要任一 production 身分、人工證據、source freeze 或候選 digest 缺少，就維持
+`SAFE_MODE / ready:false`，不得建立或上傳冒充正式版的產物。

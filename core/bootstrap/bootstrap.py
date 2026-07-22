@@ -31,6 +31,7 @@ from core.events.event_bus import EventBus
 from core.features import DeclarativeFeatureGate, FeatureModRegistry
 from core.conversion import ConversionService, MediaAdTrimFeature
 from core.transcription import SpeechModelManager, TranscriptionService
+from core.transfers import GopeedBridgeService, P2PTransferService
 from core.automation import AutomationCandidate, AutomationDuplicate, AutomationRule, AutomationService
 from core.downloads.archive import DuplicateDownloadError
 from core.downloads.models import DownloadRequest
@@ -156,6 +157,8 @@ class AppContext:
     conversion: ConversionService | None
     transcription: TranscriptionService | None
     automation: AutomationService | None
+    gopeed: GopeedBridgeService | None
+    p2p_transfer: P2PTransferService | None
     dependencies: DependencySnapshotService
     builtin_mod_snapshot: BuiltinModSnapshot | None = None
 
@@ -241,6 +244,8 @@ class Bootstrap:
         conversion: ConversionService | None = None
         transcription: TranscriptionService | None = None
         automation: AutomationService | None = None
+        gopeed: GopeedBridgeService | None = None
+        p2p_transfer: P2PTransferService | None = None
         builtin_mod_errors: dict[str, str] = {}
         discovery = DiscoveryService(paths.mod / "discovery-state.json")
         javascript_runtime = find_javascript_runtime(paths.application)
@@ -439,49 +444,6 @@ class Bootstrap:
                 enabled=builtin_default_enabled("bilibili-search"),
             )
 
-        ani_gamer_search = load_builtin(
-            "ani-gamer-search",
-            lambda provider_root: SubprocessDownloadProvider(
-                provider_root,
-                application_root=paths.application,
-                expected_hashes=BUILTIN_PROVIDER_HASHES["ani-gamer-search"],
-                runtime_home=paths.temp / "provider-runtime" / "ani-gamer-search",
-            ),
-        )
-        if ani_gamer_search is not None:
-            discovery.register(
-                ani_gamer_search,
-                enabled=builtin_default_enabled("ani-gamer-search"),
-            )
-
-        ani_gamer_episodes = load_builtin(
-            "ani-gamer-episodes",
-            lambda provider_root: SubprocessDownloadProvider(
-                provider_root,
-                application_root=paths.application,
-                expected_hashes=BUILTIN_PROVIDER_HASHES["ani-gamer-episodes"],
-                runtime_home=paths.temp / "provider-runtime" / "ani-gamer-episodes",
-            ),
-        )
-        if ani_gamer_episodes is not None:
-            discovery.register(
-                ani_gamer_episodes,
-                enabled=builtin_default_enabled("ani-gamer-episodes"),
-            )
-
-        for feature_id in ("ani-gamer", "ani-gamer-offline", "ani-gamer-player"):
-            ani_gamer_feature = load_builtin(
-                feature_id,
-                lambda provider_root: DeclarativeFeatureGate.from_file(
-                    provider_root / "feature.json"
-                ),
-            )
-            if ani_gamer_feature is not None:
-                features.register(
-                    ani_gamer_feature,
-                    enabled=builtin_default_enabled(feature_id),
-                )
-
         for feature_id in (
             "instagram",
             "instagram-page",
@@ -604,6 +566,7 @@ class Bootstrap:
                 find_executable(paths.application, "ffmpeg"),
                 provider_root / "presets.json",
                 paths.temp / "media-convert",
+                ffprobe=find_executable(paths.application, "ffprobe"),
             ),
         )
         if conversion is not None:
@@ -634,6 +597,25 @@ class Bootstrap:
                 transcription,
                 enabled=builtin_default_enabled("speech-to-text"),
             )
+
+        gopeed = load_builtin(
+            "gopeed-transfer",
+            lambda _provider_root: GopeedBridgeService(),
+        )
+        if gopeed is not None:
+            features.register(
+                gopeed,
+                enabled=builtin_default_enabled("gopeed-transfer"),
+            )
+            p2p_transfer = load_builtin(
+                "p2p-transfer",
+                lambda _provider_root: P2PTransferService(gopeed),
+            )
+            if p2p_transfer is not None:
+                features.register(
+                    p2p_transfer,
+                    enabled=builtin_default_enabled("p2p-transfer"),
+                )
         automation_root = load_builtin("automation", lambda provider_root: provider_root)
         download_queue = DownloadQueue(
             download_providers,
@@ -714,9 +696,19 @@ class Bootstrap:
                     suffixes = {
                         "audio-mp3": ".mp3",
                         "audio-flac": ".flac",
+                        "audio-aac": ".m4a",
+                        "audio-opus": ".opus",
+                        "audio-wav": ".wav",
                         "subtitle-srt": ".srt",
                         "video-h264": ".mp4",
                         "compress-h265": ".mkv",
+                        "video-vp9-webm": ".webm",
+                        "video-mpeg4-avi": ".avi",
+                        "image-png": ".png",
+                        "image-jpeg": ".jpg",
+                        "image-webp": ".webp",
+                        "image-bmp": ".bmp",
+                        "image-tiff": ".tiff",
                     }
                     suffix = suffixes.get(conversion_preset, source.suffix)
                     target = output_dir / f"{source.stem}.converted{suffix}"
@@ -899,6 +891,8 @@ class Bootstrap:
             conversion=conversion,
             transcription=transcription,
             automation=automation,
+            gopeed=gopeed,
+            p2p_transfer=p2p_transfer,
             dependencies=dependencies,
             builtin_mod_snapshot=builtin_mod_snapshot,
         )

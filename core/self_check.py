@@ -425,10 +425,6 @@ def _site_routing_item() -> SelfCheckItem:
             "https://mega.nz/folder/AbCdEf12#abcdefghijklmnop",
             SiteRoute("mega", "public-folder", "mega", None),
         ),
-        (
-            "https://ani.gamer.com.tw/animeVideo.php?sn=123",
-            SiteRoute("ani-gamer", "episode", None, "ani-gamer-episodes"),
-        ),
     )
     failures = [
         expected.site_family
@@ -525,8 +521,9 @@ def _transport_boundary_item() -> SelfCheckItem:
     return _item(
         "transport.boundary",
         "pass",
-        "選用傳輸維持安全關閉",
-        "Gopeed 與 P2P 預設停用；自檢未連線、未啟動程序、未開啟埠或保存 token。",
+        "選用傳輸維持未配置",
+        "Gopeed／P2P MOD 可在全新 profile 啟用，但 Bridge 與傳輸政策預設未配置；"
+        "自檢未連線、未啟動程序、未開啟埠或保存 token。",
     )
 
 

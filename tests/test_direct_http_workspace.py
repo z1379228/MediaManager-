@@ -29,7 +29,7 @@ def _use_current_builtin_hashes(monkeypatch) -> None:
         )
 
 
-def test_direct_http_workspace_is_opt_in_and_builds_isolated_request(
+def test_direct_http_workspace_is_enabled_by_default_and_builds_isolated_request(
     tmp_path: Path, monkeypatch
 ) -> None:
     pytest.importorskip("PySide6")
@@ -56,11 +56,8 @@ def test_direct_http_workspace_is_opt_in_and_builds_isolated_request(
         lambda requests: captured.extend(requests) or ("task",),
     )
     try:
-        assert not context.download_providers.is_enabled("direct-http")
-        assert not panel.add_download.isEnabled()
-        panel.enabled.click()
-        app.processEvents()
         assert context.download_providers.is_enabled("direct-http")
+        assert not panel.add_download.isEnabled()
 
         panel.urls.setPlainText("https://downloads.example.org/release.zip")
         panel.output.setText(str(tmp_path / "downloads"))

@@ -68,7 +68,9 @@ def test_p2p_requires_legal_confirmation_and_bounded_storage(tmp_path: Path) -> 
             "storage_root": str(tmp_path),
             "max_storage_bytes": 2 * 1024**3,
             "max_download_bps": 10 * 1024**2,
+            "max_upload_bps": 1024**2,
             "legal_use_confirmed": True,
+            "upload_enabled": True,
             "listen_port": 51413,
         }
     )
@@ -76,7 +78,8 @@ def test_p2p_requires_legal_confirmation_and_bounded_storage(tmp_path: Path) -> 
     assert policy.enabled
     assert policy.storage_root == tmp_path.resolve()
     assert policy.max_storage_bytes == 2 * 1024**3
-    assert policy.max_upload_bps == 0
+    assert policy.max_upload_bps == 1024**2
+    assert policy.upload_enabled
     assert policy.listen_port == 51413
 
 
@@ -95,7 +98,9 @@ def test_p2p_requires_legal_confirmation_and_bounded_storage(tmp_path: Path) -> 
             "storage_root": "C:/downloads",
             "max_storage_bytes": 2 * 1024**3,
             "max_download_bps": 1,
+            "max_upload_bps": 1,
             "legal_use_confirmed": False,
+            "upload_enabled": True,
         },
         {"enabled": True, "search_enabled": True},
         {"enabled": True, "auto_port_forward": True},

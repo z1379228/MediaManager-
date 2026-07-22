@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 from trusted_ui.site_mod_catalog import (
-    ANI_GAMER_HOME,
     FACEBOOK_EXPORT_HELP,
     FACEBOOK_HOME,
     INSTAGRAM_EXPORT_HELP,
@@ -16,7 +15,6 @@ from trusted_ui.site_mod_catalog import (
     X_EXPORT_HELP,
     X_HOME,
     official_meta_bridge_id_for_url,
-    validated_ani_gamer_url,
     validated_facebook_url,
     validated_instagram_url,
     validated_mega_url,
@@ -36,7 +34,6 @@ def test_site_mod_catalog_registers_requested_candidates() -> None:
         for item in SITE_MOD_CANDIDATES
     )
     assert tuple(item.bridge_id for item in OFFICIAL_BRIDGES) == (
-        "ani-gamer",
         "facebook",
         "instagram",
         "threads",
@@ -100,42 +97,6 @@ def test_meta_official_bridge_detection_never_claims_download_support(
     expected: str,
 ) -> None:
     assert official_meta_bridge_id_for_url(value) == expected
-
-
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    (
-        ("", ANI_GAMER_HOME),
-        (ANI_GAMER_HOME, ANI_GAMER_HOME),
-        (
-            "https://ani.gamer.com.tw/animeVideo.php?sn=44866",
-            "https://ani.gamer.com.tw/animeVideo.php?sn=44866",
-        ),
-    ),
-)
-def test_ani_gamer_official_url_accepts_only_canonical_pages(
-    value: str,
-    expected: str,
-) -> None:
-    assert validated_ani_gamer_url(value) == expected
-
-
-@pytest.mark.parametrize(
-    "value",
-    (
-        "http://ani.gamer.com.tw/",
-        "https://ani.gamer.com.tw.evil.example/animeVideo.php?sn=1",
-        "https://user:secret@ani.gamer.com.tw/animeVideo.php?sn=1",
-        "https://ani.gamer.com.tw:443/animeVideo.php?sn=1",
-        "https://ani.gamer.com.tw/animeVideo.php?sn=1&download=1",
-        "https://ani.gamer.com.tw/animeVideo.php?sn=1#stream",
-        "https://ani.gamer.com.tw/ajax/videoStart.php?sn=1",
-    ),
-)
-def test_ani_gamer_official_url_rejects_noncanonical_or_endpoint_urls(
-    value: str,
-) -> None:
-    assert validated_ani_gamer_url(value) is None
 
 
 @pytest.mark.parametrize(
@@ -372,26 +333,17 @@ def test_site_mod_catalog_panel_marks_candidates_as_not_installed(
     assert official_url.accessibleName() == "官方媒體頁網址"
     assert open_official.accessibleName() == "開啟選取網站的官方頁面"
     assert open_help.accessibleName() == "開啟選取網站的官方資料匯出說明"
-    assert official_site.currentData() == "ani-gamer"
-    assert open_help.isHidden()
+    assert official_site.currentData() == "facebook"
+    assert not open_help.isHidden()
+    assert any(
+        label.text().startswith("Facebook：下載由可停用的獨立網站 MOD 處理")
+        for label in panel.findChildren(QLabel)
+    )
     official_url.setText("https://example.com/")
     open_official.click()
     assert opened == []
     assert any(
-        label.text() == "網址不是允許的「動畫瘋」官方媒體頁。"
-        for label in panel.findChildren(QLabel)
-    )
-    official_url.setText("https://ani.gamer.com.tw/animeVideo.php?sn=44866")
-    open_official.click()
-    assert opened == ["https://ani.gamer.com.tw/animeVideo.php?sn=44866"]
-    assert any(
-        label.text() == "已交由系統瀏覽器開啟「動畫瘋」官方頁面。"
-        for label in panel.findChildren(QLabel)
-    )
-    official_site.setCurrentIndex(official_site.findData("facebook"))
-    assert not open_help.isHidden()
-    assert any(
-        label.text().startswith("Facebook：下載由可停用的獨立網站 MOD 處理")
+        label.text() == "網址不是允許的「Facebook」官方媒體頁。"
         for label in panel.findChildren(QLabel)
     )
     official_url.setText("https://m.facebook.com/watch/?v=123456")

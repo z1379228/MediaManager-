@@ -275,7 +275,8 @@ def test_all_youtube_mods_are_pinned_and_included_by_frozen_build() -> None:
             assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
 
     spec = (ROOT / "MediaManager.spec").read_text(encoding="utf-8")
-    assert "('mod/builtin', 'mod/builtin')" in spec
+    assert "('mod/builtin', 'mod/builtin')" not in spec
+    assert "pinned_builtin_pyinstaller_datas" in spec
     assert "collect_submodules('yt_dlp.extractor')" in spec
     assert "collect_submodules('yt_dlp.postprocessor')" in spec
     assert "collect_submodules('yt_dlp_ejs')" in spec

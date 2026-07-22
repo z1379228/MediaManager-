@@ -8,7 +8,6 @@ import re
 from urllib.parse import SplitResult, parse_qs, urlencode, urlsplit, urlunsplit
 
 
-ANI_GAMER_HOME = "https://ani.gamer.com.tw/"
 FACEBOOK_HOME = "https://www.facebook.com/"
 FACEBOOK_EXPORT_HELP = "https://www.facebook.com/help/www/466076673571942"
 INSTAGRAM_HOME = "https://www.instagram.com/"
@@ -98,32 +97,6 @@ def _single_ascii_digits_query(
     if not value.isascii() or not value.isdigit() or not 1 <= len(value) <= maximum_length:
         return None
     return value
-
-
-def validated_ani_gamer_url(value: str) -> str | None:
-    """Accept only the official homepage or a canonical episode page."""
-
-    parsed = _official_https_parts(
-        value,
-        home=ANI_GAMER_HOME,
-        hosts=frozenset({"ani.gamer.com.tw"}),
-    )
-    if parsed is None:
-        return None
-    if parsed.path in {"", "/"} and not parsed.query:
-        return ANI_GAMER_HOME
-    if parsed.path != "/animeVideo.php":
-        return None
-    serial = _single_ascii_digits_query(
-        parsed.query,
-        key="sn",
-        maximum_length=10,
-    )
-    if serial is None:
-        return None
-    return urlunsplit(
-        ("https", "ani.gamer.com.tw", "/animeVideo.php", urlencode({"sn": serial}), "")
-    )
 
 
 def validated_facebook_url(value: str) -> str | None:
@@ -304,12 +277,6 @@ class OfficialBridgeSpec:
 
 
 OFFICIAL_BRIDGES = (
-    OfficialBridgeSpec(
-        "ani-gamer",
-        "動畫瘋",
-        "https://ani.gamer.com.tw/animeVideo.php?sn=...（留空開首頁）",
-        validated_ani_gamer_url,
-    ),
     OfficialBridgeSpec(
         "facebook",
         "Facebook",

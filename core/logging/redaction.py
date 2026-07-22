@@ -40,7 +40,8 @@ _QUOTED_PAIR = re.compile(
 _PAIR = re.compile(
     rf"(?i)(?<![A-Za-z0-9_])"
     rf"(?P<key_quote>[\"']?)(?P<key>{_NAMES})(?P=key_quote)"
-    r"(?P<separator>\s*[:=]\s*)(?P<value>(?![\"'])[^\s,;&}\]]+)"
+    r"(?P<separator>\s*[:=]\s*)"
+    r"(?P<value>(?![\"']|\[REDACTED\])[^\s,;&}\]]+)"
 )
 _URL_USERINFO = re.compile(
     r"(?i)\b(?P<scheme>https?://)(?P<userinfo>[^/?#\s@]+)@"

@@ -32,11 +32,17 @@ from trusted_ui.dependency_dialog import (
 )
 from trusted_ui.download_panel import create_download_panel
 from trusted_ui.direct_http_workspace import create_direct_http_workspace
-from trusted_ui.ani_gamer_workspace import create_ani_gamer_workspace
 from trusted_ui.mega_workspace import create_mega_workspace
 from trusted_ui.official_social_workspace import create_official_social_workspace
-from trusted_ui.conversion_panel import create_conversion_panel
+from trusted_ui.conversion_panel import (
+    CONVERSION_WORKSPACE_LABEL,
+    create_conversion_panel,
+)
 from trusted_ui.transcription_panel import create_transcription_panel
+from trusted_ui.transfer_panel import (
+    TRANSFER_WORKSPACE_LABEL,
+    create_transfer_panel,
+)
 from trusted_ui.automation_panel import create_automation_panel
 from trusted_ui.library_panel import create_library_panel
 from trusted_ui.optional_workspace_manager import (
@@ -366,17 +372,6 @@ def run_main_window(context: object) -> int:
                 tabs,
                 (
                     OptionalWorkspaceSpec(
-                        "ani-gamer",
-                        lambda: feature_enabled("ani-gamer"),
-                        lambda: any(
-                            status.provider_id == "ani-gamer"
-                            for status in context.features.statuses()
-                        ),
-                        lambda: create_ani_gamer_workspace(context, self),
-                        lambda panel: panel.title.text(),
-                        "動畫瘋官方近期熱播、新上架、分類與作品搜尋",
-                    ),
-                    OptionalWorkspaceSpec(
                         "instagram",
                         lambda: feature_enabled("instagram"),
                         lambda: any(
@@ -446,8 +441,19 @@ def run_main_window(context: object) -> int:
                         lambda: feature_enabled("media-convert"),
                         lambda: context.conversion is not None,
                         lambda: create_conversion_panel(context, self),
-                        lambda _panel: "Media Convert",
+                        lambda _panel: CONVERSION_WORKSPACE_LABEL,
                         "本機轉封裝、轉檔、壓縮、串接與切割",
+                    ),
+                    OptionalWorkspaceSpec(
+                        "gopeed-transfer",
+                        lambda: feature_enabled("gopeed-transfer"),
+                        lambda: (
+                            context.gopeed is not None
+                            and context.p2p_transfer is not None
+                        ),
+                        lambda: create_transfer_panel(context, self),
+                        lambda _panel: TRANSFER_WORKSPACE_LABEL,
+                        "localhost Gopeed REST 橋接與明確 P2P 傳輸；不自動啟動或開埠",
                     ),
                     OptionalWorkspaceSpec(
                         "speech-to-text",

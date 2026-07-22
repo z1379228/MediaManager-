@@ -84,6 +84,7 @@ def test_site_child_requires_enabled_parent_and_parent_disable_cascades(
     monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
     context = Bootstrap(portable=True).initialize(start_background=False)
     try:
+        set_builtin_mod_enabled(context, "bilibili", False)
         with pytest.raises(RuntimeError, match="bilibili 主 MOD"):
             set_builtin_mod_enabled(context, "bilibili-search", True)
 
@@ -98,16 +99,6 @@ def test_site_child_requires_enabled_parent_and_parent_disable_cascades(
         assert not context.discovery.is_enabled("bilibili-search")
         assert not context.features.is_enabled("bilibili-danmaku")
 
-        with pytest.raises(RuntimeError, match="ani-gamer 主 MOD"):
-            set_builtin_mod_enabled(context, "ani-gamer-search", True)
-        set_builtin_mod_enabled(context, "ani-gamer", True)
-        set_builtin_mod_enabled(context, "ani-gamer-search", True)
-        set_builtin_mod_enabled(context, "ani-gamer-episodes", True)
-        assert context.discovery.is_enabled("ani-gamer-search")
-        assert context.discovery.is_enabled("ani-gamer-episodes")
-        set_builtin_mod_enabled(context, "ani-gamer", False)
-        assert not context.discovery.is_enabled("ani-gamer-search")
-        assert not context.discovery.is_enabled("ani-gamer-episodes")
     finally:
         context.lifecycle.shutdown()
 
@@ -393,6 +384,11 @@ def test_builtin_mod_events_sync_download_and_search_controls(
 
     app = QApplication.instance() or QApplication([])
     context = Bootstrap(portable=True).initialize()
+    # New profiles now enable every built-in MOD except Automation and Speech
+    # to Text. Establish this test's disabled starting state explicitly so it
+    # continues to exercise live event synchronization rather than defaults.
+    set_builtin_mod_enabled(context, "bilibili", False)
+    set_builtin_mod_enabled(context, "youtube-player", False)
     download_panel = create_download_panel(context, site_family="bilibili")
     search_panel = create_search_panel(context)
     download_panel.timer.stop()

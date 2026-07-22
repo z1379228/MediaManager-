@@ -79,12 +79,6 @@ def explicit_search_source_name(
             "ja": "Bilibili 検索",
             "en": "Bilibili Search",
         },
-        "ani-gamer-search": {
-            "zh-TW": "動畫瘋官方搜尋",
-            "zh-CN": "动画疯官方搜索",
-            "ja": "AniGamer 公式検索",
-            "en": "AniGamer Official Search",
-        },
     }
     provider_labels = labels.get(str(provider_id))
     if provider_labels is None:
@@ -297,12 +291,6 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 ),
                 "bilibili-search",
             )
-            self.ani_gamer_search_enabled = create_feature_action(
-                explicit_search_source_name(
-                    "ani-gamer-search", current_locale, "動畫瘋官方搜尋"
-                ),
-                "ani-gamer-search",
-            )
             self.history_enabled = create_feature_action(
                 "記錄搜尋偏好", "youtube-history"
             )
@@ -316,7 +304,6 @@ def create_search_panel(context: object, parent: object = None) -> object:
             feature_actions = (
                 self.enabled,
                 self.bilibili_search_enabled,
-                self.ani_gamer_search_enabled,
                 self.history_enabled,
                 self.recovery_enabled,
                 self.similar_enabled,
@@ -327,7 +314,6 @@ def create_search_panel(context: object, parent: object = None) -> object:
                     (
                         "youtube-search",
                         "bilibili-search",
-                        "ani-gamer-search",
                         "youtube-history",
                         "youtube-recovery",
                         "youtube-similar",
@@ -533,7 +519,6 @@ def create_search_panel(context: object, parent: object = None) -> object:
                             parent_label = {
                                 "youtube": "YouTube",
                                 "bilibili": "Bilibili",
-                                "ani-gamer": "動畫瘋",
                             }.get(parent_id, parent_id)
                             hidden_labels.append(
                                 f"{source_label}需先啟用 {parent_label} 主 MOD"
@@ -675,7 +660,6 @@ def create_search_panel(context: object, parent: object = None) -> object:
             for search_action in (
                 self.enabled,
                 self.bilibili_search_enabled,
-                self.ani_gamer_search_enabled,
             ):
                 search_action.toggled.connect(self.refresh_search_sources)
 
@@ -726,7 +710,6 @@ def create_search_panel(context: object, parent: object = None) -> object:
             for provider_id in (
                 "youtube-search",
                 "bilibili-search",
-                "ani-gamer-search",
                 "youtube-player",
                 "youtube-history",
                 "youtube-recovery",
@@ -736,7 +719,6 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 if provider_id in {
                     "youtube-search",
                     "bilibili-search",
-                    "ani-gamer-search",
                 }:
                     name = explicit_search_source_name(
                         provider_id, locale, name or provider_id

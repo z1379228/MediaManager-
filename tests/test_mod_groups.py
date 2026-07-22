@@ -36,18 +36,6 @@ def test_site_groups_cover_exact_parent_child_and_four_locale_contract() -> None
             assert group.workspace["wrong_site"]
 
 
-def test_ani_gamer_ui_strings_are_complete_in_all_four_mod_locales() -> None:
-    groups = tuple(
-        load_builtin_mod_group("ani-gamer", locale=locale)
-        for locale in SUPPORTED_LOCALE_CODES
-    )
-    expected = set(groups[0].ui)
-
-    assert "load_episodes" in expected
-    assert "episodes_more" in expected
-    assert all(set(group.ui) == expected for group in groups)
-
-
 @pytest.mark.parametrize("group_id", ("instagram", "threads", "twitter"))
 def test_official_social_ui_strings_are_complete_in_all_four_locales(
     group_id: str,

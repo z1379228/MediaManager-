@@ -11,9 +11,9 @@ ROOT = Path(__file__).parents[1]
 def test_repository_site_quality_matrix_passes_offline() -> None:
     report = audit_builtin_site_quality(ROOT)
     assert report.valid, report.errors
-    assert report.checked_sites == len(SITE_MOD_CHILDREN) + 5
-    assert report.checked_features >= 39
-    assert report.checked_workflows == len(SITE_MOD_CHILDREN) * 7
+    assert report.checked_sites == 12
+    assert report.checked_features == 33
+    assert report.checked_workflows == 49
 
 
 def copy_site_matrices(target: Path) -> None:
