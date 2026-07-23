@@ -71,6 +71,14 @@ def test_complete_main_window_builds_at_supported_minimum_size(
 
     paths = AppPaths.discover(portable=True, app_root=tmp_path)
     monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+    # The presentation assertions do not exercise the modal dependency
+    # dialog.  CI intentionally has no bundled runtime dependencies, so the
+    # startup timer would otherwise enter the dialog's nested event loop and
+    # prevent this test from reaching its window assertions.
+    monkeypatch.setattr(
+        "trusted_ui.main_window.show_dependency_dialog",
+        Mock(),
+    )
     app = QApplication.instance() or QApplication([])
     context = Bootstrap(portable=True).initialize(start_background=False)
     context.settings.initial_mod_setup_completed = True
@@ -137,6 +145,10 @@ def test_main_window_reverts_controls_when_settings_are_read_only(
 
     paths = AppPaths.discover(portable=True, app_root=tmp_path)
     monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+    monkeypatch.setattr(
+        "trusted_ui.main_window.show_dependency_dialog",
+        Mock(),
+    )
     app = QApplication.instance() or QApplication([])
     warning = Mock(return_value=QMessageBox.StandardButton.Ok)
     monkeypatch.setattr(QMessageBox, "warning", warning)
