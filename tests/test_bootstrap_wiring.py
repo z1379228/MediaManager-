@@ -13,17 +13,23 @@ from core.settings import Settings, SettingsService
 
 
 def test_bootstrap_plugin_service_types_are_wired_by_name(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, request
 ) -> None:
     paths = AppPaths.discover(portable=True, app_root=tmp_path)
     monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
     context = Bootstrap(portable=True).initialize()
+    request.addfinalizer(context.lifecycle.shutdown)
     assert isinstance(context.download_queue, DownloadQueue)
     assert isinstance(context.library, LibraryService)
     assert isinstance(context.features, FeatureModRegistry)
     assert context.conversion is not None
-    assert context.features.is_enabled("media-convert")
-    assert context.features.is_enabled("media-ad-trim")
+    feature_statuses = {
+        status.provider_id: status for status in context.features.statuses()
+    }
+    conversion_available = context.conversion.available
+    for provider_id in ("media-convert", "media-ad-trim"):
+        assert feature_statuses[provider_id].available is conversion_available
+        assert feature_statuses[provider_id].enabled is conversion_available
     assert context.transcription is not None
     assert not context.features.is_enabled("speech-to-text")
     assert context.automation is not None
@@ -119,7 +125,7 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     }
     assert context.discovery.is_enabled("youtube-search")
     assert context.discovery.is_enabled("bilibili-search")
-    assert {status.provider_id for status in context.features.statuses()} == {
+    assert set(feature_statuses) == {
         "bilibili-danmaku",
         "instagram",
         "instagram-page",
@@ -143,7 +149,6 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     assert context.features.is_enabled("threads-page")
     assert context.features.is_enabled("twitter")
     assert context.features.is_enabled("twitter-page")
-    context.lifecycle.shutdown()
 
 
 def test_bootstrap_ignores_retired_ani_gamer_state_without_mutating_other_mods(
@@ -279,8 +284,13 @@ def test_clean_bootstrap_starts_no_optional_provider_process(
         assert providers
         assert all(not provider._processes for provider in providers)
         assert context.features.is_enabled("bilibili-danmaku")
-        assert context.features.is_enabled("media-convert")
-        assert context.features.is_enabled("media-ad-trim")
+        feature_statuses = {
+            status.provider_id: status for status in context.features.statuses()
+        }
+        conversion_available = context.conversion.available
+        for provider_id in ("media-convert", "media-ad-trim"):
+            assert feature_statuses[provider_id].available is conversion_available
+            assert feature_statuses[provider_id].enabled is conversion_available
         assert context.features.is_enabled("gopeed-transfer")
         assert context.features.is_enabled("p2p-transfer")
         assert not context.gopeed.is_configured

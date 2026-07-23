@@ -372,7 +372,8 @@ def test_self_check_probes_actual_mod_management_tree(tmp_path: Path, monkeypatc
             for item in panel.report.items
             if item.check_id == "ui.mod_management"
         )
-        assert panel.report.block_count == 0
+        # A clean source checkout may correctly block on optional local runtimes
+        # such as FFmpeg. This test only verifies the real MOD-management UI tree.
         assert item.state == "pass"
         assert "啟用按鈕" in item.detail
     finally:
