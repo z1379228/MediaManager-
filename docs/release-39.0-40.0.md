@@ -30,8 +30,11 @@
 - Quality audit：Ruff `364` 個 Python 檔案、文字污染 `471` 個受控文字檔。
 - MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`。
 - 本機保留版本稽核：`3` 個版本通過。
-- source freeze 前仍須重跑文件／品質、compileall、`--verify-only` 與
-  `git diff --check`。
+- source freeze 文件稽核涵蓋 `21` 份 Markdown，本機連結 `0` 失效。
+- 精準清除 `32` 個可再生的 pytest、Ruff 與 Python cache 目錄；未刪除
+  `.venv`、`Version`、`UserData` 或使用者檔案。
+- source freeze 已通過 Repository 外 compileall、source-only `--verify-only`
+  與 `git diff --check`；`Version/` 中有 `0` 個 `.pyc`。
 
 ## Testing 1.1 Gate
 

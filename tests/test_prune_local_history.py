@@ -45,7 +45,7 @@ def test_plan_keeps_current_and_previous_and_lists_only_local_release_dirs(
     stable = _write_release(version_root, "Stable/1.0")
     previous = _write_release(version_root, "Development/38.0", payload=b"previous")
     obsolete = _write_release(version_root, "Testing/1.1", payload=b"obsolete")
-    update_info = tmp_path / "docs" / "latest-update.md"
+    update_info = tmp_path / "docs" / "project-status.md"
     update_info.parent.mkdir()
     update_info.write_text("retained update information", encoding="utf-8")
 

@@ -15,7 +15,6 @@
 - [專案首頁](../README.md)
 - [安裝與啟動](../INSTALL.md)
 - [目前專案狀態](project-status.md)
-- [最新來源更新](latest-update.md)
 - [執行環境健康檢查](dependency-health.md)
 
 ## 架構與能力邊界
