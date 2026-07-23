@@ -54,7 +54,11 @@ jobs:
           python -m tools.site_quality_audit
           python -m tools.dependency_lock_audit
           python -m tools.audit_version_docs
-          python -m tools.audit_versions --root Version
+          if (Test-Path -LiteralPath Version -PathType Container) {
+            python -m tools.audit_versions --root Version
+          } else {
+            Write-Output "VERSION_ARTIFACT_AUDIT=SKIP reason=Version is a local ignored release-artifact root"
+          }
 
   symlink-security:
     name: Symlink security tests (Ubuntu)

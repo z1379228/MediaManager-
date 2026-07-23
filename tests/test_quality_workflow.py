@@ -37,6 +37,13 @@ def test_quality_workflow_runs_release_and_mod_audits() -> None:
     assert "ruff check ." not in text
 
 
+def test_quality_workflow_only_audits_local_version_artifacts_when_present() -> None:
+    text = _workflow_text()
+
+    assert "Test-Path -LiteralPath Version -PathType Container" in text
+    assert "VERSION_ARTIFACT_AUDIT=SKIP" in text
+
+
 def test_quality_workflow_is_read_only_for_pull_requests() -> None:
     text = _workflow_text()
 
