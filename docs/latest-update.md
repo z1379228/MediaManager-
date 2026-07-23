@@ -34,6 +34,7 @@
 ## 發行狀態
 
 39.0.10 已取得 stage、commit 與 source freeze 授權；Testing 1.1 已取得本機
-build、未簽署 EXE 與打包授權。Testing 必須維持 `SAFE_MODE`，且本輪不包含
-Authenticode、production Ed25519、push 或發布。實際產物狀態與雜湊以
-`Version/Testing/1.1` 內的 metadata 為準。
+build、未簽署 EXE、打包與 prerelease 發布授權。`test-v1.1.0-r2` 已於
+2026-07-23 發布，tag 精確指向 `09b3a86e00938241d27050088583ebf81d9fb182`，
+9 個附件的 GitHub digest 與本機 SHA-256 一致。Testing 維持 `SAFE_MODE`；
+Authenticode 與 production signed release manifest 仍未成立，因此不是 Stable。

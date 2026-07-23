@@ -36,9 +36,11 @@
 ## Testing 1.1 Gate
 
 使用者已授權 Development 39.0.10 的 stage、commit、source freeze，以及由同一
-乾淨 revision 建立本機、未簽署、`SAFE_MODE` 的 Testing `1.1.0`。授權不包含
-Authenticode、production Ed25519、push、GitHub Release 或公開發布。Testing 1.0
-是不可覆寫的歷史版本。
+乾淨 revision 建立、上傳未簽署 `SAFE_MODE` Testing `1.1.0`。GitHub prerelease
+使用唯一 tag `test-v1.1.0-r2`，精確指向 `09b3a86e00938241d27050088583ebf81d9fb182`；
+9 個附件的 GitHub digest 與本機 SHA-256 一致。Testing 1.0 與既有 tags 不覆寫。
+Authenticode 與 production signed release manifest 仍未成立，因此 Stable Gate
+保持阻擋。
 
 ## 40.0
 

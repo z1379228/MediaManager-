@@ -43,8 +43,9 @@ stage、commit、source freeze、build、建立 EXE、Testing／Stable、Authent
 Ed25519 簽署、stage-built、push、發布與上傳都是分開的外部狀態變更，必須逐項
 取得明確授權。授權其中一項不自動授權下一項。
 
-目前沒有 Development 40.0 或 Stable 發布計畫；Testing 1.1 僅取得本機未簽署
-打包授權。下列完整發布流程仍只是保留契約，不因 Testing 打包而自動獲得授權：
+目前沒有 Development 40.0 或 Stable 發布計畫；Testing 1.1 已以未簽署
+`SAFE_MODE` prerelease `test-v1.1.0-r2` 發布。下列完整 Stable 發布流程仍是
+保留契約，不因 Testing prerelease 而視為完成：
 
 1. 建立乾淨、不可變的 source-freeze revision。
 2. 在 Repository 外的唯一工作目錄執行 receipt-bound build-only。

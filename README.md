@@ -5,9 +5,9 @@
 內建或第三方 MOD 提供。
 
 目前來源版本為開發版 39.0（核心相容版本 39.0.10）。`MediaManager v1.0`
-是產品顯示名稱，不表示 Stable 已發布。Repository 目前沒有可供一般使用者下載的
-已簽署正式套件；本輪只授權由固定的 39.0.10 來源建立本機、未簽署且維持
-`SAFE_MODE` 的 Testing 1.1，不包含簽署、push 或發布。
+是產品顯示名稱，不表示 Stable 已發布。未簽署、維持 `SAFE_MODE` 的
+[Testing 1.1（39.0.10 重整）](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.1.0-r2)
+已作為 prerelease 發布；它不是已簽署的 Stable 正式套件。
 
 ## 主要能力
 
@@ -22,9 +22,14 @@
 [網站主機清冊](docs/site-host-inventory.md)為準。外部工具名稱不表示 MediaManager
 會自動安裝、捆綁或承諾其全部功能。
 
-## 從原始碼執行
+## 下載 Testing 1.1 或從原始碼執行
 
-目前只提供原始碼工作流程。完整步驟見 [INSTALL.md](INSTALL.md)；最短啟動方式：
+Testing 1.1 提供 portable ZIP、單獨 EXE、wheel、SBOM、依賴清單與 SHA-256
+資料。下載後先比對同頁的 `.zip.sha256`、`SHA256SUMS.txt` 與
+`release-info.json`；發行附件不包含 `UserData`。完整說明見
+[Testing 1.1 文件](docs/release-testing-1.1.md)。
+
+從原始碼執行的完整步驟見 [INSTALL.md](INSTALL.md)；最短啟動方式：
 
 ```powershell
 .\.venv\Scripts\python.exe .\main.py

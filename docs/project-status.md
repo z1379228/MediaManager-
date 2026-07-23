@@ -6,9 +6,9 @@
 
 MediaManager 目前來源停在 Development `39.0.10`。既定 Development 34.0～39.0
 工作已整併；使用者決定不建立 Development 40.0 或後續版本計畫。Repository
-沒有可發布 Stable 候選。本輪僅授權 Development 39.0.10 的 stage、commit、
-source freeze，以及建立本機、未簽署、`SAFE_MODE` 的 Testing 1.1；沒有簽署、
-push 或發布授權。
+沒有可發布 Stable 候選。Development 39.0.10 已完成 source freeze；由該精確
+revision 建立的未簽署、`SAFE_MODE` Testing 1.1 已以 `test-v1.1.0-r2`
+prerelease 發布。這不等於 Stable 發行。
 
 ## 已完成範圍
 
@@ -31,11 +31,12 @@ push 或發布授權。
 
 ## 目前 Testing 工作
 
-- Testing 公開身分為 `1.1.0`，預定本機路徑為 `Version/Testing/1.1`。
+- Testing 公開身分為 `1.1.0`，本機路徑為 `Version/Testing/1.1`。
 - Testing 1.0 是不可覆寫的歷史版本，不以目前 39.x 來源重建或冒用。
-- 本輪產物必須是未簽署 `SAFE_MODE`；是否已建立及其雜湊，以版本資料夾內的
-  `release-info.json` 與 `SHA256SUMS.txt` 為準。
-- Authenticode、production Ed25519、GitHub tag／release、push 與發布均不在授權內。
+- Testing 1.1 使用唯一修訂 tag `test-v1.1.0-r2`，精確指向 source revision
+  `09b3a86e00938241d27050088583ebf81d9fb182`；9 個附件已發布且 digest 閉合。
+- 產物維持未簽署 `SAFE_MODE`；實際身分與雜湊以發行頁的
+  `release-info.json`、`SHA256SUMS.txt` 與 ZIP sidecar 為準。
 
 ## 尚未成立的發行條件
 
@@ -45,7 +46,8 @@ push 或發布授權。
   真實互動流程仍需人工驗證。
 - 外部網站會變動；離線 regression 與 extractor 存在不等於即時網站 smoke。
 
-這些未成立項目不阻擋本機 Testing 1.1，但阻擋任何 Stable 或公開發布宣稱。
+這些未成立項目不阻擋已明確標示的 Testing prerelease，但阻擋任何 Stable
+或已簽署正式發布宣稱。
 
 ## 歷史與回復
 

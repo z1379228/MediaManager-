@@ -5,8 +5,8 @@
 追查，不另建第二份歷史索引。
 
 - 目前來源版本為開發版 39.0（核心相容版本 39.0.10）。
-- Development 40.0 仍是 `NO PLAN / NO RELEASE`；Testing 1.1 已獲本機未簽署
-  打包授權，但不是可發布候選或已簽署 Stable 套件。
+- Development 40.0 仍是 `NO PLAN / NO RELEASE`；未簽署 `SAFE_MODE`
+  Testing 1.1 已以 `test-v1.1.0-r2` prerelease 發布，但不是 Stable 套件。
 - `MediaManager v1.0` 是產品顯示名稱，不改變 Development／Testing／Stable 的
   信任與發布判斷。
 
