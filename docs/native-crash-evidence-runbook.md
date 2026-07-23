@@ -1,6 +1,6 @@
 # 原生崩潰去識別證據 Runbook
 
-狀態：`EVIDENCE READY / NO CLAIM`。本流程只準備 Development 37.0 的人工採證邊界；
+狀態：`EVIDENCE READY / NO CLAIM`。本流程只準備目前來源的人工採證邊界；
 目前沒有可重現的 `0x80000003`、同時段 WER faulting module／offset 或可證 root cause，
 因此不得宣稱原生崩潰已修復。
 
