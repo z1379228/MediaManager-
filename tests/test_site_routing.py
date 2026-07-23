@@ -70,6 +70,15 @@ def test_other_sites_get_distinct_families_and_provider_roles() -> None:
         "https://search.bilibili.com/all?keyword=%E5%B9%BB%E6%9C%88%E7%92%B0"
     ) == SiteRoute("bilibili", "search-page", None, "bilibili-search")
     assert classify_site_url(
+        "https://player.bilibili.com/player.html?"
+        "aid=170001&cid=279786&p=1&autoplay=0"
+    ) == SiteRoute(
+        "bilibili",
+        "embedded-video",
+        "bilibili",
+        "bilibili-search",
+    )
+    assert classify_site_url(
         "https://www.facebook.com/reel/123456"
     ) == SiteRoute("facebook", "video-page", "facebook", None)
     assert classify_site_url(
@@ -107,6 +116,26 @@ def test_bilibili_search_subdomain_rejects_non_search_or_ambiguous_urls() -> Non
         "https://search.bilibili.com/all?keyword=one&page=2",
         "https://search.bilibili.com/video/BV1example?keyword=one",
         "https://search.bilibili.com.evil.test/all?keyword=one",
+    ):
+        assert classify_site_url(url) is None
+
+
+def test_bilibili_player_subdomain_rejects_unsupported_or_ambiguous_urls() -> None:
+    for url in (
+        "http://player.bilibili.com/player.html?aid=170001",
+        "https://player.bilibili.com/",
+        "https://player.bilibili.com/player.html",
+        "https://player.bilibili.com/player.html?AID=170001",
+        "https://player.bilibili.com/player.html?%61id=170001",
+        "https://player.bilibili.com/player.html?aid=%31",
+        "https://player.bilibili.com/player.html?aid=1%32",
+        "https://player.bilibili.com/player.html?aid=0",
+        "https://player.bilibili.com/player.html?aid=one",
+        "https://player.bilibili.com/player.html?aid=1&aid=2",
+        "https://player.bilibili.com/player.html?bvid=BV1B7411m7LV",
+        "https://player.bilibili.com/player.html?aid=1&autoplay=true",
+        "https://player.bilibili.com/player.html?aid=1&unknown=1",
+        "https://player.bilibili.com.evil.test/player.html?aid=1",
     ):
         assert classify_site_url(url) is None
 

@@ -91,6 +91,7 @@ _BUILTIN_DOWNLOAD_DETAILS = {
             "www.soundcloud.com",
             "m.soundcloud.com",
             "on.soundcloud.com",
+            "w.soundcloud.com",
             "tiktok.com",
             "www.tiktok.com",
             "m.tiktok.com",

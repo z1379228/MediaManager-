@@ -414,6 +414,15 @@ def _site_routing_item() -> SelfCheckItem:
             SiteRoute("bilibili", "video", "bilibili", "bilibili-search"),
         ),
         (
+            "https://player.bilibili.com/player.html?aid=123456",
+            SiteRoute(
+                "bilibili",
+                "embedded-video",
+                "bilibili",
+                "bilibili-search",
+            ),
+        ),
+        (
             "https://search.bilibili.com/all?keyword=example",
             SiteRoute("bilibili", "search-page", None, "bilibili-search"),
         ),

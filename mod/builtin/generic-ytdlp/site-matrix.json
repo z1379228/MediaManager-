@@ -25,7 +25,7 @@
       "extractor_prefix": "soundcloud",
       "support_status": "verified-public-analysis",
       "last_live_check": "2026-07-23",
-      "hosts": ["soundcloud.com", "www.soundcloud.com", "m.soundcloud.com", "on.soundcloud.com"]
+      "hosts": ["soundcloud.com", "www.soundcloud.com", "m.soundcloud.com", "on.soundcloud.com", "w.soundcloud.com"]
     },
     {
       "site_id": "tiktok",

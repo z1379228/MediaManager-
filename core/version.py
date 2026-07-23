@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-CORE_VERSION = "39.0.8"
+CORE_VERSION = "39.0.10"
 BUILD_CHANNEL = "development"
 DEVELOPMENT_GENERATION = "39.0"
 TESTING_VERSION = "1.1.0"
 STABLE_VERSION = "1.0.0"
 SUPPORTED_BUILD_CHANNELS = frozenset({"development", "testing", "stable"})
+
+
+def application_display_name() -> str:
+    """Return the channel-neutral product label used by the trusted desktop UI."""
+
+    return f"MediaManager v{STABLE_VERSION.rsplit('.', 1)[0]}"
 
 
 def display_version() -> str:

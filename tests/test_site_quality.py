@@ -3,6 +3,15 @@ from pathlib import Path
 
 from core.downloads.site_quality import audit_builtin_site_quality
 from core.mod_groups import SITE_MOD_CHILDREN
+from core.site_routing import (
+    BILIBILI_HOSTS,
+    FACEBOOK_HOSTS,
+    INSTAGRAM_HOSTS,
+    MEGA_HOSTS,
+    THREADS_HOSTS,
+    X_HOSTS,
+    YOUTUBE_HOSTS,
+)
 
 
 ROOT = Path(__file__).parents[1]
@@ -14,6 +23,34 @@ def test_repository_site_quality_matrix_passes_offline() -> None:
     assert report.checked_sites == 12
     assert report.checked_features == 34
     assert report.checked_workflows == 49
+
+
+def test_canonical_host_inventory_covers_every_exact_input_host() -> None:
+    generic_manifest = json.loads(
+        (
+            ROOT / "mod" / "builtin" / "generic-ytdlp" / "provider.json"
+        ).read_text(encoding="utf-8")
+    )
+    expected_hosts = (
+        YOUTUBE_HOSTS
+        | BILIBILI_HOSTS
+        | FACEBOOK_HOSTS
+        | MEGA_HOSTS
+        | INSTAGRAM_HOSTS
+        | THREADS_HOSTS
+        | X_HOSTS
+        | frozenset(generic_manifest["url_hosts"])
+    )
+    inventory = (ROOT / "docs" / "site-host-inventory.md").read_text(
+        encoding="utf-8"
+    )
+    exact_input_sections = inventory.split("## 程式會連線但不可貼入的主機", 1)[0]
+
+    missing_hosts = sorted(
+        host for host in expected_hosts if f"`{host}`" not in exact_input_sections
+    )
+
+    assert missing_hosts == []
 
 
 def copy_site_matrices(target: Path) -> None:

@@ -17,7 +17,7 @@ from core.settings import (
     normalized_language,
 )
 from core.site_routing import classify_site_url
-from core.version import display_version
+from core.version import application_display_name
 from trusted_ui.app_icon import app_icon_path
 from trusted_ui.background import (
     clear_background_copy,
@@ -202,7 +202,7 @@ def run_main_window(context: object) -> int:
     class Window(QMainWindow):
         def __init__(self) -> None:
             super().__init__()
-            self.setWindowTitle(f"MediaManager {display_version()}")
+            self.setWindowTitle(application_display_name())
             self.setAccessibleName("MediaManager 主視窗")
             self.resize(1180, 780)
             self.setMinimumSize(940, 620)
@@ -539,7 +539,7 @@ def run_main_window(context: object) -> int:
             hint.setObjectName("muted")
             footer_layout.addWidget(hint)
             footer_layout.addStretch()
-            version = QLabel(f"核心 {display_version()}")
+            version = QLabel(application_display_name())
             version.setObjectName("muted")
             footer_layout.addWidget(version)
             page.addWidget(footer)

@@ -34,7 +34,7 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "locales/zh-CN.json": "d95a930210405fa1b9948c746d21b3d27ce29d8ec794aa41960c61f4c8501342",
         "locales/zh-TW.json": "83d12ba5a053ca20daa8e10340ddabd92ba86a1c88584ac8ab67e3668d388428",
         "provider.py": "86cb4708bda3a7090509d192509b53fb5025a3dc40a2c50e7fb9aaf83849e3ce",
-        "provider.json": "4cbb1aaeae8a7c86a1c41414964be38e077bb3766bbfc653db6475b6a36a8c2b",
+        "provider.json": "a918ca9671a1e443b2e84540ad6ee144963add04a7d614130590af56d30a9102",
         "site-matrix.json": "e364cb7cb43b8a27df46cc910466a0dfdd797d72fc45a38f76cacad691b7ff1d",
     },
     "bilibili-search": {
@@ -46,8 +46,8 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
     },
     "generic-ytdlp": {
         "provider.py": "b7a87e87a88cd2fd35122d9f3a71381c9b77a1f1260cf62e6caaf6d0ef8b735b",
-        "provider.json": "0e3d3715e8b20f5e063aa6e22261c0a2bdde6ec7c2e9739ef4f059da68ce63bb",
-        "site-matrix.json": "19caf543f309c73a2cee6135ef36968a4a49bcfec431708177c9151a31b0c4df",
+        "provider.json": "4fcd10d058f1d09be2dfc4cb4af299c4075415b16eae783d61184cf8c4d99d88",
+        "site-matrix.json": "d7e786a806addbc5a0f255e5f1a655606b62232e9d4098254c74c810edefa11f",
     },
     "instagram": {
         "feature.json": "fdfdbb20dea7fc0a5d33d2a5a9107003172a62b83c4efc5bd1799b9ee1796615",

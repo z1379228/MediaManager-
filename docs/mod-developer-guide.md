@@ -31,6 +31,39 @@
 範本刻意不產生私鑰、簽章或偽造 `files.json`。發布者應在自己的離線發行環境
 建立檔案 SHA-256 清單與 `plugin.sig`，私鑰不得放入專案或 `.modpkg`。
 
+## 交付、安裝與支援責任
+
+第三方 MOD 支援以可驗證交付物分工，不讓第三方程式碼直接取得核心或可信 UI
+控制權：
+
+| 角色 | 負責 | 不負責 |
+|---|---|---|
+| 第三方作者 | MOD 原始碼、manifest、最小權限、測試、版本相容、Ed25519 簽署、變更紀錄與使用者支援 | MediaManager release 私鑰、核心 Trust Store 決策、替使用者自動啟用 |
+| 使用者 | 從獨立管道核對 publisher 公鑰／指紋、審查權限、安裝、啟用、更新、回復與移除決定 | 向作者或 MediaManager 提供私鑰、Cookie、Token、憑證密碼或 PIN |
+| MediaManager 核心 | 格式／簽章／hash／相容性驗證、最小 capability、dependency graph、受控 host、journal recovery、隔離移除與宣告式 UI | 為第三方網站適配正確性背書、代管作者私鑰、繞過網站或安全限制 |
+
+建議交付包包含：
+
+- 唯一 `.modpkg`、對應 SHA-256、MOD ID／SemVer、publisher ID 與公開金鑰指紋。
+- 支援的 MediaManager core 範圍、API `1.0`／runtime protocol `1.0`、要求權限與
+  transitive dependency 清單。
+- 版本變更、已知限制、回復版本、問題回報位置與維護狀態。
+- 網站 MOD 另列 exact host ownership；不接受 wildcard、IP、登入資料或跨網站共用權限。
+
+使用者端依序執行：
+
+`核對 publisher → 匯入並信任公鑰 → 驗證／安裝 .modpkg（預設停用） → 審查權限與 dependency → 明確啟用 → 自我檢查`
+
+任何一步失敗都停止，不自動降低驗證。問題分流如下：
+
+- SDK／manifest／package 驗證失敗：作者先用下方離線命令重現並修正。
+- publisher 不受信任或指紋不符：停止安裝，改由獨立管道向作者核對；不可只依套件內資料信任。
+- capability／dependency／core range 不符：由作者縮小權限、補齊依賴或發布相容版本。
+- 安裝交易、journal recovery、quarantine 或 host 啟動失敗：回報 MediaManager 核心，
+  附去識別的 MOD ID／版本／publisher 指紋、核心版本、錯誤分類與最小重現步驟。
+- MOD 自身功能、網站解析或輸出內容錯誤：由第三方作者處理；核心不以放寬簽章、
+  host allowlist、登入、DRM、廣告或 Cloudflare 限制作為 workaround。
+
 ## 安裝前檢查
 
 ```powershell

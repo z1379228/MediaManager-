@@ -21,6 +21,7 @@ PROVIDER_ROOT = ROOT / "mod" / "builtin" / "bilibili"
         "https://www.bilibili.com/video/BVexample",
         "https://m.bilibili.com/video/BVexample",
         "https://space.bilibili.com/123/video",
+        "https://player.bilibili.com/player.html?aid=170001",
         "https://b23.tv/example",
         "https://bilibili.com/video/BVexample",
         "https://www.bilibili.tv/en/video/2041863208",
@@ -45,6 +46,13 @@ def test_bilibili_provider_accepts_only_explicit_hosts(url: str) -> None:
         "https://user:secret@www.bilibili.com/video/BVexample",
         "https://www.bilibili.com:99999/video/BVexample",
         "https://www.biliintl.com/en/video/2041863208",
+        "https://player.bilibili.com/player.html?AID=170001",
+        "https://player.bilibili.com/player.html?%61id=170001",
+        "https://player.bilibili.com/player.html?aid=%31",
+        "https://player.bilibili.com/player.html?aid=1%32",
+        "https://player.bilibili.com/player.html?bvid=BV1B7411m7LV",
+        "https://player.bilibili.com/player.html?aid=one",
+        "https://player.bilibili.com/player.html?aid=1&unknown=1",
     ),
 )
 def test_bilibili_provider_rejects_unlisted_or_credential_urls(url: str) -> None:
@@ -70,6 +78,23 @@ def test_bilibili_manifest_uses_separate_permission_and_installed_extractor() ->
     assert manifest["permissions"][0] == "network.bilibili"
     assert "network.generic" not in manifest["permissions"]
     assert any(name.startswith("bilibili") for name in extractor_names)
+
+
+def test_bilibili_player_allowlist_matches_installed_extractor() -> None:
+    from yt_dlp.extractor import gen_extractor_classes
+
+    extractor = next(
+        item
+        for item in gen_extractor_classes()
+        if str(getattr(item, "IE_NAME", "")).casefold() == "bilibiliplayer"
+    )
+
+    assert extractor.suitable(
+        "https://player.bilibili.com/player.html?aid=170001"
+    )
+    assert not extractor.suitable(
+        "https://player.bilibili.com/player.html?AID=170001"
+    )
 
 
 def test_bilibili_analyze_bounds_metadata_and_reports_parts(monkeypatch) -> None:

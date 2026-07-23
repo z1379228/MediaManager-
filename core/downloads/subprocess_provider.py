@@ -15,7 +15,7 @@ import shutil
 import uuid
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 from core.downloads.models import DownloadRequest
 from core.downloads.direct_http_policy import direct_http_url_candidate
@@ -39,11 +39,64 @@ from core.downloads.errors import (
     classify_provider_failure,
 )
 from core.logging.redaction import bounded_redacted_text
+from core.site_routing import classify_site_url
 
 
 _MAX_PROVIDER_MESSAGE_CHARS = 1024 * 1024
 _MAX_PROVIDER_STDERR_CHARS = 64 * 1024
 _PROVIDER_MESSAGE_BACKLOG = 128
+
+
+def _soundcloud_widget_url_candidate(value: str) -> bool:
+    """Accept only the documented SoundCloud widget URL and owned media target."""
+
+    if not 1 <= len(value) <= 4096:
+        return False
+    try:
+        parsed = urlparse(value)
+        parsed.port
+        fields = parse_qsl(
+            parsed.query,
+            keep_blank_values=True,
+            max_num_fields=32,
+        )
+    except ValueError:
+        return False
+    raw_keys = tuple(part.partition("=")[0] for part in parsed.query.split("&"))
+    targets = [item for key, item in fields if key == "url"]
+    if (
+        parsed.scheme.casefold() != "https"
+        or (parsed.hostname or "").casefold() != "w.soundcloud.com"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.port is not None
+        or parsed.path not in {"/player", "/player/"}
+        or parsed.fragment
+        or raw_keys.count("url") != 1
+        or len(targets) != 1
+        or not 1 <= len(targets[0]) <= 2048
+    ):
+        return False
+    try:
+        target = urlparse(targets[0])
+        target.port
+    except ValueError:
+        return False
+    return (
+        target.scheme.casefold() == "https"
+        and (target.hostname or "").casefold()
+        in {
+            "api.soundcloud.com",
+            "soundcloud.com",
+            "www.soundcloud.com",
+            "m.soundcloud.com",
+        }
+        and target.username is None
+        and target.password is None
+        and target.port is None
+        and target.path not in {"", "/"}
+        and not target.fragment
+    )
 
 
 class ProviderProtocolError(RuntimeError):
@@ -331,12 +384,18 @@ class SubprocessDownloadProvider:
             parsed.port
         except ValueError:
             return False
+        host = (parsed.hostname or "").casefold()
+        if self.provider_id == "bilibili" and host == "player.bilibili.com":
+            route = classify_site_url(url)
+            return route is not None and route.download_provider_id == "bilibili"
+        if self.provider_id == "generic-ytdlp" and host == "w.soundcloud.com":
+            return _soundcloud_widget_url_candidate(url)
         return (
             parsed.scheme.casefold() in {"http", "https"}
             and parsed.username is None
             and parsed.password is None
             and parsed.port is None
-            and (parsed.hostname or "").casefold() in self.hosts
+            and host in self.hosts
         )
 
     def _require_permissions(self, *required: str) -> None:

@@ -33,7 +33,7 @@ if "%APP_RUNNING%"=="1" (
     goto summary
 )
 
-call :remove_dir "%ROOT%.work" ".work"
+echo [KEEP] %ROOT%.work (may contain backups, build receipts, worktrees and validation evidence)
 call :remove_dir "%ROOT%.pytest_cache" ".pytest_cache"
 call :remove_dir "%ROOT%.pytest-agent-domain" ".pytest-agent-domain"
 call :remove_dir "%ROOT%pytest-temp-social" "pytest-temp-social"
@@ -41,7 +41,7 @@ call :remove_dir "%ROOT%.ruff_cache" ".ruff_cache"
 call :remove_dir "%ROOT%.mypy_cache" ".mypy_cache"
 call :remove_dir "%ROOT%.hypothesis" ".hypothesis"
 call :remove_dir "%ROOT%build" "build"
-call :remove_dir "%ROOT%dist" "dist"
+call :clean_dist "%ROOT%dist"
 call :remove_dir "%ROOT%dist-packages" "dist-packages"
 call :remove_dir "%ROOT%mediamanager.egg-info" "mediamanager.egg-info"
 call :remove_dir "%ROOT%htmlcov" "htmlcov"
@@ -76,6 +76,23 @@ if "%FAILED%"=="0" (
 echo.
 if /I not "%~1"=="/quiet" pause
 exit /b %FAILED%
+
+:clean_dist
+if not exist "%~1" exit /b 0
+echo [CLEAN] dist build output
+for /d %%D in ("%~1\*") do (
+    if /I "%%~nxD"=="UserData" (
+        echo [KEEP] %%~fD
+    ) else (
+        call :remove_dir "%%~fD" "dist generated directory"
+    )
+)
+for %%F in ("%~1\*") do (
+    if exist "%%~fF" call :remove_file "%%~fF" "dist generated file"
+)
+if exist "%~1\UserData" exit /b 0
+call :remove_dir "%~1" "dist"
+exit /b 0
 
 :clean_tree
 if not exist "%~1" exit /b 0

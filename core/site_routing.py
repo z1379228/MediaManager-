@@ -19,6 +19,7 @@ YOUTUBE_STANDARD_HOSTS = frozenset(
 YOUTUBE_EMBED_HOSTS = frozenset({"www.youtube-nocookie.com"})
 YOUTUBE_KIDS_HOSTS = frozenset({"youtubekids.com", "www.youtubekids.com"})
 YOUTUBE_HOSTS = YOUTUBE_STANDARD_HOSTS | YOUTUBE_EMBED_HOSTS | YOUTUBE_KIDS_HOSTS
+BILIBILI_PLAYER_HOSTS = frozenset({"player.bilibili.com"})
 BILIBILI_MEDIA_HOSTS = frozenset(
     {
         "bilibili.com",
@@ -29,7 +30,7 @@ BILIBILI_MEDIA_HOSTS = frozenset(
         "bilibili.tv",
         "www.bilibili.tv",
     }
-)
+) | BILIBILI_PLAYER_HOSTS
 BILIBILI_SEARCH_HOSTS = frozenset({"search.bilibili.com"})
 BILIBILI_HOSTS = BILIBILI_MEDIA_HOSTS | BILIBILI_SEARCH_HOSTS
 FACEBOOK_HOSTS = frozenset(
@@ -161,6 +162,69 @@ def _bilibili_route(host: str, path: str, query: str) -> SiteRoute | None:
         ):
             return None
         return SiteRoute("bilibili", "search-page", None, "bilibili-search")
+    if host in BILIBILI_PLAYER_HOSTS:
+        allowed = {
+            "aid",
+            "cid",
+            "poster",
+            "autoplay",
+            "muted",
+            "t",
+            "danmaku",
+            "kind",
+            "refer",
+            "p",
+        }
+        raw_fields = tuple(part.partition("=") for part in query.split("&"))
+        raw_aids = tuple(
+            value for key, separator, value in raw_fields if key == "aid" and separator
+        )
+        if (
+            any(
+                separator != "=" or key not in allowed
+                for key, separator, _value in raw_fields
+            )
+            or len(raw_aids) != 1
+            or re.fullmatch(r"[0-9]{1,20}", raw_aids[0]) is None
+            or int(raw_aids[0]) <= 0
+        ):
+            return None
+        values = _query_values(query)
+        if (
+            path != "/player.html"
+            or values is None
+            or not values
+            or set(values) - allowed
+            or any(len(items) != 1 for items in values.values())
+        ):
+            return None
+        aid = (values.get("aid") or ("",))[0]
+        if (
+            not aid.isascii()
+            or not aid.isdigit()
+            or not 1 <= len(aid) <= 20
+            or int(aid) <= 0
+        ):
+            return None
+        for name in ("cid", "t", "kind", "p"):
+            value = (values.get(name) or ("",))[0]
+            if value and (
+                not value.isascii()
+                or not value.isdigit()
+                or len(value) > 20
+                or int(value) <= 0
+            ):
+                return None
+        for name in ("poster", "autoplay", "muted", "danmaku", "refer"):
+            value = (values.get(name) or ("",))[0]
+            if value and value not in {"0", "1"}:
+                return None
+        return SiteRoute(
+            "bilibili",
+            "embedded-video",
+            "bilibili",
+            "bilibili-search",
+        )
     parts = tuple(part for part in path.split("/") if part)
     if host in {"bilibili.tv", "www.bilibili.tv"}:
         localized = parts[1:] if parts and re.fullmatch(r"[a-z]{2}", parts[0]) else parts
