@@ -32,6 +32,29 @@ _OPTIONAL_DEPENDENCY_MOD = {
 }
 
 
+def optional_dependency_install_html() -> str:
+    """Return bounded, official manual setup guidance for optional tools."""
+
+    return (
+        "<h2>一鍵補齊核心外部工具</h2>"
+        "<p>關閉 MediaManager 後，在程式資料夾執行 "
+        "<b>安裝必備軟體.bat</b>。批次檔會透過 winget 安裝缺少的 "
+        "FFmpeg、ffprobe 與 Deno；完成後重新啟動程式。</p>"
+        "<h3>選用 MOD 依賴</h3>"
+        "<p><b>MEGA：</b>需要官方 MEGAcmd 的 mega-get。未安裝時仍能辨識 "
+        "MEGA 公開網址，但下載保持關閉。</p>"
+        "<p><b>Speech to Text：</b>從 "
+        '<a href="https://github.com/ggml-org/whisper.cpp/releases">'
+        "whisper.cpp 官方 Releases</a>取得可信的 whisper-cli，將 "
+        "<b>whisper-cli.exe</b> 放入程式的 <b>tools</b> 目錄、程式根目錄或 "
+        "PATH。模型必須由使用者在 Speech to Text 工作區選取，填入來源公布的 "
+        "SHA-256 後驗證匯入；可參考 "
+        '<a href="https://github.com/ggml-org/whisper.cpp/blob/master/models/README.md">'
+        "官方模型說明</a>。MediaManager 不會自動下載或執行模型。</p>"
+        "<p>選用工具不影響 YouTube、Bilibili 與一般媒體工作區。</p>"
+    )
+
+
 def dependency_table_row(
     status: DependencyStatus,
     *,
@@ -148,18 +171,7 @@ def create_dependency_dialog(
         layout = QVBoxLayout(help_dialog)
         guidance = QTextBrowser()
         guidance.setOpenExternalLinks(True)
-        guidance.setHtml(
-            "<h2>一鍵補齊核心外部工具</h2>"
-            "<p>關閉 MediaManager 後，在程式資料夾執行 "
-            "<b>安裝必備軟體.bat</b>。批次檔會透過 winget 安裝缺少的 "
-            "FFmpeg、ffprobe 與 Deno；完成後重新啟動程式。</p>"
-            "<h3>選用 MOD 依賴</h3>"
-            "<p><b>MEGA：</b>需要官方 MEGAcmd 的 mega-get。未安裝時仍能辨識 "
-            "MEGA 公開網址，但下載保持關閉。</p>"
-            "<p><b>Speech to Text：</b>需要 whisper.cpp 的 whisper-cli，並由使用者 "
-            "自行匯入本機 GGML／GGUF 語音模型。模型不會自動下載。</p>"
-            "<p>選用工具不影響 YouTube、Bilibili 與一般媒體工作區。</p>"
-        )
+        guidance.setHtml(optional_dependency_install_html())
         layout.addWidget(guidance)
         dismiss = QPushButton("關閉")
         dismiss.clicked.connect(help_dialog.accept)

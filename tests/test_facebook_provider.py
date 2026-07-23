@@ -34,6 +34,10 @@ def load_provider():
             "https://facebook.com/reel/123456",
             "https://www.facebook.com/reel/123456/",
         ),
+        (
+            "https://mbasic.facebook.com/watch/?v=123456",
+            "https://www.facebook.com/watch/?v=123456",
+        ),
         ("https://fb.watch/AbCd_123/", "https://fb.watch/AbCd_123/"),
     ),
 )

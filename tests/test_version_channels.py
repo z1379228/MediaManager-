@@ -10,11 +10,11 @@ from core.version import (
 
 
 def test_development_display_and_release_tracks_are_explicit() -> None:
-    assert display_version() == "開發版 39.0.7"
+    assert display_version() == "開發版 39.0.8"
     assert release_track("development") == "Development"
     assert release_track("testing") == "Testing"
     assert release_track("stable") == "Stable"
-    assert release_identity_version("development") == "39.0.7"
+    assert release_identity_version("development") == "39.0.8"
     assert release_identity_version("testing") == "1.1.0"
     assert release_identity_version("stable") == "1.0.0"
     with pytest.raises(ValueError):
@@ -38,5 +38,5 @@ def test_stable_display_uses_the_public_stable_identity(
 
 
 def test_development_39_rejects_manifest_upper_bound_32_1() -> None:
-    assert is_core_compatible("0.1.0", "39.0.7")
+    assert is_core_compatible("0.1.0", "39.0.8")
     assert not is_core_compatible("0.1.0", "32.1.0")

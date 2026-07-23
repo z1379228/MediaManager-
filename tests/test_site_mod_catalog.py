@@ -56,6 +56,14 @@ def test_site_mod_catalog_registers_requested_candidates() -> None:
             "https://x.com/openai/status/123456",
         ),
         (
+            "https://m.x.com/openai/status/123456/",
+            "https://x.com/openai/status/123456",
+        ),
+        (
+            "https://m.twitter.com/openai/status/123456/",
+            "https://x.com/openai/status/123456",
+        ),
+        (
             "https://twitter.com/i/web/status/123456",
             "https://x.com/i/web/status/123456",
         ),
@@ -84,6 +92,8 @@ def test_twitter_official_url_rejects_unsafe_forms(value: str) -> None:
     ("value", "expected"),
     (
         ("https://www.facebook.com/watch/?v=123", "facebook"),
+        ("https://web.facebook.com/watch/?v=123", "facebook"),
+        ("https://mbasic.facebook.com/watch/?v=123", "facebook"),
         ("https://instagram.com/reel/Cexample456?utm_source=share", "instagram"),
         ("https://m.instagram.com/reel/Cexample456", "instagram"),
         ("https://www.threads.net/@openai/post/Cexample789", "threads"),
@@ -106,6 +116,14 @@ def test_meta_official_bridge_detection_never_claims_download_support(
         ("https://facebook.com/", FACEBOOK_HOME),
         (
             "https://m.facebook.com/watch/?v=123456",
+            "https://www.facebook.com/watch/?v=123456",
+        ),
+        (
+            "https://web.facebook.com/watch/?v=123456",
+            "https://www.facebook.com/watch/?v=123456",
+        ),
+        (
+            "https://mbasic.facebook.com/watch/?v=123456",
             "https://www.facebook.com/watch/?v=123456",
         ),
         (

@@ -17,7 +17,8 @@ YOUTUBE_STANDARD_HOSTS = frozenset(
     }
 )
 YOUTUBE_EMBED_HOSTS = frozenset({"www.youtube-nocookie.com"})
-YOUTUBE_HOSTS = YOUTUBE_STANDARD_HOSTS | YOUTUBE_EMBED_HOSTS
+YOUTUBE_KIDS_HOSTS = frozenset({"youtubekids.com", "www.youtubekids.com"})
+YOUTUBE_HOSTS = YOUTUBE_STANDARD_HOSTS | YOUTUBE_EMBED_HOSTS | YOUTUBE_KIDS_HOSTS
 BILIBILI_MEDIA_HOSTS = frozenset(
     {
         "bilibili.com",
@@ -25,6 +26,8 @@ BILIBILI_MEDIA_HOSTS = frozenset(
         "m.bilibili.com",
         "space.bilibili.com",
         "b23.tv",
+        "bilibili.tv",
+        "www.bilibili.tv",
     }
 )
 BILIBILI_SEARCH_HOSTS = frozenset({"search.bilibili.com"})
@@ -34,6 +37,8 @@ FACEBOOK_HOSTS = frozenset(
         "facebook.com",
         "www.facebook.com",
         "m.facebook.com",
+        "web.facebook.com",
+        "mbasic.facebook.com",
         "fb.watch",
     }
 )
@@ -46,9 +51,11 @@ X_HOSTS = frozenset(
     {
         "x.com",
         "www.x.com",
+        "m.x.com",
         "mobile.x.com",
         "twitter.com",
         "www.twitter.com",
+        "m.twitter.com",
         "mobile.twitter.com",
     }
 )
@@ -103,6 +110,14 @@ def _youtube_route(host: str, path: str, query: str) -> SiteRoute | None:
         ):
             return SiteRoute("youtube", "video", "youtube", "youtube-search")
         return None
+    if host in YOUTUBE_KIDS_HOSTS:
+        if (
+            path == "/watch"
+            and not playlist_id
+            and _valid_token(video_id, maximum=64)
+        ):
+            return SiteRoute("youtube", "video", "youtube", "youtube-search")
+        return None
     if host == "youtu.be":
         parts = tuple(part for part in path.split("/") if part)
         if len(parts) != 1 or playlist_id or not _valid_token(parts[0], maximum=64):
@@ -147,7 +162,24 @@ def _bilibili_route(host: str, path: str, query: str) -> SiteRoute | None:
             return None
         return SiteRoute("bilibili", "search-page", None, "bilibili-search")
     parts = tuple(part for part in path.split("/") if part)
-    if host == "b23.tv" and len(parts) == 1 and _valid_token(parts[0], maximum=64):
+    if host in {"bilibili.tv", "www.bilibili.tv"}:
+        localized = parts[1:] if parts and re.fullmatch(r"[a-z]{2}", parts[0]) else parts
+        if (
+            len(localized) == 2
+            and localized[0] == "video"
+            and localized[1].isascii()
+            and localized[1].isdigit()
+        ):
+            kind = "video"
+        elif (
+            len(localized) == 3
+            and localized[0] == "play"
+            and all(part.isascii() and part.isdigit() for part in localized[1:])
+        ):
+            kind = "episode"
+        else:
+            return None
+    elif host == "b23.tv" and len(parts) == 1 and _valid_token(parts[0], maximum=64):
         kind = "short-link"
     elif host == "space.bilibili.com" and parts and parts[0].isdigit():
         kind = "creator"

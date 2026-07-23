@@ -1,9 +1,9 @@
 # MediaManager 正式版 1.0 候選狀態
 
-狀態：`ready: false / G39-09 SOURCE-FROZEN / BUILD WAITING / NO STABLE PACKAGE / SAFE_MODE`。
+狀態：`ready: false / G39-10 SOURCE-FROZEN / BUILD WAITING / NO STABLE PACKAGE / SAFE_MODE`。
 
 本文件只記錄目前候選評估，不是 Stable 發布宣告。正式版使用獨立公開版本 `1.0.0`，目前
-開發來源相容版本為 `39.0.7`；數字大小不可跨 Development／Testing／Stable 通道比較。
+開發來源相容版本為 `39.0.8`；數字大小不可跨 Development／Testing／Stable 通道比較。
 
 ## 目前可確認的來源基線
 
@@ -15,29 +15,32 @@
   後置清理邊界，不是 Stable 建立步驟，目前沒有刪除任何檔案。
 - G39-09／39.0.7 已把 production Ed25519 的非秘密 key ID／public key 編入來源，並新增
   32-byte raw public key 回歸。私鑰保存在 Repository 外；這不代表候選已簽署。
+- G39-10／39.0.8 補齊具官方 URL 與 provider／extractor 雙重證據的 exact hosts，
+  加入 provider／site-matrix host drift audit，並只在有效 manifest-owned 模型存在時
+  將選用 Speech model 判定為 ready。
 - 目前 catalog 有 29 個內建 MOD；新 profile 只有 `speech-to-text` 與 `automation` 預設停用。
-  MOD 群組稽核為 7 groups／4 locales；網站矩陣為 12 sites／33 features／49 workflows。
-- 39.0.7 的 116 個不含 PySide／GUI 操作測試檔合計 `1030 passed, 6 skipped`；
-  release／version 精準回歸 `27 passed`；
+  MOD 群組稽核為 7 groups／4 locales；網站矩陣為 12 sites／34 features／49 workflows。
+- 39.0.8 的完整非 UI runner 合計 `1297 passed, 7 skipped`；
+  exact-host／依賴／網站品質精準回歸 `195 passed`；
   Ruff／品質、依賴鎖、
   版本文件、保留版本、Repository 外 compileall、SAFE_MODE verify-only 與 diff check 均通過。
 - 修正版 UI 尚待使用者截圖確認；截圖不能取代 Tab／Shift+Tab、UIA／讀屏、Windows OS
   高對比或實際 Gopeed 互動證據。
 - 最新保留完整包仍是 `Version/Development/38.0`。它屬不可覆寫的舊 source freeze，不能冒充
-  39.0.7 或 Stable 1.0。
+  39.0.8 或 Stable 1.0。
 
 ## 實測的 Stable 阻擋
 
 對 `Version/Development/38.0` 執行唯讀 `tools.release_preflight --json` 得到 `ready: false`：
 
-1. production Ed25519 公開身分已編入並固定於 39.0.7 source freeze，但尚未取得 build-only
+1. production Ed25519 公開身分已編入並保留於 39.0.8 source freeze，但尚未取得 build-only
    授權或建立綁定該 revision 的候選。
 2. `MediaManager.exe` 的 Authenticode 狀態仍為 `NotSigned`，且尚未取得 production
    Authenticode 身分或工具。
 3. 舊包缺少 `gopeed-transfer`、`p2p-transfer`，且格式工廠／Local Ad Segment Trim manifest
    與目前來源 hash 不同；因此它不是目前候選。
-4. Development 39.0.5、39.0.6 與 39.0.7 的 stage、本機 commit 與 source freeze 已於
-   2026-07-23 完成；只有最新的 39.0.7 clean revision 可作為後續 build 來源。
+4. Development 39.0.5、39.0.6、39.0.7 與 39.0.8 的 stage、本機 commit 與 source freeze
+   已於 2026-07-23 取得明確授權；只有最新的 39.0.8 clean revision 可作為後續 build 來源。
 5. split-phase operator 雖已通過來源／模擬失敗回歸，但尚未取得 production Authenticode 身分，
    也沒有對真實 build-only EXE 得到 `Valid`；receipt 不能替代正式簽章。
 6. 尚未建立綁定同一 revision、EXE digest、runtime、SBOM、checksum 與工具版本的新 Testing
@@ -48,7 +51,7 @@
 
 ## 歷史與清理政策
 
-- `README.md` 已只保留目前 Development 39.0.7、Stable 1.0 候選、最新能力、安全界線與操作入口；
+- `README.md` 已只保留目前 Development 39.0.8、Stable 1.0 候選、最新能力、安全界線與操作入口；
   舊版細節改由 `docs/README.md` 的唯讀索引與區間 release／roadmap 文件承接。這是資訊收斂，
   不是刪除公開歷史或供應鏈證據。
 - GitHub Releases 上已公開的 EXE、`SHA256SUMS.txt`、`release-info.json`、tag 與附件不可刪除或
@@ -67,7 +70,8 @@
 
 ## 重新評估與正式發布順序
 
-1. 39.0.7 的來源 Gate、stage、本機 commit 與 source freeze 已完成；人工 UI 證據維持截圖優先。
+1. 39.0.8 的來源 Gate 已完成，且 stage、本機 commit 與 source freeze 已取得明確授權；
+   人工 UI 證據維持截圖優先。
 2. 精確 commit hash 與 tree fingerprint 由交付回報保存，避免寫回同一 source freeze 自我參照。
 3. production Ed25519 public identity 與 Repository 外私鑰已建立；仍須取得 Windows
    Authenticode 身分。私鑰不得寫入 Repository、參數紀錄、Log 或套件。

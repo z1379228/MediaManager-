@@ -54,6 +54,8 @@ def bilibili_host_label(url: str) -> str:
         "m.bilibili.com": "Bilibili 行動版",
         "space.bilibili.com": "UP 主空間",
         "b23.tv": "b23.tv",
+        "bilibili.tv": "Bilibili 國際版",
+        "www.bilibili.tv": "Bilibili 國際版",
     }.get(host, "—")
 
 

@@ -5,9 +5,11 @@
 
 ## 目前狀態
 
-- 目前來源版本為開發版 39.0（核心相容版本 39.0.7），狀態
-  `G39-09 SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`。production
-  Ed25519 的公開 key ID／public key 已編入來源；私鑰保存在 Repository 外，未輸出或提交。
+- 目前來源版本為開發版 39.0（核心相容版本 39.0.8），狀態
+  `G39-10 SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`。39.0.7 source freeze 與
+  production Ed25519 公開身分保留不變；私鑰仍在 Repository 外且未輸出或提交。本輪只補
+  有官方公開 URL／provider 證據的 exact-host 白名單、generic 與專屬下載 manifest 的離線
+  一致性自檢，以及 Speech model manifest-owned 健康檢查；先前 build-only 工作目錄已 superseded。
   `38.1.14` 已
   `SOURCE VALIDATED / SUPERSEDED BY 38.1.15 / NO PACKAGE`；G38-02 已依使用者範圍決定
   `CLOSED / CANCELLED BY USER SCOPE DECISION / REMOVED / NO RELEASE`。既有 UserData、歷史紀錄、
@@ -17,9 +19,10 @@
   regression 啟動 Development 39.0.0，完整來源 Gate 已通過。使用者於 2026-07-23 已授權
   stage、本機 commit 與 Development 39.0.5 source freeze；同日也已明確授權 G39-08／39.0.6
   的 stage、本機 commit 與 source freeze。使用者後續亦明確授權 G39-09／39.0.7 的精確
-  stage、本機 commit 與 source freeze，因此 G40-01 恢復為
-  `BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED`。push、build、EXE、
-  Testing／Stable、簽署、發布與上傳仍未授權。
+  stage、本機 commit 與 source freeze；使用者於 2026-07-23 進一步授權 39.0.8～40.0.0 的
+  stage、本機 commit 與 source freeze，因此有 material delta 的 G39-10／39.0.8 已固定，G40-01
+  前進為 `BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED`。本次授權不包含
+  push、build、EXE、Testing／Stable、簽署、發布或上傳；沒有 material delta 時不建立空的 40.0.0。
 - 39.0.0 將既有、預設停用的 Media Convert 擴充為「本機格式工廠」第一工作包：增加
   PNG／JPEG／WebP 靜態影像轉檔與有界、去識別的 FFmpeg stderr 診斷；不自動安裝第三方
   執行檔、不上傳 CloudConvert，也不處理 DRM 或受保護光碟。既有影音、壓縮、修剪、佇列、
@@ -291,6 +294,7 @@
 - [原生崩潰去識別證據 Runbook](native-crash-evidence-runbook.md)
 - [Development 35→34 設定回復 Runbook](settings-pre35-rollback.md)
 - [網站父 MOD、子 MOD 與四語言契約](site-mod-group-format.md)
+- [網站與官方媒體子網域清冊](site-host-inventory.md)
 - [動畫瘋整合退役說明（歷史）](ani-gamer-feasibility.md)
 - [第三方 MOD 開發流程](mod-developer-guide.md)
 - [Search／Download Adapter SDK](adapter-sdk.md)

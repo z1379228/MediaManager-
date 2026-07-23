@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from core import dependency_health as health
@@ -115,6 +116,47 @@ def test_dependency_report_explains_missing_media_and_js(
     assert "Deno" in details["javascript-runtime"]
     assert "mega-get" in details["mega-get"]
     assert "whisper-cli" in details["whisper-cli"]
+
+
+def test_speech_model_health_ignores_unowned_files_and_requires_manifest(
+    tmp_path: Path, monkeypatch
+) -> None:
+    model_root = tmp_path / "data" / "models" / "speech-to-text"
+    model_root.mkdir(parents=True)
+    (model_root / "unverified.bin").write_bytes(b"not imported")
+    (model_root / "models.json").write_text(
+        json.dumps({"schema_version": 1, "models": {}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(health, "find_executable", lambda _root, _name: None)
+
+    report = health.check_dependencies(tmp_path, data_root=tmp_path / "data")
+    statuses = {status.dependency_id: status for status in report.statuses}
+
+    assert not statuses["speech-model"].available
+
+    model = model_root / "base.bin"
+    model.write_bytes(b"verified model")
+    (model_root / "models.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "models": {
+                    "base": {
+                        "sha256": "0" * 64,
+                        "size": model.stat().st_size,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = health.check_dependencies(tmp_path, data_root=tmp_path / "data")
+    statuses = {status.dependency_id: status for status in report.statuses}
+
+    assert statuses["speech-model"].available
+    assert statuses["speech-model"].version == "1 個模型"
 
 
 def test_find_javascript_runtime_returns_yt_dlp_key_and_path(

@@ -8,7 +8,7 @@
       "display_name": "Vimeo",
       "extractor_prefix": "vimeo",
       "support_status": "verified-public-analysis",
-      "last_live_check": "2026-07-14",
+      "last_live_check": "2026-07-23",
       "hosts": ["vimeo.com", "www.vimeo.com", "player.vimeo.com"]
     },
     {
@@ -16,32 +16,32 @@
       "display_name": "Dailymotion",
       "extractor_prefix": "dailymotion",
       "support_status": "verified-public-analysis",
-      "last_live_check": "2026-07-14",
-      "hosts": ["dailymotion.com", "www.dailymotion.com", "dai.ly"]
+      "last_live_check": "2026-07-23",
+      "hosts": ["dailymotion.com", "www.dailymotion.com", "geo.dailymotion.com", "dai.ly"]
     },
     {
       "site_id": "soundcloud",
       "display_name": "SoundCloud",
       "extractor_prefix": "soundcloud",
       "support_status": "verified-public-analysis",
-      "last_live_check": "2026-07-14",
-      "hosts": ["soundcloud.com", "www.soundcloud.com", "on.soundcloud.com"]
+      "last_live_check": "2026-07-23",
+      "hosts": ["soundcloud.com", "www.soundcloud.com", "m.soundcloud.com", "on.soundcloud.com"]
     },
     {
       "site_id": "tiktok",
       "display_name": "TikTok",
       "extractor_prefix": "tiktok",
       "support_status": "verified-public-analysis",
-      "last_live_check": "2026-07-14",
-      "hosts": ["tiktok.com", "www.tiktok.com", "m.tiktok.com", "vm.tiktok.com"]
+      "last_live_check": "2026-07-23",
+      "hosts": ["tiktok.com", "www.tiktok.com", "m.tiktok.com", "vm.tiktok.com", "vt.tiktok.com"]
     },
     {
       "site_id": "twitch",
       "display_name": "Twitch",
       "extractor_prefix": "twitch",
       "support_status": "verified-public-analysis",
-      "last_live_check": "2026-07-14",
-      "hosts": ["twitch.tv", "www.twitch.tv", "m.twitch.tv", "clips.twitch.tv"]
+      "last_live_check": "2026-07-23",
+      "hosts": ["twitch.tv", "www.twitch.tv", "m.twitch.tv", "clips.twitch.tv", "player.twitch.tv", "go.twitch.tv"]
     }
   ],
   "excluded": [

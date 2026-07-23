@@ -44,6 +44,8 @@ def youtube_host_label(url: str) -> str:
         "music.youtube.com": "YouTube Music",
         "youtu.be": "youtu.be",
         "www.youtube-nocookie.com": "YouTube 隱私嵌入",
+        "youtubekids.com": "YouTube Kids",
+        "www.youtubekids.com": "YouTube Kids",
     }.get(host, "—")
 
 

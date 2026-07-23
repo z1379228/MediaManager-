@@ -54,7 +54,7 @@ AniGamer removal. `38.1.16` is the final 38.x source-only identity with
 `SOURCE VALIDATED / PACKAGING INPUT HARDENED / NO PACKAGE / SAFE_MODE`.
 G38-02 is `CLOSED / CANCELLED BY USER SCOPE DECISION / REMOVED / NO RELEASE`.
 G39-01 is complete as `MEASURED / NO CHANGE / NO RELEASE / SAFE_MODE`.
-Development `39.0.7` is the current source identity for G39-09. It retains the
+Development `39.0.8` is the current source identity for G39-10. It retains the
 G39-04 localhost-only Gopeed／P2P runtime MODs, optional Speech to Text runtime
 dependencies, additive format-workshop presets, and new-profile built-in defaults,
 removes the unsupported Gopeed `rawUrl` request field, and adds a minimum-size
@@ -64,7 +64,9 @@ and provides a receipt-bound build-only／stage-built operator so Authenticode i
 validated before staging. It also adds a dry-run-first, fail-closed local
 release-history prune planner that requires two retained releases, a
 publish-ready Stable, an exact apply confirmation, and no UserData or link-like
-candidate content. It is
+candidate content. It additionally records only evidence-backed exact media
+hosts, audits provider／matrix host drift, and treats the optional Speech model
+as ready only when a valid manifest-owned model file exists. It is
 `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`; G40-01 is now
 `BUILD WAITING / STAGED CANDIDATE + HEADLESS SAFE_MODE EVIDENCE REQUIRED`.
 G38-01 retains its independent manual-validation blockers.
@@ -209,6 +211,14 @@ regression requires the existing key-id contract and an exact 32-byte decoded
 public key. Reverting 39.0.7 restores the blank compiled identity and therefore
 intentionally blocks Stable preflight; it does not delete or expose the external
 private key.
+
+Development 39.0.8 adds evidence-backed exact hosts for the supported media
+providers, a fail-closed provider／site-matrix host-drift audit, and a stricter
+optional Speech model readiness check that accepts only a valid manifest-owned
+file. Reverting 39.0.8 restores the preceding host lists, integrity pins,
+dependency-health helper, version identity, tests, and documentation; it does
+not remove UserData, the external production private key, retained releases, or
+the 39.0.7 source-freeze commit.
 
 Patch releases continue to share the same local minor folder (`4.0.1` stages to
 `Version/Development/4.0`) for compatibility with retained releases and offline

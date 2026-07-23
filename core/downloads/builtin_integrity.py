@@ -34,8 +34,8 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "locales/zh-CN.json": "d95a930210405fa1b9948c746d21b3d27ce29d8ec794aa41960c61f4c8501342",
         "locales/zh-TW.json": "83d12ba5a053ca20daa8e10340ddabd92ba86a1c88584ac8ab67e3668d388428",
         "provider.py": "86cb4708bda3a7090509d192509b53fb5025a3dc40a2c50e7fb9aaf83849e3ce",
-        "provider.json": "ebf0c166ce2e43479ab1f8f824b192ac9d36c40d519213b2cf336a1102a0800b",
-        "site-matrix.json": "1b6a7ccd7f0ab52402d331b14e5aa89a1ed77f31f0befe968007cc888e0a5778",
+        "provider.json": "4cbb1aaeae8a7c86a1c41414964be38e077bb3766bbfc653db6475b6a36a8c2b",
+        "site-matrix.json": "e364cb7cb43b8a27df46cc910466a0dfdd797d72fc45a38f76cacad691b7ff1d",
     },
     "bilibili-search": {
         "provider.py": "f6af795067fca4306ec0030c7031b2e191eada3745851b7e41559b849da27115",
@@ -46,8 +46,8 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
     },
     "generic-ytdlp": {
         "provider.py": "b7a87e87a88cd2fd35122d9f3a71381c9b77a1f1260cf62e6caaf6d0ef8b735b",
-        "provider.json": "a84b1bf1dca22bcf3b947496accaf09fb69720644320dd99ca330fc283511bdf",
-        "site-matrix.json": "282e35bc3cc5b9f627d33eec7287221cee9d6a46efa1214b0d31cba80173ddf6",
+        "provider.json": "0e3d3715e8b20f5e063aa6e22261c0a2bdde6ec7c2e9739ef4f059da68ce63bb",
+        "site-matrix.json": "19caf543f309c73a2cee6135ef36968a4a49bcfec431708177c9151a31b0c4df",
     },
     "instagram": {
         "feature.json": "fdfdbb20dea7fc0a5d33d2a5a9107003172a62b83c4efc5bd1799b9ee1796615",
@@ -100,9 +100,9 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "locales/ja.json": "bab55ed5c374427f441ad3a516cdf63989dd7c2be70460785d4181fc033fcf9a",
         "locales/zh-CN.json": "1ce4dc6264663c012f80384ad7698895330f71fb87ee734ebf462bab9acb3a72",
         "locales/zh-TW.json": "1bf1853980b013db3bde67ae4fa6a81e8f69608cc9486874770b220503c75d08",
-        "provider.py": "7efc8c20b40e41c2a5a0bdb0aaebbfcc5346d686e5ac40354d744a9b08f9e43f",
-        "provider.json": "b561dcce2a52090618604eb214046cb7894906c0dd7d308f607178be381ed1f7",
-        "site-matrix.json": "d1d4d8e83e8e5a05603133f8a615f9a096a46ce2c1d9449d83fbd469649f6d94",
+        "provider.py": "6683a85d44712112b07b6ec4f22bef6f3a52f25ffd6f96b599c5a9141a3e4cd3",
+        "provider.json": "32a32a7fafca6dda47b81d3c62bda403a5c0689bf9508f163bc038a0e4b4f493",
+        "site-matrix.json": "c627b8d0492fa11b39537d67497d18e58108dd6dce57e08d4c86bb000c11ef6b",
     },
     "mega": {
         "group.json": "c541dbc81ebbdca4f949ef66419acc0f0486c02a898bd53e472b5652b865e1b6",
@@ -116,11 +116,11 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
     },
     "youtube-player": {
         "provider.py": "972c899b078849b2497929d479bdeefda0b878a9f0d7d1320f0460b6942efaaa",
-        "provider.json": "852e1a3cb06dd2f52d4e8c506ce0f8e448a7511014d35dde022aceac69aecd44",
+        "provider.json": "d69745b75e0b688e3ef9cb1a1afaa31b512ec6512cadecfb15aec496ce0091ed",
     },
     "youtube-auto-split": {
         "provider.py": "654c6b416376c5c010f72c6c22e993cb408b61b74020e1e3f8bdb20fb37a66f1",
-        "provider.json": "8814a26f73582fbfbbb60f037178486cbf8c2be256fef7a01e2a8ae86d71437b",
+        "provider.json": "459f4faf6631165c49e93eb568afb91ab2bba0eb4c47b87dde3dadc467293a9e",
     },
     "youtube-similar": {
         "provider.py": "f1c01bc181b81fe2accacdd461a8e9ab604f1c16914be00bbcb747f333932fc4",
@@ -136,7 +136,7 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
     },
     "youtube-search": {
         "provider.py": "fbb4c9271212ea4e95d2d81c4cfd0958632ee284c9c945b6c797236d9bdb344e",
-        "provider.json": "b021207faa764b58f65c660f3ebc8759236067f90f5b59249a6c507cdd906add",
+        "provider.json": "9f6dd836093f3a5a549335812af2ea8d979474c453711cd8cc17253683b94254",
     },
     "youtube": {
         "group.json": "73e2bd4a2806f7bc5875bd73ba5de850783d3c1ce143e5bc95add5f39283839e",
@@ -145,7 +145,7 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "locales/zh-CN.json": "aecb2c1652049bbc57280f4a70ab8e8912d635a7f7516b57c4a46ce7ed43472a",
         "locales/zh-TW.json": "6ab7e060426c53add0a1f9f552ff261572eb2c089d5d3d671c334958198e75b0",
         "provider.py": "c10299a295ea2a8c4cf035d725d83aee4b2b3763aaf66d86d4d6a22a06a0e65e",
-        "provider.json": "77eaa8296c85bf59838fe4db517e79077f4bd56ff7176fec4b66e9ce20c7d97d",
+        "provider.json": "51b6199ea2197f6364088a10301b4433ca2fd169e5a97a6d600b1f4ce61a6a9f",
         "site-matrix.json": "1ec046c1b7d6d3e631013d825c0b5478d10f912a3a5a99eb2a0f6785f619feaf",
     }
 }

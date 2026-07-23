@@ -1,14 +1,17 @@
 # Development 39.0–40.0 更新紀錄
 
-狀態：Development 39.0.7／G39-09 為
-`SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`；39.0.6／G39-08 與
+狀態：Development 39.0.8／G39-10 為
+`SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`；39.0.7／G39-09、39.0.6／G39-08 與
 39.0.5／G39-07 已 source-frozen，
 39.0.4／G39-06、39.0.3／G39-05、39.0.2／G39-04、39.0.1／G39-03 與 39.0.0／G39-02 已
 `SOURCE VALIDATED / NO PACKAGE / SAFE_MODE`。
 使用者已於 2026-07-23 分別授權 Development 39.0.5 與 39.0.6 精確範圍的 stage、
 本機 commit 與 source freeze；使用者後續亦明確授權 39.0.7 production Ed25519 公開身分修正的
-stage、本機 commit 與 source freeze。這不授權 push、build、建立 EXE、Testing／Stable、
-Authenticode、候選簽署、發布或上傳。
+stage、本機 commit 與 source freeze。使用者於 2026-07-23 進一步授權 39.0.8～40.0.0 的
+stage、本機 commit 與 source freeze，本輪已固定實際有 material delta 的 39.0.8。這不授權
+push、build、建立 EXE、Testing／Stable、Authenticode、候選簽署、發布或上傳。
+既有 39.0.7 build-only 工作目錄不得在來源變更後升格、簽署或發布；沒有 material delta 時
+不建立空的 40.0.0。
 
 ## 39.0.0｜本機格式工廠第一工作包
 
@@ -329,6 +332,47 @@ formats、encoders、filters 與 hwaccels；排程前確認預估輸出加 256 M
   manifest 缺失與 Authenticode `NotSigned` 正確失敗。尚未 build、簽署、stage、建立 Stable、
   發布或上傳。
 
+## 39.0.8｜官方媒體子網域與選用語音依賴自檢
+
+### Goal、Scope 與 Priority
+
+- **Goal**：補齊已由官方公開 URL 與目前安裝版 provider／extractor 同時證明的媒體子網域，
+  並讓 Speech model 健康狀態只承認經既有匯入 manifest 登錄的本機模型。
+- **Scope**：Dailymotion `geo`、SoundCloud `m`、TikTok `vt`、Twitch `player`／`go`、Facebook
+  `web`／`mbasic`、YouTube Kids、Bilibili 國際版與 X／Twitter `m` exact host；generic
+  manifest／site matrix、專屬下載 manifest／canonical route 離線一致性；canonical host inventory；
+  whisper.cpp 官方手動安裝／模型 SHA-256 匯入指引。沒有 wildcard、通用 Cookie/Header、
+  串流攔截、登入、DRM、廣告或 Cloudflare 繞過。
+- **Priority**：P1；既有 exact-host policy 會拒絕合法官方 embed／mobile／short URL，而舊的
+  Speech model 健康檢查會把模型目錄內任意非空檔案誤報成已安裝。
+
+### Dependencies、Approach 與 Compatibility
+
+- **Dependencies**：官方 Vimeo／Dailymotion／TikTok／Twitch／YouTube Kids／Bilibili 文件、官方 public/mobile URL，
+  以及目前安裝的 yt-dlp extractor `suitable()`；只有 generic fallback 而沒有專屬 extractor
+  支援的 `player.bilibili.com` 明確排除。
+- **Approach**：以 RED exact-host regression 固定缺口後，只加入有雙重證據的精確 host；
+  `site_quality` 同時讀取 generic `provider.json`／`site-matrix.json` 與專屬下載 manifest，任何
+  generic matrix 或 canonical route host drift 均阻擋 self-check。Speech model 改以有界
+  `models.json` schema、model ID、SHA-256 metadata、regular
+  file 與精確 size 判定，不掃描或信任未登錄檔案。
+- **Compatibility**：Development 來源升為 `39.0.8`；Stable 仍為 `1.0.0`、Testing 仍為
+  `1.1.0`。既有有效 URL、UserData、MOD protocol 與 release metadata 不變。未安裝
+  `whisper-cli`／模型仍只影響 Speech to Text，不影響核心。
+
+### Risk、Rollback 與 Validation
+
+- **Risk**：第三方網站可能調整官方 URL 或 extractor；因此使用 exact host、離線一致性與
+  最近證據日期，不擴張到未知子網域。模型健康檢查不在啟動時重算大型檔案 hash，執行時仍由
+  `SpeechModelManager` 的 manifest 與既有匯入流程保護。
+- **Rollback**：在 source freeze 前回復本輪 exact host、完整性 hash、site-quality 自檢、模型健康
+  helper、39.0.8 身分與文件即可；不刪除模型、UserData、39.0.7 commit 或既有 build-only 目錄。
+- **Validation**：host RED 為 `6 failed, 6 passed`；實作後網域、網站品質與選用依賴精準組
+  `195 passed`，完整非 UI runner `1297 passed, 7 skipped`。quality audit `363 / 561`、MOD
+  `7 / 4`、網站 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、保留版本 `5`、Repository 外
+  compileall、SAFE_MODE verify-only 與 diff check 通過；未 build、簽署、stage、
+  建立 Stable、發布、上傳、push 或刪除歷史檔案。
+
 ## 參考模板判定
 
 - [FFmpeg](https://ffmpeg.org/download.html)：主要本機引擎；能力必須依實際 build 查證。
@@ -344,7 +388,7 @@ formats、encoders、filters 與 hwaccels；排程前確認預估輸出加 256 M
 ## 40.0
 
 G40-01 現為
-`BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED`。Development 39.0.7 的
-stage、本機 commit 與 source freeze 已完成；
+`BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED`。Development 39.0.8 已完成
+來源 Gate、stage、本機 commit 與 source freeze；既有 39.0.7 build-only 工作目錄已 superseded。
 build、EXE、Testing／Stable、
 簽署、candidate staging、發布、上傳與 push 仍須各自取得明確授權。

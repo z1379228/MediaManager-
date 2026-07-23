@@ -65,6 +65,8 @@ def test_bilibili_workspace_accepts_only_exact_official_https_routes() -> None:
         "https://space.bilibili.com/12345/video": "UP 主空間",
         "https://www.bilibili.com/bangumi/play/ep123": "Bilibili",
         "https://b23.tv/example": "b23.tv",
+        "https://www.bilibili.tv/en/video/2041863208": "Bilibili 國際版",
+        "https://bilibili.tv/en/play/1018660/11515462": "Bilibili 國際版",
     }
     for url, label in accepted.items():
         assert is_official_bilibili_url(url)
@@ -78,6 +80,7 @@ def test_bilibili_workspace_accepts_only_exact_official_https_routes() -> None:
         "https://www.bilibili.com/",
         "https://search.bilibili.com/all?keyword=example",
         "https://www.bilibili.com/video/BVexample\nhttps://evil.test",
+        "https://www.biliintl.com/en/video/2041863208",
     ):
         assert not is_official_bilibili_url(url)
 

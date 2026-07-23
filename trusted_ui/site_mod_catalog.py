@@ -44,7 +44,13 @@ def official_meta_bridge_id_for_url(value: str) -> str:
     ):
         return ""
     host = (parsed.hostname or "").casefold()
-    if host in {"facebook.com", "www.facebook.com", "m.facebook.com"}:
+    if host in {
+        "facebook.com",
+        "www.facebook.com",
+        "m.facebook.com",
+        "web.facebook.com",
+        "mbasic.facebook.com",
+    }:
         return "facebook"
     if host in {"instagram.com", "www.instagram.com", "m.instagram.com"}:
         return "instagram"
@@ -105,7 +111,15 @@ def validated_facebook_url(value: str) -> str | None:
     parsed = _official_https_parts(
         value,
         home=FACEBOOK_HOME,
-        hosts=frozenset({"facebook.com", "www.facebook.com", "m.facebook.com"}),
+        hosts=frozenset(
+            {
+                "facebook.com",
+                "www.facebook.com",
+                "m.facebook.com",
+                "web.facebook.com",
+                "mbasic.facebook.com",
+            }
+        ),
     )
     if parsed is None:
         return None
@@ -204,9 +218,11 @@ def validated_twitter_url(value: str) -> str | None:
             {
                 "x.com",
                 "www.x.com",
+                "m.x.com",
                 "mobile.x.com",
                 "twitter.com",
                 "www.twitter.com",
+                "m.twitter.com",
                 "mobile.twitter.com",
             }
         ),

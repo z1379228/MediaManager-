@@ -5,10 +5,11 @@
 
 ## 目前狀態
 
-- 目前來源版本為開發版 39.0（核心相容版本 39.0.7）；G39-09 已將 production
-  Ed25519 的公開 key ID／public key 編入來源，狀態為
-  `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`。私鑰維持在 Repository 外且未輸出或提交。
-  39.0.7 已固定為目前不可變本機來源；G40-01 現為
+- 目前來源版本為開發版 39.0（核心相容版本 39.0.8）；G39-10 已補齊具官方公開
+  URL 與已安裝 extractor 證據的 exact-host 白名單，並修正 Speech model 健康檢查把
+  未登錄檔案誤判為可用模型的缺口，狀態為
+  `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`。39.0.8 是目前不可變的本機來源；先前
+  build-only 工作目錄已因來源 material delta superseded，不得簽署或發布。G40-01 現為
   `BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED`。
 - 正式版目標：Stable `1.0.0`，目前 `ready: false`；尚未建立、簽署、發布或上傳。
 - 最新來源更新：
@@ -16,7 +17,11 @@
     成品驗證；所有處理只接受使用者選取的本機檔案。
   - Gopeed Bridge／P2P Transfer 只連接使用者自行啟動的 localhost Gopeed REST API；
     不自動啟動 Gopeed、不開放遠端連線、不自動開埠，也不強制刪除下載資料。
-  - Speech to Text 的 `whisper-cli` 與語音模型保持選用；未安裝不影響核心功能。
+  - Speech to Text 的 `whisper-cli` 與語音模型保持選用；未安裝不影響核心功能。環境檢查
+    會指向 whisper.cpp 官方來源及手動放置／SHA-256 模型匯入步驟，不會自動下載或執行模型。
+  - 官方媒體子網域採 exact-host allowlist；YouTube Kids、Bilibili 國際版、Facebook／X
+    行動別名與 generic 網站的新增主機必須同時具備官方 URL、provider／extractor 與
+    regression 證據；未知子網域不會從母網域繼承信任。
   - Stable 發行操作已拆成 receipt-bound `build-only` 與 Authenticode 驗證後的
     `stage-built`，避免先產生 checksum 再修改 EXE。
   - production Ed25519 公開身分已編入來源並由回歸驗證為合法 32-byte 公鑰；這不代表
@@ -24,9 +29,10 @@
   - 本機歷史整理新增 dry-run-first `tools.prune_local_history`；只會規劃 `Version`
     內精確版本目錄，必須保留至少兩版且包含已通過 preflight 的 Stable，任一候選
     含 UserData、junction、reparse point 或 link 即整批拒絕。預設不刪除任何檔案。
-- 最新非 UI 驗證：116 個測試檔 `1030 passed, 6 skipped`；39.0.7 release／version
-  精準回歸 `27 passed`。Ruff、quality audit、MOD、網站、依賴鎖、版本文件、保留版本、
-  Repository 外 compileall、SAFE_MODE verify-only 與 `git diff --check` 均已通過。
+- 39.0.8 精準網域、網站品質與選用依賴回歸 `195 passed`；完整非 UI runner
+  `1297 passed, 7 skipped`。quality audit Ruff `363`／文字 `561`、MOD `7 / 4`、網站
+  `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、保留版本 `5`、Repository 外 compileall、
+  SAFE_MODE verify-only 與 `git diff --check` 均通過。
 - 動畫瘋整合已於 Development 38.1.15 依範圍決定從目前來源及 runtime 註冊移除；
   舊 UserData、工程證據及不可變 Development 38.0 基線仍保留，且不會轉接到通用下載器。
 
@@ -35,6 +41,7 @@
 - [`docs/roadmap-development-34.0-40.0.md`](docs/roadmap-development-34.0-40.0.md)
 - [`docs/release-39.0-40.0.md`](docs/release-39.0-40.0.md)
 - [`docs/release-stable-1.0-candidate.md`](docs/release-stable-1.0-candidate.md)
+- [`docs/site-host-inventory.md`](docs/site-host-inventory.md)
 
 ## 安全與範圍
 

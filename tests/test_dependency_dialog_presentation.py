@@ -4,6 +4,7 @@ from core.dependency_health import DependencyReport, DependencyStatus
 from trusted_ui.dependency_dialog import (
     dependency_table_row,
     dependency_presentation,
+    optional_dependency_install_html,
     startup_dependency_prompt_required,
 )
 
@@ -54,7 +55,7 @@ def test_dependency_rows_distinguish_missing_optional_tools_from_core_faults() -
         False,
         "",
         "",
-        "尚未偵測到 whisper-cli；Speech to Text 無法執行",
+        "未偵測到 whisper-cli；請將官方 whisper-cli.exe 放入程式 tools 目錄、程式根目錄或 PATH",
     )
     core = DependencyStatus(
         "ffmpeg",
@@ -70,7 +71,7 @@ def test_dependency_rows_distinguish_missing_optional_tools_from_core_faults() -
         "whisper-cli",
         "未安裝（不影響核心）",
         "尚未偵測到",
-        "Speech to Text MOD：尚未偵測到 whisper-cli；Speech to Text 無法執行",
+        "Speech to Text MOD：未偵測到 whisper-cli；請將官方 whisper-cli.exe 放入程式 tools 目錄、程式根目錄或 PATH",
     )
     assert dependency_table_row(core, is_core=True)[2] == "缺少（阻擋核心）"
 
@@ -128,3 +129,13 @@ def test_dependency_dialog_exposes_full_detected_path_and_copy_action(
 def test_startup_dependency_prompt_only_appears_for_incomplete_support() -> None:
     assert not startup_dependency_prompt_required(_report((True, True, True, True)))
     assert startup_dependency_prompt_required(_report((True, False, True, True)))
+
+
+def test_optional_dependency_help_uses_official_manual_sources() -> None:
+    text = optional_dependency_install_html()
+
+    assert "https://github.com/ggml-org/whisper.cpp/releases" in text
+    assert "models/README.md" in text
+    assert "whisper-cli.exe" in text
+    assert "SHA-256" in text
+    assert "不會自動下載或執行模型" in text

@@ -23,6 +23,12 @@ def test_youtube_and_music_share_one_family_with_strict_resource_kinds() -> None
     assert classify_site_url(
         "https://www.youtube-nocookie.com/embed/ynUkJsLxStI"
     ) == SiteRoute("youtube", "video", "youtube", "youtube-search")
+    assert classify_site_url(
+        "https://www.youtubekids.com/watch?v=ynUkJsLxStI"
+    ) == SiteRoute("youtube", "video", "youtube", "youtube-search")
+    assert classify_site_url(
+        "https://youtubekids.com/watch?v=ynUkJsLxStI"
+    ) == SiteRoute("youtube", "video", "youtube", "youtube-search")
 
 
 def test_youtube_route_rejects_ambiguous_or_spoofed_urls() -> None:
@@ -40,6 +46,9 @@ def test_youtube_route_rejects_ambiguous_or_spoofed_urls() -> None:
         "https://www.youtube-nocookie.com/watch?v=one",
         "https://youtube-nocookie.com/embed/one",
         "https://www.youtube-nocookie.com.evil.test/embed/one",
+        "https://kids.youtube.com/watch?v=one",
+        "https://www.youtubekids.com/playlist?list=PL_example",
+        "https://www.youtubekids.com/watch?v=one&list=PL_example",
     ):
         assert classify_site_url(url) is None
 
@@ -52,10 +61,22 @@ def test_other_sites_get_distinct_families_and_provider_roles() -> None:
         "https://www.bilibili.com/video/BV1example?spm_id_from=333.1007"
     ).resource_kind == "video"
     assert classify_site_url(
+        "https://www.bilibili.tv/en/video/2041863208"
+    ) == SiteRoute("bilibili", "video", "bilibili", "bilibili-search")
+    assert classify_site_url(
+        "https://bilibili.tv/en/play/1018660/11515462"
+    ) == SiteRoute("bilibili", "episode", "bilibili", "bilibili-search")
+    assert classify_site_url(
         "https://search.bilibili.com/all?keyword=%E5%B9%BB%E6%9C%88%E7%92%B0"
     ) == SiteRoute("bilibili", "search-page", None, "bilibili-search")
     assert classify_site_url(
         "https://www.facebook.com/reel/123456"
+    ) == SiteRoute("facebook", "video-page", "facebook", None)
+    assert classify_site_url(
+        "https://web.facebook.com/reel/123456"
+    ) == SiteRoute("facebook", "video-page", "facebook", None)
+    assert classify_site_url(
+        "https://mbasic.facebook.com/reel/123456"
     ) == SiteRoute("facebook", "video-page", "facebook", None)
     assert classify_site_url(
         "https://mega.nz/file/AbCdEf12#abcdefghijklmnop"
@@ -127,6 +148,12 @@ def test_social_parent_mod_routes_cover_known_official_subdomains() -> None:
     ) == SiteRoute("threads", "official-post", None, None)
     assert classify_site_url(
         "https://mobile.x.com/openai/status/123456"
+    ) == SiteRoute("twitter", "official-post", None, None)
+    assert classify_site_url(
+        "https://m.x.com/openai/status/123456"
+    ) == SiteRoute("twitter", "official-post", None, None)
+    assert classify_site_url(
+        "https://m.twitter.com/openai/status/123456"
     ) == SiteRoute("twitter", "official-post", None, None)
     assert classify_site_url(
         "https://twitter.com/i/web/status/123456"

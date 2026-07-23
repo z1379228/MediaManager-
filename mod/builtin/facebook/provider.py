@@ -15,7 +15,14 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 PROVIDER_ID = "facebook"
 DISPLAY_NAME = "Facebook"
 _HOSTS = frozenset(
-    {"facebook.com", "www.facebook.com", "m.facebook.com", "fb.watch"}
+    {
+        "facebook.com",
+        "www.facebook.com",
+        "m.facebook.com",
+        "web.facebook.com",
+        "mbasic.facebook.com",
+        "fb.watch",
+    }
 )
 _MEDIA_SUFFIXES = (".mp4", ".mkv", ".webm", ".m4a", ".mp3")
 

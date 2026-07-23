@@ -8,6 +8,12 @@ from pathlib import Path
 import re
 
 from core.mod_groups import SITE_MOD_CHILDREN
+from core.site_routing import (
+    BILIBILI_MEDIA_HOSTS,
+    FACEBOOK_HOSTS,
+    MEGA_HOSTS,
+    YOUTUBE_HOSTS,
+)
 
 
 _SUPPORT_STATES = frozenset(
@@ -61,6 +67,12 @@ _REQUIRED_BOUNDARY_TOKENS = (
     "private",
 )
 _DATE = re.compile(r"^20[0-9]{2}-[0-9]{2}-[0-9]{2}$")
+_DEDICATED_ROUTE_HOSTS = {
+    "youtube": YOUTUBE_HOSTS,
+    "bilibili": BILIBILI_MEDIA_HOSTS,
+    "facebook": FACEBOOK_HOSTS,
+    "mega": MEGA_HOSTS,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +94,9 @@ def _load(path: Path) -> dict[str, object]:
 
 
 def _audit_generic_sites(
-    matrix: dict[str, object], errors: list[str]
+    matrix: dict[str, object],
+    manifest: dict[str, object],
+    errors: list[str],
 ) -> tuple[int, int]:
     sites = matrix.get("sites")
     if not isinstance(sites, list) or not 1 <= len(sites) <= 20:
@@ -112,6 +126,17 @@ def _audit_generic_sites(
             else:
                 hosts.add(host)
         checked_sites += 1
+    manifest_hosts = manifest.get("url_hosts")
+    if manifest.get("provider_id") != matrix.get("provider_id"):
+        errors.append("generic manifest and site matrix identities differ")
+    if (
+        not isinstance(manifest_hosts, list)
+        or any(not isinstance(host, str) or not host for host in manifest_hosts)
+        or len(manifest_hosts) != len(set(manifest_hosts))
+    ):
+        errors.append("generic manifest host list is invalid")
+    elif set(manifest_hosts) != hosts:
+        errors.append("generic manifest and site matrix hosts differ")
     return checked_sites, 0
 
 
@@ -198,6 +223,26 @@ def _audit_site_family(
     return checked_features, checked_workflows
 
 
+def _audit_dedicated_manifest_hosts(
+    provider_id: str,
+    manifest: dict[str, object],
+    errors: list[str],
+) -> None:
+    expected = _DEDICATED_ROUTE_HOSTS.get(provider_id)
+    if expected is None:
+        return
+    raw_hosts = manifest.get("url_hosts")
+    if (
+        manifest.get("provider_id") != provider_id
+        or not isinstance(raw_hosts, list)
+        or any(not isinstance(host, str) or not host for host in raw_hosts)
+        or len(raw_hosts) != len(set(raw_hosts))
+    ):
+        errors.append(f"{provider_id} manifest host list is invalid")
+    elif set(raw_hosts) != expected:
+        errors.append(f"{provider_id} manifest and canonical route hosts differ")
+
+
 def audit_builtin_site_quality(root: Path) -> SiteQualityReport:
     """Check every site-family workflow and policy without network access."""
 
@@ -208,19 +253,27 @@ def audit_builtin_site_quality(root: Path) -> SiteQualityReport:
     builtin = root.resolve() / "mod" / "builtin"
     try:
         generic = _load(builtin / "generic-ytdlp" / "site-matrix.json")
+        generic_manifest = _load(builtin / "generic-ytdlp" / "provider.json")
     except (OSError, ValueError, TypeError) as error:
         errors.append(str(error))
     else:
-        sites, features = _audit_generic_sites(generic, errors)
+        sites, features = _audit_generic_sites(generic, generic_manifest, errors)
         checked_sites += sites
         checked_features += features
 
     for provider_id in SITE_MOD_CHILDREN:
         try:
             matrix = _load(builtin / provider_id / "site-matrix.json")
+            manifest = (
+                _load(builtin / provider_id / "provider.json")
+                if provider_id in _DEDICATED_ROUTE_HOSTS
+                else None
+            )
         except (OSError, ValueError, TypeError) as error:
             errors.append(str(error))
             continue
+        if manifest is not None:
+            _audit_dedicated_manifest_hosts(provider_id, manifest, errors)
         checked_sites += 1
         features, workflows = _audit_site_family(provider_id, matrix, errors)
         checked_features += features

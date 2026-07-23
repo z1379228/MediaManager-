@@ -1,6 +1,6 @@
 # Development 34.0～40.0 唯一版本更新計畫
 
-狀態：`CANONICAL / 34.0 SOURCE-FROZEN / 35.0～37.0 EXIT GATE DONE / SOURCE ONLY / G38-01 BASELINE FROZEN + MANUAL BLOCKED / G38-02 CLOSED + REMOVED / G39-01 MEASURED + NO RELEASE / G39-02～G39-06 SOURCE VALIDATED + NO PACKAGE / G39-07 39.0.5 SOURCE-FROZEN / G39-08 39.0.6 SOURCE-FROZEN / G39-09 39.0.7 SOURCE-FROZEN / G40-01 BUILD WAITING / SAFE_MODE`
+狀態：`CANONICAL / 34.0 SOURCE-FROZEN / 35.0～37.0 EXIT GATE DONE / SOURCE ONLY / G38-01 BASELINE FROZEN + MANUAL BLOCKED / G38-02 CLOSED + REMOVED / G39-01 MEASURED + NO RELEASE / G39-02～G39-06 SOURCE VALIDATED + NO PACKAGE / G39-07 39.0.5 SOURCE-FROZEN / G39-08 39.0.6 SOURCE-FROZEN / G39-09 39.0.7 SOURCE-FROZEN / G39-10 39.0.8 SOURCE-FROZEN / G40-01 BUILD WAITING / SAFE_MODE`
 規劃基線：2026-07-18；Development 34.0／核心相容版本 34.0.0 已完成來源凍結，尚未封裝。
 
 本文件重新設計 34.0～40.0 的唯一執行順序，取代 35.0～40.0 單版草案的執行權；
@@ -40,7 +40,10 @@ Development 38.0。G39-01 measurement baseline 已完成且沒有可證 bottlene
   本機 commit 與 source freeze；G40-01 因而恢復 build waiting，仍缺 staged candidate／
   headless SAFE_MODE 證據。後續 production Ed25519 私鑰已在 Repository 外建立，公開
   key ID／public key 則形成唯一 G39-09／Development 39.0.7 material trust-identity delta；
-  使用者已明確授權 39.0.7 stage／commit／source freeze，因此 G40-01 恢復 build waiting。
+  使用者已明確授權 39.0.7 stage／commit／source freeze，因此 G40-01 一度恢復 build waiting。
+  後續 exact-host 與 Speech model readiness regression 形成唯一 G39-10／39.0.8 material delta；
+  使用者已授權 39.0.8～40.0.0 的 stage／commit／source freeze，實際有 material delta 的 39.0.8
+  已固定，G40-01 現為 build waiting。沒有 material delta 時不建立空的 40.0.0。
 
 ## 目標與非目標
 
@@ -111,7 +114,9 @@ Development 38.0。G39-01 measurement baseline 已完成且沒有可證 bottlene
    `MEASURED / NO CHANGE / NO RELEASE / SAFE_MODE` 完成。G39-02 只實作有 failing regression 的
    本機格式工廠工作包；參考產品本身不構成 scope。G39-08 只建立預設 dry-run，
    並對 Stable／UserData／link-like 邊界 fail closed。G39-09 只編入非秘密 production Ed25519
-   公開身分；39.0.7 source freeze 已完成，G40-01 現為 `BUILD WAITING`，
+   公開身分；39.0.7 source freeze 已完成。G39-10 只補有官方 URL／provider 雙重證據的 exact
+   host、離線 host drift 自檢與 Speech model manifest-owned 健康檢查；G40-01 因此回到
+   `FREEZE WAITING`，
    不得以[參考軟體功能矩陣](comparable-software-options.md)自動跨 Gate。
 
 ## 依賴執行順序與版本內 Priority
@@ -134,7 +139,8 @@ Development 38.0。G39-01 measurement baseline 已完成且沒有可證 bottlene
 | 14 | G39-07 | 39.0.5-P0 | `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE` | Stable 公開身分與 UI display 固定為獨立 1.0.0／「正式版 1.0」；release operator 拆成 receipt-bound build-only 與 Authenticode `Valid` 後 stage-built。display RED `1 failed, 3 passed`、精準封裝／版本 GREEN `45 passed`、非 UI `1019 passed, 6 skipped`；2026-07-23 已授權 stage、本機 commit 與 source freeze，未實際 build、簽署或 push。 |
 | 15 | G39-08 | 39.0.6-P0 | `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE` | 建立預設 dry-run 的本機版本歷史整理計畫；至少保留兩版且包含 publish-ready Stable，UserData、link-like、意外目錄或計畫後變更均 fail closed，apply 另需 exact confirmation 並重驗完整計畫。RED 為缺少模組的 collection error，精準 GREEN `9 passed`、非 UI `1029 passed, 6 skipped`；2026-07-23 已授權 stage、本機 commit 與 source freeze，未實際刪除。 |
 | 16 | G39-09 | 39.0.7-P0 | `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE` | production Ed25519 私鑰在 Repository 外建立；只把公開 key ID／raw public key 編入來源，並以 RED→GREEN 回歸要求合法 key ID 與 32-byte public key。精準 `27 passed`、非 UI `1030 passed, 6 skipped`，來源 Gate 通過；2026-07-23 已授權 stage、本機 commit 與 source freeze，未 build、Authenticode 或候選簽署。 |
-| 17 | G40-01 | 40.0-P0 | `BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED` | source-only verify-only 已有精確 SAFE_MODE stdout；39.0.7 已固定為目前 source freeze。build／candidate、EXE、Testing／Stable、簽署、發布、上傳與 push 仍須逐項明確授權。 |
+| 17 | G39-10 | 39.0.8-P1 | `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE` | 補齊具官方 URL 與 provider／extractor 證據的 exact hosts，site-quality 阻擋 manifest／matrix drift，Speech model 只承認 manifest-owned 檔案；精準回歸 `195 passed`、完整非 UI `1297 passed, 7 skipped`，來源 Gate 通過。2026-07-23 已授權 stage、本機 commit 與 source freeze。 |
+| 18 | G40-01 | 40.0-P0 | `BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED` | 39.0.8 已固定為目前 source freeze，既有 39.0.7 build-only 工作目錄 superseded；build／candidate、EXE、Testing／Stable、簽署、發布、上傳與 push 仍須逐項明確授權。沒有 material delta 時不建立空的 40.0.0。 |
 
 Stable-only Gate 不屬於 Development 40.0 的執行排名；只有使用者明確選擇 Stable 後，
 G40-02 才成為該獨立通道的 P0：sign-before-stage、channel-aware exact signed set、
@@ -1496,13 +1502,51 @@ stage、本機 commit 與 source freeze。
 - **Exit Gate**：已前進為 `SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`；G40-01 恢復
   build-waiting，但所有 build／candidate 與後續操作仍需逐項授權。
 
+### G39-10｜官方媒體 exact-host 與選用語音依賴自檢
+
+**Status**：`SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`。39.0.7 source-freeze commit 與外部私鑰
+保留不變；使用者已於 2026-07-23 授權 39.0.8～40.0.0 的 stage、本機 commit 與 source freeze，
+本輪已固定實際有 material delta 的 39.0.8。
+
+- **Goal**：讓有官方公開 URL 與目前 provider／extractor 雙重證據的媒體 embed、mobile 或
+  short host 可通過既有 exact-host Gate，並消除 Speech model 目錄內任意檔案造成的 readiness
+  誤報。
+- **Scope**：`geo.dailymotion.com`、`m.soundcloud.com`、`vt.tiktok.com`、`player.twitch.tv`、
+  `go.twitch.tv`、`web.facebook.com`、`mbasic.facebook.com`、YouTube Kids、Bilibili 國際版與
+  X／Twitter `m`；generic manifest／site matrix 及專屬下載 manifest／canonical route host
+  consistency；canonical host inventory；
+  whisper.cpp 官方手動安裝與 SHA-256 模型匯入指引。排除 wildcard、`player.bilibili.com`、動畫瘋、
+  通用 Cookie/Header、串流攔截及登入／DRM／廣告／Cloudflare 規避。
+- **Priority**：P1；exact-host policy 的合法官方 URL false-negative 與模型 readiness false-positive
+  均有可重現 regression。
+- **Dependencies**：官方 Vimeo／Dailymotion／TikTok／Twitch／YouTube Kids／Bilibili 文件、官方 public/mobile URL，
+  安裝版 yt-dlp extractor，以及既有 `SpeechModelManager` manifest 契約。
+- **Approach**：RED→GREEN 後只加有雙重證據的 exact host；`audit_builtin_site_quality` 離線載入
+  generic manifest／matrix 與專屬下載 manifest，拒絕 generic matrix 或 canonical route host
+  drift；模型健康快照只接受 schema 1、合法 model ID、
+  64 位 SHA-256 metadata、精確 size 與 regular `.bin` 檔案。
+- **Compatibility**：Development 升為 `39.0.8`；Stable `1.0.0`、Testing `1.1.0`、UserData、
+  MOD protocol 與 release metadata 不變。Speech 選用依賴缺失不阻擋核心。
+- **Risk**：網站與 extractor 會變動，故仍使用 exact host、最近證據日期與 regression，不對母網域
+  wildcard；健康快照不重算大型模型 hash，實際匯入與工作仍沿用 SHA-256／manifest Gate。
+- **Rollback**：source freeze 前回復 host、integrity pin、自檢、Speech helper、39.0.8 身分與文件；
+  不刪除模型、UserData、39.0.7 commit、外部私鑰或既有 build-only 工作目錄。
+- **Validation**：host RED `6 failed, 6 passed`；精準網域、site-quality、dependency 組
+  `195 passed`；完整非 UI runner `1297 passed, 7 skipped`。quality audit `363 / 561`、MOD
+  `7 / 4`、網站 `12 / 34 / 49`、dependency lock `10`、版本文件 `4`、保留版本 `5`、
+  Repository 外 compileall、SAFE_MODE verify-only 與 diff Gate 通過。
+- **Exit Gate**：`SOURCE-FROZEN / NO PACKAGE / SAFE_MODE`；39.0.8 的 stage、本機 commit 與
+  source freeze 已獲授權並完成。未授權 build、EXE、Stable、Authenticode、發布、上傳、push 或
+  歷史清理。
+
 ## 40.0｜可重現候選與發行完整性
 
 **Status**：`BUILD WAITING / STAGED CANDIDATE + HEADLESS EVIDENCE REQUIRED`。
 G39-08／39.0.6 的 stage、本機 commit 與 source freeze 已於 2026-07-23 取得明確授權；
-G39-09／39.0.7 的 stage、本機 commit 與 source freeze 已於 2026-07-23 取得明確授權。未取得
-build／candidate、EXE、Testing／Stable、簽署、發布、上傳或 push 的逐項明確授權前不啟動
-後續操作。Stable-only
+G39-09／39.0.7 與 G39-10／39.0.8 的 stage、本機 commit 與 source freeze 已於 2026-07-23
+取得明確授權；39.0.8 是目前不可變來源。既有 39.0.7 build-only 工作目錄因 material source
+delta superseded。build／candidate、EXE、Testing／Stable、簽署、發布、上傳或 push 仍須逐項
+明確授權；本輪不啟動後續操作。沒有 material delta 時不建立空的 40.0.0。Stable-only
 G40-02 仍受正式簽署身分與通道決定阻擋。
 
 - **Goal**：在另行授權後，從 clean revision 產生可驗證、可回退且明確為 unsigned

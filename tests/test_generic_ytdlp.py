@@ -38,6 +38,27 @@ def test_generic_provider_accepts_only_explicit_matrix_hosts(url: str) -> None:
 @pytest.mark.parametrize(
     "url",
     (
+        "https://geo.dailymotion.com/player/x123.html?video=x84sh87",
+        "https://m.soundcloud.com/artist/track",
+        "https://vt.tiktok.com/ZSexample/",
+        "https://player.twitch.tv/?video=v40464143&parent=example.com",
+        "https://go.twitch.tv/videos/40464143",
+    ),
+)
+def test_generic_provider_accepts_verified_official_media_subdomains(
+    url: str,
+) -> None:
+    provider = SubprocessDownloadProvider(
+        PROVIDER_ROOT,
+        application_root=ROOT,
+    )
+
+    assert provider.supports(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    (
         "https://www.youtube.com/watch?v=example",
         "https://www.bilibili.com/video/BVexample",
         "https://www.facebook.com/watch/?v=123",
@@ -46,6 +67,7 @@ def test_generic_provider_accepts_only_explicit_matrix_hosts(url: str) -> None:
         "https://twitter.com/example/status/123",
         "https://user:secret@vimeo.com/123",
         "https://vimeo.com:99999/123",
+        "https://touch.dailymotion.com/video/example",
     ),
 )
 def test_generic_provider_rejects_excluded_or_credential_urls(url: str) -> None:

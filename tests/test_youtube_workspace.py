@@ -60,6 +60,8 @@ def test_youtube_workspace_accepts_only_exact_official_https_hosts() -> None:
         "https://music.youtube.com/watch?v=four": "YouTube Music",
         "https://youtu.be/five": "youtu.be",
         "https://www.youtube-nocookie.com/embed/six": "YouTube 隱私嵌入",
+        "https://youtubekids.com/watch?v=seven": "YouTube Kids",
+        "https://www.youtubekids.com/watch?v=eight": "YouTube Kids",
     }
     for url, label in accepted.items():
         assert is_official_youtube_url(url)
@@ -72,6 +74,7 @@ def test_youtube_workspace_accepts_only_exact_official_https_hosts() -> None:
         "https://youtu.be:443/one",
         "https://youtube.com",
         "https://www.youtube-nocookie.com/watch?v=one",
+        "https://kids.youtube.com/watch?v=one",
         "https://www.youtube.com/watch?v=one\nhttps://evil.test",
     ):
         assert not is_official_youtube_url(url)

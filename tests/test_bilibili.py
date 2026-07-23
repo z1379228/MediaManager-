@@ -23,6 +23,8 @@ PROVIDER_ROOT = ROOT / "mod" / "builtin" / "bilibili"
         "https://space.bilibili.com/123/video",
         "https://b23.tv/example",
         "https://bilibili.com/video/BVexample",
+        "https://www.bilibili.tv/en/video/2041863208",
+        "https://bilibili.tv/en/play/1018660/11515462",
     ),
 )
 def test_bilibili_provider_accepts_only_explicit_hosts(url: str) -> None:
@@ -42,6 +44,7 @@ def test_bilibili_provider_accepts_only_explicit_hosts(url: str) -> None:
         "https://www.youtube.com/watch?v=example",
         "https://user:secret@www.bilibili.com/video/BVexample",
         "https://www.bilibili.com:99999/video/BVexample",
+        "https://www.biliintl.com/en/video/2041863208",
     ),
 )
 def test_bilibili_provider_rejects_unlisted_or_credential_urls(url: str) -> None:

@@ -54,6 +54,12 @@ from core.security.publisher_manager import PublisherManager
 from core.security.release_key import RELEASE_KEY_ID, RELEASE_PUBLIC_KEY
 from core.security.safe_mode import SafeMode, SecurityMode
 from core.security.trust_store import TrustStore
+from core.site_routing import (
+    BILIBILI_MEDIA_HOSTS,
+    FACEBOOK_HOSTS,
+    MEGA_HOSTS,
+    YOUTUBE_HOSTS,
+)
 from core.settings import (
     Settings,
     SettingsLoadResult,
@@ -69,14 +75,7 @@ from core.version import BUILD_CHANNEL
 _BUILTIN_DOWNLOAD_DETAILS = {
     "youtube": (
         "YouTube",
-        (
-            "youtube.com",
-            "www.youtube.com",
-            "m.youtube.com",
-            "music.youtube.com",
-            "youtu.be",
-            "www.youtube-nocookie.com",
-        ),
+        tuple(sorted(YOUTUBE_HOSTS)),
     ),
     "generic-ytdlp": (
         "其他網站 Beta",
@@ -86,37 +85,36 @@ _BUILTIN_DOWNLOAD_DETAILS = {
             "player.vimeo.com",
             "dailymotion.com",
             "www.dailymotion.com",
+            "geo.dailymotion.com",
             "dai.ly",
             "soundcloud.com",
             "www.soundcloud.com",
+            "m.soundcloud.com",
             "on.soundcloud.com",
             "tiktok.com",
             "www.tiktok.com",
             "m.tiktok.com",
             "vm.tiktok.com",
+            "vt.tiktok.com",
             "twitch.tv",
             "www.twitch.tv",
             "m.twitch.tv",
             "clips.twitch.tv",
+            "player.twitch.tv",
+            "go.twitch.tv",
         ),
     ),
     "bilibili": (
         "Bilibili",
-        (
-            "bilibili.com",
-            "www.bilibili.com",
-            "m.bilibili.com",
-            "space.bilibili.com",
-            "b23.tv",
-        ),
+        tuple(sorted(BILIBILI_MEDIA_HOSTS)),
     ),
     "facebook": (
         "Facebook",
-        ("facebook.com", "www.facebook.com", "m.facebook.com", "fb.watch"),
+        tuple(sorted(FACEBOOK_HOSTS)),
     ),
     "mega": (
         "MEGA",
-        ("mega.nz", "www.mega.nz"),
+        tuple(sorted(MEGA_HOSTS)),
     ),
     "direct-http": (
         "Direct HTTP",
