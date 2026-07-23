@@ -206,6 +206,9 @@ QSpinBox, QDoubleSpinBox, QDateEdit, QTimeEdit, QDateTimeEdit {
 }
 QMessageBox, QFileDialog { background: #0a0f1d; color: #e9eef8; }
 QLineEdit:focus, QPlainTextEdit:focus, QTextBrowser:focus, QComboBox:focus { border-color: #6f8dff; }
+QTreeView:focus, QTreeWidget:focus {
+    border: 2px solid #6f8dff;
+}
 QLineEdit:disabled, QPlainTextEdit:disabled, QTextBrowser:disabled { color: #66728a; background: #0b111e; }
 QComboBox::drop-down { border: none; width: 24px; }
 QPushButton {

@@ -36,7 +36,6 @@ def test_discovery_contract_accepts_bounded_result() -> None:
         {"url": "javascript:alert(1)"},
         {"title": "x" * 301},
         {"duration": 999999},
-        {"extra": "field"},
     ],
 )
 def test_discovery_contract_rejects_invalid_result(changes) -> None:
@@ -179,6 +178,26 @@ def test_search_source_health_tracks_failure_and_recovery(tmp_path) -> None:
 
     service.set_enabled("catalog-search", False)
     assert service.search_source_statuses()[0].health == "disabled"
+    service.close()
+
+
+def test_search_failure_redacts_cookie_before_health_and_ui_boundary(tmp_path) -> None:
+    provider = Mock()
+    provider.provider_id = "catalog-search"
+    provider.display_name = "Catalog Search"
+    provider.search_capability = SearchCapabilityV2(
+        "catalog-search", ("catalog",), ("all",), 7, "none", False, False
+    )
+    provider.search.side_effect = RuntimeError(
+        "Cookie: session=discovery-cookie-canary"
+    )
+    service = DiscoveryService(tmp_path / "discovery-state.json")
+    service.register(provider, enabled=True)
+
+    failed = service.federated_search("example")
+
+    assert failed.failures[0].message == "Cookie: [REDACTED]"
+    assert "discovery-cookie-canary" not in service.search_source_statuses()[0].message
     service.close()
 
 

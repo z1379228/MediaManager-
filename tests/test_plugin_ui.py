@@ -239,3 +239,50 @@ def test_external_mod_page_language_selector_reloads_content(
         panel.deleteLater()
         app.processEvents()
 
+
+def test_external_mod_page_language_reverts_when_settings_are_read_only(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QMessageBox
+
+    app = QApplication.instance() or QApplication([])
+    warning = Mock(return_value=QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(QMessageBox, "warning", warning)
+    context = Mock()
+    context.plugin_ui.locale = "en"
+    context.plugin_ui.list_pages.return_value = ()
+    context.settings = Settings(language="en")
+    context.paths = SimpleNamespace(settings=tmp_path)
+    original = json.dumps(
+        {
+            "schema_version": 99,
+            "language": "en",
+            "future_only": {"keep": True},
+        },
+        ensure_ascii=False,
+    )
+    (tmp_path / "settings.json").write_text(original, encoding="utf-8")
+
+    panel = create_mod_pages_panel(context)
+    try:
+        locale_selector = panel.findChild(QComboBox, "modPageLocaleSelector")
+        locale_status = panel.findChild(QLabel, "modPageLocaleStatus")
+
+        locale_selector.setCurrentIndex(locale_selector.findData("ja"))
+        app.processEvents()
+
+        assert context.settings.language == "en"
+        assert context.plugin_ui.locale == "en"
+        assert locale_selector.currentData() == "en"
+        assert "復原" in locale_status.text()
+        assert (tmp_path / "settings.json").read_text(encoding="utf-8") == original
+        warning.assert_called_once()
+        assert "復原" in warning.call_args.args[2]
+    finally:
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+

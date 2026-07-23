@@ -11,6 +11,11 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from core.plugins.dependency_graph import (
+    MAX_DEPENDENCIES_PER_PLUGIN,
+    candidate_dependency_graph_errors,
+)
+from core.plugins.lifecycle import PluginLifecycleLock, PluginLifecycleLockError
 from core.plugins.manifest import PluginManifest
 from core.plugins.package_verifier import PackageVerifier, signed_payload
 from core.plugins.registry import PendingAction, PluginRecord, PluginRegistry
@@ -46,14 +51,27 @@ class PluginInstaller:
         *,
         package_verifier: PackageVerifier | None = None,
         signature_verifier: SignatureVerifier | None = None,
+        lifecycle_lock: PluginLifecycleLock | None = None,
     ) -> None:
         self.mod_root = mod_root.resolve()
         self.registry = registry
         self.trust_store = trust_store
         self.package_verifier = package_verifier or PackageVerifier()
         self.signature_verifier = signature_verifier or SignatureVerifier()
+        self.lifecycle_lock = lifecycle_lock or PluginLifecycleLock(self.mod_root)
 
     def prepare(
+        self,
+        package: Path,
+        security_mode: SecurityMode,
+    ) -> PreparedPackage:
+        try:
+            with self.lifecycle_lock.hold():
+                return self._prepare_locked(package, security_mode)
+        except PluginLifecycleLockError:
+            return PreparedPackage(False, errors=("plugin lifecycle is busy",))
+
+    def _prepare_locked(
         self,
         package: Path,
         security_mode: SecurityMode,
@@ -83,6 +101,15 @@ class PluginInstaller:
                 manifest=manifest,
                 errors=(f"plugin is incompatible with core {CORE_VERSION}",),
             )
+        if len(manifest.dependencies) > MAX_DEPENDENCIES_PER_PLUGIN:
+            return PreparedPackage(
+                False,
+                manifest=manifest,
+                errors=(
+                    "plugin dependency graph is invalid: too many dependencies "
+                    f"for {manifest.id}",
+                ),
+            )
         missing_dependencies = tuple(
             dependency
             for dependency in manifest.dependencies
@@ -94,6 +121,14 @@ class PluginInstaller:
                 False,
                 manifest=manifest,
                 errors=(f"plugin dependencies are missing: {missing_dependencies}",),
+            )
+        try:
+            self.trust_store.load()
+        except (OSError, TypeError, ValueError):
+            return PreparedPackage(
+                False,
+                manifest=manifest,
+                errors=("publisher trust store could not be refreshed",),
             )
         publisher = self.trust_store.get(manifest.publisher)
         if publisher is None:
@@ -137,7 +172,24 @@ class PluginInstaller:
         approved_permissions: tuple[str, ...] = (),
         security_mode: SecurityMode,
     ) -> InstallationResult:
-        prepared = self.prepare(package, security_mode)
+        try:
+            with self.lifecycle_lock.hold():
+                return self._install_locked(
+                    package,
+                    approved_permissions=approved_permissions,
+                    security_mode=security_mode,
+                )
+        except PluginLifecycleLockError:
+            return InstallationResult(False, errors=("plugin lifecycle is busy",))
+
+    def _install_locked(
+        self,
+        package: Path,
+        *,
+        approved_permissions: tuple[str, ...],
+        security_mode: SecurityMode,
+    ) -> InstallationResult:
+        prepared = self._prepare_locked(package, security_mode)
         manifest = prepared.manifest
         if not prepared.valid or manifest is None:
             return InstallationResult(
@@ -159,6 +211,18 @@ class PluginInstaller:
                 manifest.id,
                 manifest.version,
                 ("approved permissions exceed the manifest request",),
+            )
+        graph_errors = candidate_dependency_graph_errors(
+            self.mod_root,
+            self.registry,
+            manifest,
+        )
+        if graph_errors:
+            return InstallationResult(
+                False,
+                manifest.id,
+                manifest.version,
+                graph_errors,
             )
         try:
             with zipfile.ZipFile(io.BytesIO(prepared.package_bytes)) as archive:

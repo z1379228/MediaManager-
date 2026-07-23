@@ -48,8 +48,10 @@ def show_batch_import_dialog(
     search = QLineEdit()
     search.setPlaceholderText("篩選網址、標題或作者")
     search.setClearButtonEnabled(True)
-    select_visible = QPushButton("選取顯示項目")
-    clear_visible = QPushButton("清除顯示項目")
+    select_visible = QPushButton("全選有效項目")
+    select_visible.setObjectName("batchImportSelectAll")
+    clear_visible = QPushButton("全部取消")
+    clear_visible.setObjectName("batchImportClearAll")
     tools.addWidget(search, 1)
     tools.addWidget(select_visible)
     tools.addWidget(clear_visible)
@@ -154,18 +156,17 @@ def show_batch_import_dialog(
         table.blockSignals(False)
         update_summary()
 
-    def set_visible(selected: bool) -> None:
-        for entry in visible_entries:
-            if selected:
-                checked.add(entry.row_number)
-            else:
-                checked.discard(entry.row_number)
+    def set_all(selected: bool) -> None:
+        if selected:
+            checked.update(entry.row_number for entry in result.entries)
+        else:
+            checked.clear()
         populate()
 
     search.textChanged.connect(populate)
     table.itemChanged.connect(checkbox_changed)
-    select_visible.clicked.connect(lambda: set_visible(True))
-    clear_visible.clicked.connect(lambda: set_visible(False))
+    select_visible.clicked.connect(lambda: set_all(True))
+    clear_visible.clicked.connect(lambda: set_all(False))
     populate()
 
     buttons = QDialogButtonBox(

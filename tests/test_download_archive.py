@@ -46,6 +46,10 @@ def test_archive_canonicalizes_youtube_urls_and_keeps_segments_distinct(
         "https://music.youtube.com/watch?v=abc12345&list=PLexample",
         tmp_path,
     )
+    privacy_embed = DownloadRequest(
+        "https://www.youtube-nocookie.com/embed/abc12345",
+        tmp_path,
+    )
     segment = DownloadRequest(
         "https://youtu.be/abc12345",
         tmp_path,
@@ -54,6 +58,7 @@ def test_archive_canonicalizes_youtube_urls_and_keeps_segments_distinct(
     )
     assert archive.request_key(watch) == archive.request_key(short)
     assert archive.request_key(watch) == archive.request_key(music)
+    assert archive.request_key(watch) == archive.request_key(privacy_embed)
     legacy_key = hashlib.sha256(
         b"youtube:abc12345|[null,null]"
     ).hexdigest()

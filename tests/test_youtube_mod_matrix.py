@@ -36,6 +36,9 @@ YOUTUBE_HOSTS = (
     "m.youtube.com",
     "music.youtube.com",
     "youtu.be",
+    "www.youtube-nocookie.com",
+    "youtubekids.com",
+    "www.youtubekids.com",
 )
 MUSIC_PLAYLIST_URL = (
     "https://music.youtube.com/watch?v=zqMOLz9q7Ig"
@@ -61,6 +64,9 @@ def test_youtube_download_mod_routes_only_exact_hosts_without_authority_tricks()
         "https://m.youtube.com/watch?v=example",
         MUSIC_PLAYLIST_URL,
         "https://youtu.be/example",
+        "https://www.youtube-nocookie.com/embed/example",
+        "https://youtubekids.com/watch?v=example",
+        "https://www.youtubekids.com/watch?v=example",
     ):
         assert provider.supports(url), url
 
@@ -87,6 +93,8 @@ def test_routed_youtube_mods_share_the_same_exact_host_contract() -> None:
         assert provider.hosts == frozenset(YOUTUBE_HOSTS)
         assert provider.supports(MUSIC_PLAYLIST_URL)
         assert provider.supports("https://m.youtube.com/watch?v=example")
+        assert provider.supports("https://www.youtube-nocookie.com/embed/example")
+        assert provider.supports("https://www.youtubekids.com/watch?v=example")
 
 
 def test_music_watch_playlist_is_forwarded_to_analysis_and_playlist(
@@ -272,7 +280,8 @@ def test_all_youtube_mods_are_pinned_and_included_by_frozen_build() -> None:
             assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
 
     spec = (ROOT / "MediaManager.spec").read_text(encoding="utf-8")
-    assert "('mod/builtin', 'mod/builtin')" in spec
+    assert "('mod/builtin', 'mod/builtin')" not in spec
+    assert "pinned_builtin_pyinstaller_datas" in spec
     assert "collect_submodules('yt_dlp.extractor')" in spec
     assert "collect_submodules('yt_dlp.postprocessor')" in spec
     assert "collect_submodules('yt_dlp_ejs')" in spec

@@ -29,12 +29,20 @@ class DownloadCompletionTracker:
         self._terminal: dict[str, DownloadState] = {}
         self._output_dirs: dict[str, Path] = {}
         for task in tasks:
-            if task.state in {DownloadState.QUEUED, DownloadState.RUNNING}:
+            if task.state in {
+                DownloadState.QUEUED,
+                DownloadState.RUNNING,
+                DownloadState.RETRYING,
+            }:
                 self._active.add(task.task_id)
                 self._output_dirs[task.task_id] = task.request.output_dir
 
     def observe(self, task: DownloadTask) -> DownloadBatchSummary | None:
-        if task.state in {DownloadState.QUEUED, DownloadState.RUNNING}:
+        if task.state in {
+            DownloadState.QUEUED,
+            DownloadState.RUNNING,
+            DownloadState.RETRYING,
+        }:
             self._active.add(task.task_id)
             self._terminal.pop(task.task_id, None)
             self._output_dirs[task.task_id] = task.request.output_dir

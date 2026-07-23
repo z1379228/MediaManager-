@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "provider_id": "mega",
+  "last_live_check": "2026-07-16",
+  "workflow": {
+    "identify": "supported",
+    "discover": "not-applicable",
+    "analyze": "supported",
+    "preview": "supported",
+    "queue": "supported",
+    "cancel": "supported",
+    "complete": "supported"
+  },
+  "ui_capabilities": ["tree-preview", "download", "pause", "cancel"],
+  "features": [
+    {"feature_id": "public-share-classification", "support_status": "offline-contract"},
+    {"feature_id": "public-file-folder-analysis", "support_status": "verified-public-analysis"},
+    {"feature_id": "bounded-tree-preview", "support_status": "offline-contract"},
+    {"feature_id": "path-and-symlink-safety", "support_status": "offline-contract"},
+    {"feature_id": "complete-output-verification", "support_status": "offline-contract"}
+  ],
+  "boundaries": [
+    "No cookie import or automated login",
+    "No region, payment, DRM or advertisement bypass",
+    "No private or account-only share access",
+    "No global MEGAcmd pause or cancel command is issued"
+  ]
+}

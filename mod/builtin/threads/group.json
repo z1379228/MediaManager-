@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "group_id": "threads",
+  "site_family": "threads",
+  "parent_provider_id": "threads",
+  "locales": ["en", "ja", "zh-CN", "zh-TW"],
+  "children": [
+    {"module_id": "official-page", "provider_id": "threads-page"},
+    {"module_id": "data-export", "provider_id": "threads-export"}
+  ]
+}

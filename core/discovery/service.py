@@ -24,19 +24,12 @@ from core.downloads.provider_registry import (
     DownloadProviderRegistry,
     ProviderStatus,
 )
+from core.site_routing import YOUTUBE_HOSTS
 
 
 _SIMILAR_SEARCH_BINDINGS = {"youtube-similar": "youtube-search"}
 _RECOVERY_SEARCH_BINDINGS = {"youtube-recovery": "youtube-search"}
-_YOUTUBE_RESULT_HOSTS = {
-    "youtube.com",
-    "www.youtube.com",
-    "m.youtube.com",
-    "music.youtube.com",
-    "youtu.be",
-}
-
-
+_YOUTUBE_RESULT_HOSTS = YOUTUBE_HOSTS
 def _require_bound_original_source(
     original: DiscoveryItemV1,
     search_provider_id: str,

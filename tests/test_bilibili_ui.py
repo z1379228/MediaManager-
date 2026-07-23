@@ -61,6 +61,10 @@ def test_bilibili_ui_builds_segmented_ass_mkv_request(
         panel = create_download_panel(context, site_family="bilibili")
         panel.timer.stop()
         assert panel.bilibili_workspace is not None
+        assert panel.enabled.isChecked()
+        assert panel.bilibili_workspace.enabled.isEnabled()
+        panel.enabled.setChecked(False)
+        app.processEvents()
         assert not panel.bilibili_workspace.enabled.isEnabled()
         assert "先啟用" in panel.bilibili_workspace.enabled.text()
         panel.enabled.setChecked(True)

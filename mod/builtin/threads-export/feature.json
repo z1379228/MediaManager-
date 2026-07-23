@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "provider_id": "threads-export",
+  "display_name": "Threads Data Export",
+  "kind": "site-addon",
+  "parent_provider_id": "threads"
+}

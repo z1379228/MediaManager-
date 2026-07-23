@@ -7,7 +7,10 @@
     "www.bilibili.com",
     "m.bilibili.com",
     "space.bilibili.com",
-    "b23.tv"
+    "player.bilibili.com",
+    "b23.tv",
+    "bilibili.tv",
+    "www.bilibili.tv"
   ],
   "permissions": [
     "network.bilibili",

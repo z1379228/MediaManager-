@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from contracts.media_options_v1 import MediaOptionsContractError
+from contracts.media_options_v1 import (
+    FORMAT_PRESET_IDS_V1,
+    MediaOptionsContractError,
+)
 from core.downloads.archive import DownloadArchive
 from core.downloads.models import DownloadRequest
 
@@ -20,6 +23,31 @@ def test_media_presets_and_selected_subtitle_languages_are_valid(
         subtitle_languages=("zh-TW", "en"),
     )
     assert request.format_preset == "video-720"
+
+
+@pytest.mark.parametrize(
+    "preset",
+    (
+        "video-2160",
+        "video-1440",
+        "video-h264-1080",
+        "audio-m4a-256",
+        "audio-mp3-320",
+        "audio-opus",
+        "audio-flac",
+        "audio-wav",
+    ),
+)
+def test_encoding_presets_are_part_of_v1_contract(
+    tmp_path: Path, preset: str
+) -> None:
+    assert preset in FORMAT_PRESET_IDS_V1
+    request = DownloadRequest(
+        "https://youtu.be/abc12345",
+        tmp_path,
+        format_preset=preset,
+    )
+    assert request.format_preset == preset
 
 
 @pytest.mark.parametrize(
@@ -82,12 +110,24 @@ def test_timed_comment_and_container_options_are_explicit_and_distinct(
         embedded
     )
 
+    mp4 = DownloadRequest(
+        "https://www.bilibili.com/video/BVexample",
+        tmp_path,
+        container_preset="mp4",
+    )
+    webm = DownloadRequest(
+        "https://www.bilibili.com/video/BVexample",
+        tmp_path,
+        container_preset="webm",
+    )
+    assert DownloadArchive.request_key(mp4) != DownloadArchive.request_key(webm)
+
 
 @pytest.mark.parametrize(
     ("comment_mode", "container", "format_preset"),
     (
         ("invalid", "auto", "best"),
-        ("none", "mkv", "best"),
+        ("none", "mp4", "audio-m4a"),
         ("source", "invalid", "best"),
         ("ass", "auto", "audio-m4a"),
     ),

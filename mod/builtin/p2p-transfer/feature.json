@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "provider_id": "p2p-transfer",
+  "display_name": "P2P Transfer",
+  "kind": "local-feature",
+  "default_enabled": true,
+  "parent_provider_id": "gopeed-transfer",
+  "permissions": [
+    "network.localhost.gopeed",
+    "storage.user-selected.write"
+  ],
+  "builtin_search": false,
+  "automatic_port_forward": false,
+  "legal_use_confirmation_required": true,
+  "upload_acknowledgement_required": true
+}

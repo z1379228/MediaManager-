@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import queue
 import subprocess
 import sys
@@ -15,9 +15,10 @@ import shutil
 import uuid
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 from core.downloads.models import DownloadRequest
+from core.downloads.direct_http_policy import direct_http_url_candidate
 from core.downloads.windows_job import ProviderJob
 from contracts.discovery_v1 import DiscoveryItemV1
 from contracts.history_v1 import HistoryEventV1, HistoryPreferencesV1
@@ -37,6 +38,8 @@ from core.downloads.errors import (
     ProviderFailure,
     classify_provider_failure,
 )
+from core.logging.redaction import bounded_redacted_text
+from core.site_routing import classify_site_url
 
 
 _MAX_PROVIDER_MESSAGE_CHARS = 1024 * 1024
@@ -44,8 +47,71 @@ _MAX_PROVIDER_STDERR_CHARS = 64 * 1024
 _PROVIDER_MESSAGE_BACKLOG = 128
 
 
+def _soundcloud_widget_url_candidate(value: str) -> bool:
+    """Accept only the documented SoundCloud widget URL and owned media target."""
+
+    if not 1 <= len(value) <= 4096:
+        return False
+    try:
+        parsed = urlparse(value)
+        parsed.port
+        fields = parse_qsl(
+            parsed.query,
+            keep_blank_values=True,
+            max_num_fields=32,
+        )
+    except ValueError:
+        return False
+    raw_keys = tuple(part.partition("=")[0] for part in parsed.query.split("&"))
+    targets = [item for key, item in fields if key == "url"]
+    if (
+        parsed.scheme.casefold() != "https"
+        or (parsed.hostname or "").casefold() != "w.soundcloud.com"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.port is not None
+        or parsed.path not in {"/player", "/player/"}
+        or parsed.fragment
+        or raw_keys.count("url") != 1
+        or len(targets) != 1
+        or not 1 <= len(targets[0]) <= 2048
+    ):
+        return False
+    try:
+        target = urlparse(targets[0])
+        target.port
+    except ValueError:
+        return False
+    return (
+        target.scheme.casefold() == "https"
+        and (target.hostname or "").casefold()
+        in {
+            "api.soundcloud.com",
+            "soundcloud.com",
+            "www.soundcloud.com",
+            "m.soundcloud.com",
+        }
+        and target.username is None
+        and target.password is None
+        and target.port is None
+        and target.path not in {"", "/"}
+        and not target.fragment
+    )
+
+
 class ProviderProtocolError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        phase: str = "",
+        exit_code: int | None = None,
+        stdout_reader_complete: bool | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.phase = phase
+        self.exit_code = exit_code
+        self.stdout_reader_complete = stdout_reader_complete
 
 
 class SubprocessDownloadProvider:
@@ -202,8 +268,6 @@ class SubprocessDownloadProvider:
             },
             "youtube-search": {"network.youtube", "process.javascript"},
             "bilibili-search": {"network.bilibili"},
-            "ani-gamer-search": {"network.ani-gamer"},
-            "ani-gamer-episodes": {"network.ani-gamer"},
             "youtube-player": {
                 "network.youtube",
                 "storage.temp.write",
@@ -236,6 +300,10 @@ class SubprocessDownloadProvider:
                 "network.mega",
                 "storage.downloads.write",
                 "process.megacmd",
+            },
+            "direct-http": {
+                "network.direct-http",
+                "storage.downloads.write",
             },
             "test": {
                 "network.youtube",
@@ -309,17 +377,25 @@ class SubprocessDownloadProvider:
         return environment
 
     def supports(self, url: str) -> bool:
+        if self.provider_id == "direct-http":
+            return direct_http_url_candidate(url)
         try:
             parsed = urlparse(url)
             parsed.port
         except ValueError:
             return False
+        host = (parsed.hostname or "").casefold()
+        if self.provider_id == "bilibili" and host == "player.bilibili.com":
+            route = classify_site_url(url)
+            return route is not None and route.download_provider_id == "bilibili"
+        if self.provider_id == "generic-ytdlp" and host == "w.soundcloud.com":
+            return _soundcloud_widget_url_candidate(url)
         return (
             parsed.scheme.casefold() in {"http", "https"}
             and parsed.username is None
             and parsed.password is None
             and parsed.port is None
-            and (parsed.hostname or "").casefold() in self.hosts
+            and host in self.hosts
         )
 
     def _require_permissions(self, *required: str) -> None:
@@ -335,6 +411,7 @@ class SubprocessDownloadProvider:
             "bilibili": "network.bilibili",
             "facebook": "network.facebook",
             "mega": "network.mega",
+            "direct-http": "network.direct-http",
         }.get(self.provider_id, "network.youtube")
         self._require_permissions(permission)
 
@@ -342,8 +419,6 @@ class SubprocessDownloadProvider:
         permission = {
             "youtube-search": "network.youtube",
             "bilibili-search": "network.bilibili",
-            "ani-gamer-search": "network.ani-gamer",
-            "ani-gamer-episodes": "network.ani-gamer",
             "test": "network.youtube",
         }.get(self.provider_id)
         if permission is None:
@@ -427,14 +502,15 @@ class SubprocessDownloadProvider:
             False,
         )
         normalized = query.normalized(capability)
+        payload = {
+            "operation": "search",
+            "query": normalized.query,
+            "limit": normalized.page_size,
+            "content_type": normalized.content_type,
+            "cursor": normalized.cursor,
+        }
         result = self._execute(
-            {
-                "operation": "search",
-                "query": normalized.query,
-                "limit": normalized.page_size,
-                "content_type": normalized.content_type,
-                "cursor": normalized.cursor,
-            },
+            payload,
             None,
             threading.Event(),
             timeout=self.analyze_timeout,
@@ -888,11 +964,16 @@ class SubprocessDownloadProvider:
             raise ProviderProtocolError("provider download result is invalid")
         output_root = request.output_dir.resolve()
         output_path = Path(result).resolve()
+        valid_file = output_path.is_file() and output_path.stat().st_size > 0
+        valid_mega_folder = (
+            self.provider_id == "mega"
+            and request.source_category == "mega-folder"
+            and output_path.is_dir()
+        )
         if (
             not output_path.is_relative_to(output_root)
-            or not output_path.is_file()
+            or not (valid_file or valid_mega_folder)
             or output_path.is_symlink()
-            or output_path.stat().st_size <= 0
         ):
             raise ProviderProtocolError(
                 "provider download result is missing or outside the output directory"
@@ -918,6 +999,7 @@ class SubprocessDownloadProvider:
         *,
         timeout: float,
         idle_timeout: float,
+        sensitive_values: tuple[str, ...] = (),
     ):
         self._verify_expected_files()
         payload = dict(payload)
@@ -958,6 +1040,12 @@ class SubprocessDownloadProvider:
         stderr_size = 0
         stderr_truncated = False
         stderr_lock = threading.Lock()
+
+        def redact_sensitive_values(value: str) -> str:
+            for sensitive_value in sensitive_values:
+                if sensitive_value:
+                    value = value.replace(sensitive_value, "[REDACTED]")
+            return value
 
         def stop_process_tree(*, force: bool = False) -> None:
             # On Windows, closing the kill-on-close Job Object is what stops
@@ -1019,10 +1107,20 @@ class SubprocessDownloadProvider:
             with stderr_lock:
                 value = "".join(stderr_parts).strip()
                 truncated = stderr_truncated
+            value = redact_sensitive_values(value)
             if truncated:
                 suffix = "[provider stderr truncated]"
-                return f"{value}\n{suffix}" if value else suffix
-            return value
+                suffix_bytes = len(f"\n{suffix}".encode("utf-8"))
+                retained = bounded_redacted_text(
+                    value,
+                    max_utf8_bytes=max(
+                        1, _MAX_PROVIDER_STDERR_CHARS - suffix_bytes
+                    ),
+                )
+                return f"{retained}\n{suffix}" if retained else suffix
+            return bounded_redacted_text(
+                value, max_utf8_bytes=_MAX_PROVIDER_STDERR_CHARS
+            )
 
         stdout_thread = threading.Thread(target=read_stdout, daemon=True)
         stderr_thread = threading.Thread(target=read_stderr, daemon=True)
@@ -1034,6 +1132,7 @@ class SubprocessDownloadProvider:
             process.stdin.close()
             deadline = time.monotonic() + timeout
             last_activity = time.monotonic()
+            no_result_phase = "stdout_eof"
             while True:
                 if cancel_event.is_set():
                     stop_process_tree()
@@ -1048,15 +1147,53 @@ class SubprocessDownloadProvider:
                     line = messages.get(timeout=0.1)
                 except queue.Empty:
                     if process.poll() is not None:
-                        line = None
+                        # The process can exit after writing a valid result but
+                        # before the stdout reader gets scheduled to enqueue it.
+                        # Wait for its next message within the existing operation
+                        # bounds instead of imposing a second scheduling deadline.
+                        now = time.monotonic()
+                        result_wait_deadline = min(
+                            deadline,
+                            last_activity + idle_timeout,
+                        )
+                        remaining = max(0.0, result_wait_deadline - now)
+                        if remaining <= 0:
+                            line = None
+                            no_result_phase = "handoff_deadline"
+                        else:
+                            try:
+                                line = messages.get(timeout=remaining)
+                            except queue.Empty:
+                                line = None
+                                no_result_phase = "handoff_deadline"
                     else:
                         continue
                 if line is None:
-                    if process.poll() is not None:
-                        stderr_thread.join(timeout=0.2)
+                    # stdout can close just before the process reports a useful
+                    # bounded error on stderr. Drain within the existing operation
+                    # and idle deadlines; a shorter private deadline makes the
+                    # result depend on reader-thread scheduling under load.
+                    now = time.monotonic()
+                    drain_deadline = min(
+                        deadline,
+                        last_activity + idle_timeout,
+                    )
+                    remaining = max(0.0, drain_deadline - now)
+                    if process.poll() is None and remaining > 0:
+                        try:
+                            process.wait(timeout=remaining)
+                        except subprocess.TimeoutExpired:
+                            pass
+                    remaining = max(0.0, drain_deadline - time.monotonic())
+                    if remaining > 0:
+                        stderr_thread.join(timeout=remaining)
+                        stdout_thread.join(timeout=remaining)
                     error = stderr_text()
                     raise ProviderProtocolError(
-                        error or "provider exited without a result"
+                        error or "provider exited without a result",
+                        phase=no_result_phase,
+                        exit_code=process.poll(),
+                        stdout_reader_complete=not stdout_thread.is_alive(),
                     )
                 if isinstance(line, ProviderProtocolError):
                     raise line
@@ -1089,8 +1226,16 @@ class SubprocessDownloadProvider:
                         )
                     continue
                 if message["type"] == "error":
+                    failure = classify_provider_failure(message.get("error"))
+                    safe_message = bounded_redacted_text(
+                        redact_sensitive_values(failure.message),
+                        max_utf8_bytes=1000,
+                    )
                     raise ProviderFailure(
-                        classify_provider_failure(message.get("error"))
+                        replace(
+                            failure,
+                            message=safe_message or "provider failed",
+                        )
                     )
                 return message.get("value")
         finally:

@@ -1,0 +1,7 @@
+{
+  "provider_id": "direct-http",
+  "display_name": "Direct HTTP",
+  "entry_point": "provider.py",
+  "url_hosts": ["direct-http.invalid"],
+  "permissions": ["network.direct-http", "storage.downloads.write"]
+}

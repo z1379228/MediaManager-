@@ -6,6 +6,14 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+from contracts._additive_result import (
+    AdditiveResultError,
+    validate_additive_result,
+)
+
+
+_PROVIDER_FAILURE_FIELDS = frozenset({"code", "message", "retryable"})
+
 
 class ProviderFailureCode(StrEnum):
     UNSUPPORTED = "UNSUPPORTED"
@@ -31,10 +39,15 @@ class ProviderFailureV1:
 
     @classmethod
     def from_dict(cls, raw: Any) -> ProviderFailureV1:
+        try:
+            validate_additive_result(
+                raw,
+                required_fields=_PROVIDER_FAILURE_FIELDS,
+            )
+        except AdditiveResultError as exc:
+            raise ValueError("provider failure payload is invalid") from exc
         if (
-            not isinstance(raw, dict)
-            or set(raw) != {"code", "message", "retryable"}
-            or not isinstance(raw["message"], str)
+            not isinstance(raw["message"], str)
             or not isinstance(raw["retryable"], bool)
         ):
             raise ValueError("provider failure payload is invalid")

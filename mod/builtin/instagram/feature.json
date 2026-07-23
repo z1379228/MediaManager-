@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "provider_id": "instagram",
+  "display_name": "Instagram",
+  "kind": "site-parent",
+  "parent_provider_id": ""
+}

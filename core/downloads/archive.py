@@ -50,6 +50,7 @@ class DownloadArchive:
             "www.youtube.com",
             "m.youtube.com",
             "music.youtube.com",
+            "www.youtube-nocookie.com",
         }:
             if parsed.path == "/watch":
                 video_id = (parse_qs(parsed.query).get("v") or [""])[0]
@@ -78,9 +79,10 @@ class DownloadArchive:
             identity.append(
                 {
                     "timed_comments": request.timed_comment_mode,
-                    "container": request.container_preset,
                 }
             )
+        if request.container_preset != "auto":
+            identity.append({"container": request.container_preset})
         segment = json.dumps(identity, separators=(",", ":"))
         return hashlib.sha256(f"{source}|{segment}".encode()).hexdigest()
 

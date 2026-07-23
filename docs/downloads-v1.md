@@ -1,126 +1,51 @@
-# Download workflow v1
+# 下載工作契約 v1
 
-The MediaManager core owns only the priority queue, durable task history, retry,
-cancellation, progress snapshots, and output selection. Platform-specific URL
-recognition and extraction belong to download MODs.
+核心只擁有優先佇列、持久歷史、取消、重試、進度快照、目的地與原子輸出。
+網站 URL 辨識、metadata、播放清單及格式解析屬於各自下載 MOD。
 
-The bundled YouTube MOD lives under `mod/builtin/youtube` and runs in a separate
-provider-host process. It communicates with the core using one JSON object per
-line. Disabling the MOD is persisted in `mod/provider-state.json`; disabled MODs
-cannot analyze URLs or receive new tasks.
+## 佇列與恢復
 
-Queue state is atomically stored in `Data/download-queue.json`. Tasks that were
-`QUEUED` or `RUNNING` when the application stopped are restored as `QUEUED`.
-Completed, failed, and cancelled tasks remain as history. Only failed or
-cancelled tasks can be retried manually.
+- 佇列原子保存於 `Data/download-queue.json`。
+- 關閉時為 `QUEUED`、`RUNNING` 或 `RETRYING` 的工作，下次啟動一律恢復為
+  `PAUSED`；乾淨啟動不自動開始網路工作。
+- 完成、失敗與取消工作留在歷史。恢復、重試與移除都需要使用者明確操作。
+- 下載先寫入受限部分檔，驗證成功後原子更名；既有完成檔不靜默覆寫。
+- 停用 MOD 會阻止新分析與新工作，並取消該 MOD 擁有的活動工作。
 
-A segment uses optional start and end times in seconds. The YouTube MOD passes
-that range to yt-dlp and asks FFmpeg to force keyframes at cuts. MediaManager
-does not bypass DRM or access controls; users are responsible for downloading
-only content they are authorized to save.
+## 格式、容器與片段
 
-## Opt-in live diagnostic
+YouTube 與 Bilibili 可依分析結果提供解析度、音訊 preset、字幕與 MP4／MKV／
+WebM 容器選項。明確選擇與來源 codec 不相容時拒絕排隊並提出建議，不靜默
+轉碼或改副檔名。
 
-Run the following command from the repository root after building a new Testing
-candidate. Replace `<version>` with that candidate's folder; do not run this
-against or alter a retained historical attachment:
+時間片段以秒保存，成為重複判定、檔名、重試與歷史的一部分。需要重編碼或
+合併時由有界 FFmpeg 程序完成；失敗不得刪除已驗證可用的來源或 sidecar。
 
-```powershell
-.\.venv\Scripts\python.exe tools\youtube_e2e.py --release-root Version\Testing\<version>
-```
+批次 TXT／CSV、播放清單與自動切割都先在可信 UI 預覽；只有使用者選取且整批
+驗證通過後才原子加入佇列。任何單筆非法輸入不會被截斷成另一個 URL。
 
-This network-dependent diagnostic checks the complete search, analysis,
-metadata-based split planning and three-second segment-download path using the
-bundled Deno, FFmpeg and ffprobe.
-It searches for Blender Foundation's open Big Buck Bunny movie and deletes the
-temporary output from `.work/youtube-e2e` after validation. Pass
-`--keep-output` only when the test segment is needed for manual diagnosis. The
-command is deliberately separate from pytest so normal regression tests remain
-deterministic and usable offline.
+## 網站責任
 
-The auto-split preview is created only after the user selects **準備切割** on an
-analyzed video. The YouTube MOD writes a 64 kbps MP3 into a random session under
-the application temporary directory, limits the source to two hours and 100 MB,
-and removes the complete session when the trusted editor closes. MOD data never
-loads executable Qt code; MediaManager renders and validates the editor itself.
+- `youtube` 與 `bilibili` 是獨立 provider，擁有各自 host、capability 與矩陣。
+- `mega` 只透過官方 `mega-get` 處理公開分享，見 [MEGA 邊界](mega-boundary.md)。
+- `direct-http` 只處理明確檔案 URL，見 [Direct HTTP 邊界](direct-http-boundary.md)。
+- `generic-ytdlp` 是預設停用的 Beta，相容範圍只以自身 site matrix 為準；
+  不接管已具專用 MOD 的網站。
+- 社群平台依 [官方工具邊界](social-platform-boundaries.md) 分離；不因 generic
+  extractor 存在自動取得下載能力。
+- 已退役的動畫瘋 ID 不會重新註冊，也不會轉送到 generic 或 Direct HTTP。
 
-After explicit confirmation, the complete plan becomes one atomic batch of
-audio-only M4A requests. Every task persists its start/end range, generated
-filename and media mode. A duplicate or invalid segment rejects the whole batch;
-ordinary video archive identities retain their pre-auto-split format for upgrade
-compatibility. Failed replacement downloads preserve the same segment, filename
-and audio-only options.
+## 外部工具與程序
 
+下載 MOD 只可經受控 provider host 執行核准工具。程序必須可取消、有 timeout、
+有界 stdout／stderr、終止程序樹並回傳穩定錯誤分類。核心不把 shell、任意檔案、
+瀏覽器 profile 或 Cookie DB 交給 provider。
 
-## Composite-audio splitting
+完整依賴狀態見 [執行環境健康檢查](dependency-health.md)，精確主機與路徑見
+[網站主機清冊](site-host-inventory.md)。
 
-Long compilation detection, user-confirmed audio previews and atomic segment
-queue expansion are implemented in the independent `youtube-auto-split` MOD.
-See [youtube-auto-split-roadmap.md](youtube-auto-split-roadmap.md). Audio
-analysis provides candidates only and never cuts automatically.
+## 明確排除
 
-## Playlist selection
-
-Use **展開播放清單** with exactly one YouTube playlist URL. Expansion is capped
-at 500 entries and occurs in the isolated provider. The selection dialog keeps
-unavailable and duplicate entries visible with a reason, while only explicitly
-selected available entries become one atomic queue batch. Title/author filters
-and select, clear and invert actions apply only to the currently visible rows.
-
-## TXT/CSV batch import
-
-The trusted download panel accepts a local UTF-8 `.txt` or `.csv` list after an
-explicit file selection. TXT uses one URL per non-comment line. CSV accepts
-`url`/`link`/`網址`/`連結`, optional title/name and optional artist/author/uploader
-headers; a headerless file uses URL, title and artist as its first three
-columns.
-
-Imports are limited to 2 MiB and 500 data rows. The parser rejects symbolic
-links, embedded credentials, malformed URLs and oversized metadata. Duplicate
-or unsupported URLs remain visible with a reason but cannot be selected. Valid
-rows are shown in a trusted preview and become one atomic queue batch only after
-confirmation, retaining the current output folder, priority, time segment,
-format and subtitle options.
-
-## Generic yt-dlp Beta
-
-The separately switchable `generic-ytdlp` download MOD is disabled by default
-and currently routes only explicit Vimeo, Dailymotion,
-SoundCloud, TikTok, Twitch and X/Twitter hosts. YouTube remains owned by its
-dedicated MOD; Bilibili and social-site feasibility candidates are deliberately
-excluded from this provider. Facebook and Instagram remain official-page and
-official-export bridges because Meta's terms require prior permission for
-automated access or collection. Threads completed the same review and also
-remains an official-page and official-export bridge.
-
-The generic MOD uses `network.generic` rather than YouTube permission, rejects
-URLs containing embedded credentials and exposes the shared analyze, playlist,
-format, subtitle, segment and durable-queue contracts. Its site matrix verifies
-extractor presence and offline provider behavior; it does not promise that a
-website cannot change before the next live smoke check.
-
-## Bilibili and danmaku XML
-
-The dedicated, disabled-by-default `bilibili` MOD accepts explicit
-`bilibili.com` and `b23.tv` hosts. It does not use the generic provider and has
-its own `network.bilibili` permission. Initial support covers metadata,
-multi-part list expansion, the shared format/segment queue and ordinary
-subtitle selection.
-
-When every URL currently entered belongs to the enabled Bilibili MOD, the UI
-shows a compact **保留彈幕 XML** option. It requests yt-dlp's `danmaku` subtitle
-track as a separate XML sidecar. It does not embed or burn comments into the
-video, so the original media remains unchanged and no additional conversion
-work runs by default.
-
-Two nested options appear only after XML retention is selected. **轉為 ASS**
-performs a local, bounded conversion while retaining the
-source XML. **嵌入 MKV** uses FFmpeg stream copy to place that ASS track in a
-Matroska container without re-encoding the video or audio. If conversion or
-muxing fails, MediaManager keeps the original media and every sidecar already
-created rather than deleting usable output.
-
-The durable queue stores timed-comment mode and container preset separately
-from ordinary subtitle languages. This keeps retries, archive duplicate keys,
-playlist expansion and TXT/CSV batches deterministic without pretending that
-ASS or MKV is a language code.
+MediaManager 不攔截播放串流、不從瀏覽器快取重建影片、不事後辨識並移除網站
+廣告片段，也不繞過 DRM、登入、Cookie、Cloudflare、付費、地區或網站限制。
+使用者只可保存自己有權保存的內容。

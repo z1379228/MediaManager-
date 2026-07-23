@@ -21,8 +21,11 @@ PROVIDER_ROOT = ROOT / "mod" / "builtin" / "bilibili"
         "https://www.bilibili.com/video/BVexample",
         "https://m.bilibili.com/video/BVexample",
         "https://space.bilibili.com/123/video",
+        "https://player.bilibili.com/player.html?aid=170001",
         "https://b23.tv/example",
         "https://bilibili.com/video/BVexample",
+        "https://www.bilibili.tv/en/video/2041863208",
+        "https://bilibili.tv/en/play/1018660/11515462",
     ),
 )
 def test_bilibili_provider_accepts_only_explicit_hosts(url: str) -> None:
@@ -42,6 +45,14 @@ def test_bilibili_provider_accepts_only_explicit_hosts(url: str) -> None:
         "https://www.youtube.com/watch?v=example",
         "https://user:secret@www.bilibili.com/video/BVexample",
         "https://www.bilibili.com:99999/video/BVexample",
+        "https://www.biliintl.com/en/video/2041863208",
+        "https://player.bilibili.com/player.html?AID=170001",
+        "https://player.bilibili.com/player.html?%61id=170001",
+        "https://player.bilibili.com/player.html?aid=%31",
+        "https://player.bilibili.com/player.html?aid=1%32",
+        "https://player.bilibili.com/player.html?bvid=BV1B7411m7LV",
+        "https://player.bilibili.com/player.html?aid=one",
+        "https://player.bilibili.com/player.html?aid=1&unknown=1",
     ),
 )
 def test_bilibili_provider_rejects_unlisted_or_credential_urls(url: str) -> None:
@@ -67,6 +78,23 @@ def test_bilibili_manifest_uses_separate_permission_and_installed_extractor() ->
     assert manifest["permissions"][0] == "network.bilibili"
     assert "network.generic" not in manifest["permissions"]
     assert any(name.startswith("bilibili") for name in extractor_names)
+
+
+def test_bilibili_player_allowlist_matches_installed_extractor() -> None:
+    from yt_dlp.extractor import gen_extractor_classes
+
+    extractor = next(
+        item
+        for item in gen_extractor_classes()
+        if str(getattr(item, "IE_NAME", "")).casefold() == "bilibiliplayer"
+    )
+
+    assert extractor.suitable(
+        "https://player.bilibili.com/player.html?aid=170001"
+    )
+    assert not extractor.suitable(
+        "https://player.bilibili.com/player.html?AID=170001"
+    )
 
 
 def test_bilibili_analyze_bounds_metadata_and_reports_parts(monkeypatch) -> None:
@@ -101,6 +129,19 @@ def test_bilibili_analyze_bounds_metadata_and_reports_parts(monkeypatch) -> None
                 "chapters": [
                     {"start_time": 0, "end_time": 2, "title": "Part"}
                 ],
+                "formats": [
+                    {
+                        "format_id": "1080p",
+                        "ext": "mp4",
+                        "width": 1920,
+                        "height": 1080,
+                        "fps": 60,
+                        "vcodec": "avc1.640028",
+                        "acodec": "none",
+                        "dynamic_range": "HDR10",
+                        "filesize": 1000,
+                    }
+                ],
             }
 
     monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYoutubeDL)
@@ -116,7 +157,11 @@ def test_bilibili_analyze_bounds_metadata_and_reports_parts(monkeypatch) -> None
     assert result["part_count"] == 2
     assert result["content_kind"] == "bangumi"
     assert result["subtitle_languages"] == ["zh-Hant"]
+    assert result["manual_subtitle_languages"] == ["zh-Hant"]
+    assert result["automatic_subtitle_languages"] == []
+    assert result["danmaku_available"] is False
     assert result["chapters"][0]["start_time"] == 0
+    assert result["formats"][0]["dynamic_range"] == "HDR10"
     assert captured[0]["noplaylist"] is True
 
 
@@ -355,6 +400,138 @@ def test_bilibili_download_keeps_danmaku_as_xml_sidecar(
     assert captured[0]["continuedl"] is True
     assert captured[0]["nopart"] is False
     assert captured[0]["overwrites"] is False
+
+
+@pytest.mark.parametrize(
+    ("preset", "codec", "quality"),
+    (
+        ("audio-m4a-256", "m4a", "256"),
+        ("audio-mp3-320", "mp3", "320"),
+        ("audio-opus", "opus", "160"),
+        ("audio-flac", "flac", None),
+        ("audio-wav", "wav", None),
+    ),
+)
+def test_bilibili_audio_encoding_presets_use_bounded_ffmpeg_outputs(
+    tmp_path: Path,
+    monkeypatch,
+    preset: str,
+    codec: str,
+    quality: str | None,
+) -> None:
+    import yt_dlp
+
+    captured: list[dict[str, object]] = []
+
+    class FakeYoutubeDL:
+        def __init__(self, options):
+            self.options = options
+            captured.append(options)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, _url, *, download):
+            assert download
+            (tmp_path / f"clip.{codec}").write_bytes(b"audio")
+            return {"id": "BVexample", "title": "Example"}
+
+        def prepare_filename(self, _info):
+            return str(tmp_path / "clip.webm")
+
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYoutubeDL)
+    namespace = runpy.run_path(str(PROVIDER_ROOT / "provider.py"))
+
+    result = namespace["download"](
+        {
+            "url": "https://www.bilibili.com/video/BVexample",
+            "output_dir": str(tmp_path),
+            "output_filename": "",
+            "format_preset": preset,
+            "subtitle_mode": "none",
+            "subtitle_languages": [],
+            "timed_comment_mode": "none",
+            "container_preset": "auto",
+        }
+    )
+
+    postprocessor = captured[0]["postprocessors"][0]
+    assert Path(result).suffix == f".{codec}"
+    assert postprocessor["preferredcodec"] == codec
+    if quality is None:
+        assert "preferredquality" not in postprocessor
+    else:
+        assert postprocessor["preferredquality"] == quality
+
+
+def test_bilibili_h264_preset_selects_avc1_and_aac_without_transcoding() -> None:
+    namespace = runpy.run_path(str(PROVIDER_ROOT / "provider.py"))
+    selector = namespace["_FORMAT_SELECTORS"]["video-h264-1080"]
+
+    assert "vcodec^=avc1" in selector
+    assert "acodec^=mp4a" in selector
+    assert "video-h264-1080" not in namespace["_AUDIO_OUTPUTS"]
+
+
+@pytest.mark.parametrize(
+    ("preset", "height"),
+    (("video-1440", 1440), ("video-2160", 2160)),
+)
+def test_bilibili_high_resolution_presets_are_height_bounded(
+    preset: str, height: int
+) -> None:
+    namespace = runpy.run_path(str(PROVIDER_ROOT / "provider.py"))
+
+    selector = namespace["_FORMAT_SELECTORS"][preset]
+    assert f"height<={height}" in selector
+    assert not selector.endswith("/b")
+
+
+def test_bilibili_container_selectors_are_explicit_and_bounded() -> None:
+    namespace = runpy.run_path(str(PROVIDER_ROOT / "provider.py"))
+
+    mp4 = namespace["_container_format_selector"]("video-1080", "mp4")
+    webm = namespace["_container_format_selector"]("video-1080", "webm")
+    assert "height<=1080" in mp4 and "ext=mp4" in mp4
+    assert "height<=1080" in webm and "ext=webm" in webm
+    with pytest.raises(ValueError, match="incompatible"):
+        namespace["_container_format_selector"]("video-h264-1080", "webm")
+
+
+def test_bilibili_media_options_allow_video_container_without_danmaku() -> None:
+    namespace = runpy.run_path(str(PROVIDER_ROOT / "provider.py"))
+    request = {
+        "format_preset": "video-1080",
+        "subtitle_mode": "none",
+        "subtitle_languages": [],
+        "timed_comment_mode": "none",
+        "container_preset": "mkv",
+    }
+
+    assert namespace["_media_options"](request)[-2] == "mkv"
+    request.update(format_preset="audio-mp3")
+    with pytest.raises(ValueError, match="container options"):
+        namespace["_media_options"](request)
+
+
+def test_bilibili_media_options_bound_network_retry_profile() -> None:
+    namespace = runpy.run_path(str(PROVIDER_ROOT / "provider.py"))
+    request = {
+        "format_preset": "video-1080",
+        "subtitle_mode": "none",
+        "subtitle_languages": [],
+        "timed_comment_mode": "none",
+        "container_preset": "auto",
+        "provider_options": {"network_retry": "resilient"},
+    }
+
+    assert namespace["_media_options"](request)[-1] == "resilient"
+    request["provider_options"] = {"network_retry": "unbounded"}
+    with pytest.raises(ValueError, match="retry mode"):
+        namespace["_media_options"](request)
 
 
 def test_bilibili_finds_danmaku_for_literal_bracketed_media_name(

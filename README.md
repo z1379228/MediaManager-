@@ -1,117 +1,97 @@
-# MediaManager
+# MediaManager v1.0
 
-平台無關的桌面媒體管理器。平台功能將由受隔離、具最小權限的 MOD 提供；核心負責安全、工作、儲存、網路與憑證代理。
+免費、無廣告、本機優先的媒體整理與模組化下載工作區。核心負責安全邊界、
+佇列、媒體庫與可信 UI；網站解析、轉換、轉錄及自動化等重功能由可個別停用的
+內建或第三方 MOD 提供。
 
-目前來源版本為開發版 11.1（核心相容版本 11.1.0），定位為 11.0 系列的測試檔案，
-核心與網站功能分離。開發與測試成品維持 `SAFE_MODE`，目前沒有可宣告的 Stable
-正式版。GitHub 的
-[`test-v1.0.0`](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.0.0)
-是既有測試版 Pre-release；它不會被開發版 11.1 覆寫。已公開附件一律不可覆寫，
-重建必須使用新版本號。
-目前來源包含：
+目前來源版本為開發版 39.0（核心相容版本 39.0.10）。`MediaManager v1.0`
+是產品顯示名稱，不表示 Stable 已發布。未簽署、維持 `SAFE_MODE` 的
+[Testing 1.1（39.0.10 重整）](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.1.0-r2)
+已作為 prerelease 發布；它不是已簽署的 Stable 正式套件。
 
-- Windows EXE、主視窗與通知區使用專用多尺寸圖示，小尺寸仍保持清楚辨識
-- 外觀選單提供精簡、標準與大字三種介面大小，下載工作區在小視窗可安全捲動
-- 插件管理顯示十九個內建 MOD；網站父 MOD 啟用後才顯示並允許開關其子 MOD
-- 下載工作可暫停／繼續、批次控制，並可選擇 1–4 個同時工作
-- 下載封存與播放清單 ID 可經預覽後安全匯入／匯出
-- 外部 MOD manifest v2、簽章／權限生命週期與側邊離線更新基礎
-- 八個公開網站家族的可重複 smoke matrix 與一致錯誤分類
-- Bilibili bangumi、分 P 與字幕資訊；彈幕 XML／ASS／MKV 由獨立子 MOD 控制
-- YouTube／Bilibili 父 MOD 與子 MOD 分層；主 MOD 開啟後才顯示子 MOD
-- 核心四語言設定同步內建網站 MOD 的工作區、名稱與控制位置
-- 聯合搜尋採每來源有界收集與 round-robin 合併，指定缺失或停用來源時 fail closed
-- 內建 MOD 編目、依賴快照與選用工作區共用單一生命週期來源
-- MOD 管理提供手動唯讀自我檢查及去識別 JSON 匯出，不啟動下載器或媒體工具
+## 主要能力
 
-- 依序初始化的 Bootstrap 與 AppContext
-- 一般／Portable 路徑服務
-- 乾淨的 PySide6 媒體庫、搜尋、下載佇列與 MOD 管理介面
-- 可關閉的 YouTube 搜尋／下載 MOD，含搜尋範圍、歷史、縮圖、試聽與選用影片預覽
-- 預設關閉且彼此獨立的 Bilibili 搜尋與下載 MOD；搜尋不借用 YouTube，下載支援
-  分段、彈幕 XML、ASS 與可選 MKV 封裝；官方搜尋要求驗證或節流時不會繞過或改查
-  其他網站
-- 預設關閉的動畫瘋主 MOD、官方目錄／搜尋子 MOD 及集數導覽子 MOD；可信 UI 可顯示
-  近期熱播、新上架、全部動畫、熱門排序、官方篩選、封面與分頁集數，不借用
-  YouTube、不擷取串流，播放仍交由官方頁面
-- 預設關閉的 Facebook 公開影片下載 MOD；啟用後才顯示獨立工作區，可讀取縮圖並
-  分流至 Facebook provider，不讀取 Cookie、私人貼文或登入內容
-- 預設關閉的 MEGA 公開檔案下載 MOD；啟用後才顯示完全獨立的雲端檔案工作區，不含
-  YouTube／Bilibili 的格式、字幕、播放清單或試聽控制。使用本機官方 `mega-get`
-  下載，並可選擇以 `mega-speedlimit` 套用連線數與速率上限；資料夾可辨識但目前不下載
-- Instagram／Threads 官方媒體頁與資料匯出說明入口，不啟用自動擷取
-- 播放清單選取，以及具預覽與檢查結果的 TXT／CSV 批量匯入
-- 格式、字幕、優先級、時間區段、重試、取消與完成通知
-- 可選取的任務詳情、失敗原因複製與安全輸出位置開啟
-- 可攜 Deno、FFmpeg、ffprobe 與本機依賴健康提示
-- 原子寫入的設定、佇列、歷史與下載封存
-- Trust Store、SHA-256 完整性驗證與 fail-closed 簽章介面
-- `NORMAL`、`SAFE_MODE`、`BLOCKED` 安全狀態
-- 可自選背景，以及不依賴圖片資源的低負載漸層預設背景
-- 下載表格增量更新與依工作狀態調整的低負載刷新
-- 加入下載前輸出路徑與 256 MiB 磁碟保留空間預檢
-- 第三方 MOD schema v2 範本、安裝前驗證工具與中文開發流程
-- YouTube 最近搜尋選單可依本機偏好提供有界、需手動觸發的搜尋建議
-- 長音訊切割確認會提示過短、低信心、預設名稱與時間間隙並預覽輸出名稱
-- 內建網站能力與 Bilibili 彈幕政策具有不連網、可重複的品質稽核
+- YouTube、Bilibili、MEGA、Direct HTTP 與網站矩陣明列的獨立工作區。
+- 本機媒體庫、原子寫入的下載佇列、歷史、取消、重試與恢復。
+- 格式工廠：使用本機 FFmpeg 進行影片、音訊、影像與字幕處理。
+- Gopeed Bridge／P2P Transfer：只連接使用者自行啟動的 localhost Gopeed API。
+- 選用 Speech to Text 與 Automation；未安裝不影響核心。
+- schema v2 第三方 MOD、Ed25519 發布者簽章、最小權限、受控程序與宣告式 UI。
 
-## 執行
+實際能力以 MOD 管理、[依賴檢查](docs/dependency-health.md)與
+[網站主機清冊](docs/site-host-inventory.md)為準。外部工具名稱不表示 MediaManager
+會自動安裝、捆綁或承諾其全部功能。
+
+## 下載 Testing 1.1 或從原始碼執行
+
+Testing 1.1 提供 portable ZIP、單獨 EXE、wheel、SBOM、依賴清單與 SHA-256
+資料。下載後先比對同頁的 `.zip.sha256`、`SHA256SUMS.txt` 與
+`release-info.json`；發行附件不包含 `UserData`。完整說明見
+[Testing 1.1 文件](docs/release-testing-1.1.md)。
+
+從原始碼執行的完整步驟見 [INSTALL.md](INSTALL.md)；最短啟動方式：
 
 ```powershell
-python main.py
-python main.py --portable --headless
-python main.py --portable --verify-only
+.\.venv\Scripts\python.exe .\main.py
 ```
 
-`main.py` 是唯一的正式入口；直接執行、安裝後的 `mediamanager` 指令與
-PyInstaller 桌面程式都使用相同的參數解析、Bootstrap 與主視窗啟動流程。
-`desktop.py` 僅保留為舊版啟動方式的相容轉接。
+`main.py` 是唯一正式入口；`desktop.py` 只保留為舊版相容轉接。可攜模式會把
+使用者資料放在程式旁的 `UserData/`，請勿在保留版 `Version/` 目錄內直接執行
+會寫入資料的 smoke test。
 
-本機開發封裝位於 `Version/Development/<major>.<minor>`，測試封裝位於
-`Version/Testing/<major>.<minor>`；GitHub 下載頁只發布
-3.0、4.0 等大版本完整檔案，次版本改以中文更新簡介說明。整個版本資料夾可
-移動到其他位置
-執行；不要只移動 EXE，因為同層的 MOD、工具與 checksum 檔案也是版本
-的一部分。
+## 安全邊界
 
-## 路徑架構
+- 不繞過 DRM、登入、Cookie、Cloudflare、廣告、付費、地區或網站存取限制。
+- Cookie、Token、私鑰、production 憑證與個人資料不得寫入 Repository 或 Log。
+- URL、檔案、MOD manifest、IPC 與外部程序輸出一律視為不可信。
+- 新安裝或更新的第三方 MOD 預設停用；發布者信任與使用者啟用是兩個獨立決定。
+- 宣告式 MOD UI 不執行外部 HTML、Qt 物件或任意腳本。
+- Development、Testing 與 Stable 的身分、雜湊、簽章及發布 Gate 不可互相冒用。
 
-- 核心與正式入口：應用程式根目錄
-- 待安裝插件：`mod/packages/*.modpkg`
-- 已安裝插件：`mod/installed/<plugin-id>`
-- 隔離插件：`mod/quarantine`
-- 插件登錄資料庫：`mod/registry.sqlite3`
+第三方 MOD 作者請從 [MOD-DEVELOPMENT.md](MOD-DEVELOPMENT.md) 開始。安全與
+發行細節見 [MOD 套件契約](docs/mod-package-v1.md)及
+[簽章流程](docs/release-signing.md)。
 
-插件根目錄固定置於核心旁的 `mod`，不因一般或 Portable 模式而改變。
-插件套件會先驗證結構、檔案雜湊、發布者信任與 Ed25519 簽章，再以暫存目錄交易式安裝；新安裝插件預設停用。公鑰使用 Base64 編碼的 32-byte Ed25519 公鑰（可加上 `ed25519:` 前綴），簽章可使用原始 64-byte 或 Base64 格式。
+## Repository 結構
 
-開發版與測試版沒有簽署的 `security/release-manifest.json`，因此會刻意以
-`SAFE_MODE` 啟動。正式版本必須由發行流程產生並簽署 manifest；不可把開發用金鑰
-放進原始碼。
+- `core/`：安全、下載、設定、儲存、媒體庫與 MOD 生命週期。
+- `trusted_ui/`：PySide6 可信 UI。
+- `contracts/`：核心與 MOD 共用的版本化資料契約。
+- `mod/builtin/`：可個別啟用或停用的內建 MOD。
+- `plugin_host/`：外部可執行 MOD 的受控程序入口。
+- `tests/`、`tools/`：回歸測試、品質、版本與發行工具。
+- `docs/`：目前有效的規格、狀態與維護文件。
+- `Version/`：不可覆寫的 Development／Testing／Stable 產物。
 
-## 測試
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest -q
-```
-
-建立並交易式更新目前版本資料夾：
+## 驗證
 
 ```powershell
-.\.venv\Scripts\python.exe -m tools.build_version
-```
-
-批次稽核所有保留版本的版本號、wheel 與 SHA-256 完整性：
-
-```powershell
+.\.venv\Scripts\python.exe -m tools.quality_audit
+.\.venv\Scripts\python.exe -m tools.run_tests
+.\.venv\Scripts\python.exe -m tools.audit_mod_groups --root .
+.\.venv\Scripts\python.exe -m tools.site_quality_audit --root .
 .\.venv\Scripts\python.exe -m tools.audit_versions --root Version
+.\.venv\Scripts\python.exe -m tools.audit_version_docs
+.\.venv\Scripts\python.exe -B .\main.py --verify-only
+git diff --check
 ```
 
-日常只檢查最新版與上一版；重大發布需要完整歷史時使用 `--full-history`，並先
-從 GitHub Releases 還原未保留在本機的歷史附件。
+Repository 測試應透過 `tools.run_tests` 使用 Repository 外的每輪唯一暫存目錄；
+不得讓 raw pytest 回退到 Repository 根目錄。
 
-## 文件與版本紀錄
+## 文件
 
-請從 [`docs/README.md`](docs/README.md) 進入目前有效文件、開發版區間紀錄與唯讀
-歷史索引。舊 release 與 roadmap 會保留供稽核，但不再由專案首頁混列成目前功能或
-安裝指引。
+- [文件索引](docs/README.md)
+- [目前專案狀態](docs/project-status.md)
+- [最新來源更新](docs/latest-update.md)
+- [下載工作契約](docs/downloads-v1.md)
+- [第三方 MOD 開發指南](docs/mod-developer-guide.md)
+- [版本與發布政策](docs/version-layout.md)
+
+舊 roadmap、過期候選與逐版日誌不再留在目前樹；需要稽核時由 Git 歷史與
+GitHub Releases 的不可變附件追查。已公開的 EXE、checksum、release metadata
+與 tag 不得刪除或覆寫。
+
+## License
+
+[MIT](LICENSE)

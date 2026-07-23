@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import pytest
 
@@ -9,7 +9,8 @@ from core.bootstrap.bootstrap import Bootstrap
 from core.downloads.models import DownloadRequest, DownloadTask
 from core.downloads.provider_registry import DownloadProviderRegistry, ProviderStatus
 from core.events.event_bus import EventBus
-from core.features import FeatureStatus
+from core.features import FeatureModRegistry, FeatureStatus
+from core.features.registry import FeatureModToggleError
 from core.storage.paths import AppPaths
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.download_panel import create_download_panel
@@ -83,6 +84,7 @@ def test_site_child_requires_enabled_parent_and_parent_disable_cascades(
     monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
     context = Bootstrap(portable=True).initialize(start_background=False)
     try:
+        set_builtin_mod_enabled(context, "bilibili", False)
         with pytest.raises(RuntimeError, match="bilibili 主 MOD"):
             set_builtin_mod_enabled(context, "bilibili-search", True)
 
@@ -97,16 +99,6 @@ def test_site_child_requires_enabled_parent_and_parent_disable_cascades(
         assert not context.discovery.is_enabled("bilibili-search")
         assert not context.features.is_enabled("bilibili-danmaku")
 
-        with pytest.raises(RuntimeError, match="ani-gamer 主 MOD"):
-            set_builtin_mod_enabled(context, "ani-gamer-search", True)
-        set_builtin_mod_enabled(context, "ani-gamer", True)
-        set_builtin_mod_enabled(context, "ani-gamer-search", True)
-        set_builtin_mod_enabled(context, "ani-gamer-episodes", True)
-        assert context.discovery.is_enabled("ani-gamer-search")
-        assert context.discovery.is_enabled("ani-gamer-episodes")
-        set_builtin_mod_enabled(context, "ani-gamer", False)
-        assert not context.discovery.is_enabled("ani-gamer-search")
-        assert not context.discovery.is_enabled("ani-gamer-episodes")
     finally:
         context.lifecycle.shutdown()
 
@@ -140,6 +132,247 @@ def test_feature_mod_toggle_uses_shared_event_and_reports_cancelled_work() -> No
     ]
 
 
+def test_feature_child_uses_generic_parent_gate_and_disable_cascade() -> None:
+    features = Mock()
+    features.statuses.return_value = (
+        FeatureStatus("media-convert", "Media Convert", False),
+        FeatureStatus("media-ad-trim", "Local Ad Segment Trim", False),
+    )
+    context = SimpleNamespace(
+        download_providers=Mock(),
+        download_queue=Mock(),
+        discovery=Mock(),
+        features=features,
+        audit=Mock(),
+        events=EventBus(),
+    )
+
+    with pytest.raises(RuntimeError, match="media-convert 主 MOD"):
+        set_builtin_mod_enabled(context, "media-ad-trim", True)
+
+    features.statuses.return_value = (
+        FeatureStatus("media-convert", "Media Convert", True),
+        FeatureStatus("media-ad-trim", "Local Ad Segment Trim", True),
+    )
+    features.set_enabled.return_value = 2
+    assert set_builtin_mod_enabled(context, "media-convert", False) == 4
+    assert features.set_enabled.call_args_list == [
+        call("media-convert", False),
+        call("media-ad-trim", False),
+    ]
+
+
+def test_parent_disable_rolls_back_when_child_registry_fails() -> None:
+    features = Mock()
+    features.statuses.return_value = (
+        FeatureStatus("media-convert", "Media Convert", True),
+        FeatureStatus("media-ad-trim", "Local Ad Segment Trim", True),
+    )
+    calls: list[tuple[str, bool]] = []
+
+    def set_enabled(provider_id: str, enabled: bool) -> int:
+        calls.append((provider_id, enabled))
+        if len(calls) == 2:
+            raise RuntimeError("child registry unavailable")
+        return 0
+
+    features.set_enabled.side_effect = set_enabled
+    context = SimpleNamespace(
+        download_providers=Mock(),
+        download_queue=Mock(),
+        discovery=Mock(),
+        features=features,
+        audit=Mock(),
+        events=EventBus(),
+    )
+
+    with pytest.raises(RuntimeError, match="已回復"):
+        set_builtin_mod_enabled(context, "media-convert", False)
+
+    assert calls == [
+        ("media-convert", False),
+        ("media-ad-trim", False),
+        ("media-ad-trim", True),
+        ("media-convert", True),
+    ]
+    context.audit.write.assert_any_call(
+        "builtin_mod.enabled_change_failed",
+        provider_id="media-convert",
+        enabled=False,
+        affected_children=("media-ad-trim",),
+        changed=("media-convert", "media-ad-trim"),
+        error_type="RuntimeError",
+    )
+
+
+def test_parent_disable_compensates_registry_that_mutates_before_save_failure() -> None:
+    states = {"media-convert": True, "media-ad-trim": True}
+    features = Mock()
+    features.statuses.side_effect = lambda: tuple(
+        FeatureStatus(provider_id, provider_id, enabled)
+        for provider_id, enabled in states.items()
+    )
+    failed = False
+
+    def set_enabled(provider_id: str, enabled: bool) -> int:
+        nonlocal failed
+        states[provider_id] = enabled
+        if provider_id == "media-ad-trim" and not enabled and not failed:
+            failed = True
+            raise OSError("state persistence failed after mutation")
+        return 0
+
+    features.set_enabled.side_effect = set_enabled
+    context = SimpleNamespace(
+        download_providers=Mock(),
+        download_queue=Mock(),
+        discovery=Mock(),
+        features=features,
+        audit=Mock(),
+        events=EventBus(),
+    )
+
+    with pytest.raises(RuntimeError, match="已回復"):
+        set_builtin_mod_enabled(context, "media-convert", False)
+
+    assert states == {"media-convert": True, "media-ad-trim": True}
+
+
+def test_parent_disable_reports_incomplete_rollback() -> None:
+    features = Mock()
+    features.statuses.return_value = (
+        FeatureStatus("media-convert", "Media Convert", True),
+        FeatureStatus("media-ad-trim", "Local Ad Segment Trim", True),
+    )
+    calls: list[tuple[str, bool]] = []
+
+    def set_enabled(provider_id: str, enabled: bool) -> int:
+        calls.append((provider_id, enabled))
+        if len(calls) == 2:
+            raise RuntimeError("child registry unavailable")
+        if len(calls) == 4:
+            raise RuntimeError("parent rollback unavailable")
+        return 0
+
+    features.set_enabled.side_effect = set_enabled
+    context = SimpleNamespace(
+        download_providers=Mock(),
+        download_queue=Mock(),
+        discovery=Mock(),
+        features=features,
+        audit=Mock(),
+        events=EventBus(),
+        builtin_mod_snapshot=object(),
+    )
+
+    with pytest.raises(RuntimeError, match="回復不完整") as captured:
+        set_builtin_mod_enabled(context, "media-convert", False)
+
+    assert "已回復" not in str(captured.value)
+    assert calls == [
+        ("media-convert", False),
+        ("media-ad-trim", False),
+        ("media-ad-trim", True),
+        ("media-convert", True),
+    ]
+    assert context.builtin_mod_snapshot is None
+    context.audit.write.assert_any_call(
+        "builtin_mod.rollback_failed",
+        provider_id="media-convert",
+        error_type="RuntimeError",
+    )
+
+
+def test_parent_disable_reports_cancelled_work_as_irreversible() -> None:
+    features = Mock()
+    features.statuses.return_value = (
+        FeatureStatus("media-convert", "Media Convert", True),
+        FeatureStatus("media-ad-trim", "Local Ad Segment Trim", True),
+    )
+    calls: list[tuple[str, bool]] = []
+
+    def set_enabled(provider_id: str, enabled: bool) -> int:
+        calls.append((provider_id, enabled))
+        if len(calls) == 1:
+            return 2
+        if len(calls) == 2:
+            raise RuntimeError("child registry unavailable")
+        return 0
+
+    features.set_enabled.side_effect = set_enabled
+    context = SimpleNamespace(
+        download_providers=Mock(),
+        download_queue=Mock(),
+        discovery=Mock(),
+        features=features,
+        audit=Mock(),
+        events=EventBus(),
+        builtin_mod_snapshot=object(),
+    )
+
+    with pytest.raises(RuntimeError, match="回復不完整") as captured:
+        set_builtin_mod_enabled(context, "media-convert", False)
+
+    assert "已取消 2 個工作，無法復原" in str(captured.value)
+    context.audit.write.assert_any_call(
+        "builtin_mod.rollback_irreversible",
+        provider_id="media-convert",
+        cancelled_work=2,
+    )
+    assert context.builtin_mod_snapshot is None
+
+
+def test_failed_feature_disable_reports_irreversible_side_effect_unknown(
+    tmp_path,
+) -> None:
+    class PartiallyFailingFeature:
+        provider_id = "media-convert"
+        display_name = "Media Convert"
+        available = True
+
+        def __init__(self) -> None:
+            self.is_enabled = False
+            self.cancelled = 0
+
+        def set_enabled(self, enabled: bool) -> int:
+            if not enabled and self.is_enabled:
+                self.cancelled += 1
+                self.is_enabled = False
+                raise RuntimeError("failed after cancelling work")
+            self.is_enabled = enabled
+            return 0
+
+        def close(self) -> None:
+            self.is_enabled = False
+
+    feature = PartiallyFailingFeature()
+    features = FeatureModRegistry(tmp_path / "feature-state.json")
+    features.register(feature)
+    features.set_enabled("media-convert", True)
+    context = SimpleNamespace(
+        download_providers=Mock(),
+        download_queue=Mock(),
+        discovery=Mock(),
+        features=features,
+        audit=Mock(),
+        events=EventBus(),
+        builtin_mod_snapshot=object(),
+    )
+
+    with pytest.raises(RuntimeError, match="不可逆副作用狀態未知") as captured:
+        set_builtin_mod_enabled(context, "media-convert", False)
+
+    assert isinstance(captured.value.__cause__, FeatureModToggleError)
+    assert feature.is_enabled
+    assert feature.cancelled == 1
+    assert context.builtin_mod_snapshot is None
+    context.audit.write.assert_any_call(
+        "builtin_mod.rollback_irreversible_unknown",
+        provider_id="media-convert",
+        failed_operation="media-convert",
+    )
+
+
 def test_builtin_mod_events_sync_download_and_search_controls(
     tmp_path, monkeypatch
 ) -> None:
@@ -151,6 +384,11 @@ def test_builtin_mod_events_sync_download_and_search_controls(
 
     app = QApplication.instance() or QApplication([])
     context = Bootstrap(portable=True).initialize()
+    # New profiles now enable every built-in MOD except Automation and Speech
+    # to Text. Establish this test's disabled starting state explicitly so it
+    # continues to exercise live event synchronization rather than defaults.
+    set_builtin_mod_enabled(context, "bilibili", False)
+    set_builtin_mod_enabled(context, "youtube-player", False)
     download_panel = create_download_panel(context, site_family="bilibili")
     search_panel = create_search_panel(context)
     download_panel.timer.stop()

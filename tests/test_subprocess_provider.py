@@ -4,11 +4,14 @@ import json
 import os
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
 
-from core.downloads.errors import DownloadCancelled
+from contracts.provider_failure_v1 import ProviderFailureCode
+from core.downloads import subprocess_provider as subprocess_provider_module
+from core.downloads.errors import DownloadCancelled, ProviderFailure
 from core.downloads.models import DownloadRequest
 from core.downloads.subprocess_provider import (
     ProviderProtocolError,
@@ -128,6 +131,177 @@ def test_provider_bounds_stderr_in_protocol_error(tmp_path: Path) -> None:
     assert str(captured.value).endswith("[provider stderr truncated]")
 
 
+def test_provider_redacts_stderr_before_exposing_protocol_error(tmp_path: Path) -> None:
+    diagnostic = (
+        "Authorization: Bearer provider-secret-value\n"
+        "Cookie: session=provider-cookie-value\n"
+        r"C:\Users\Alice\Private\media.mp4"
+    )
+    source = (
+        "import json, sys\n"
+        "json.loads(sys.stdin.readline())\n"
+        f"sys.stderr.write({diagnostic!r})\n"
+        "sys.stderr.flush()\n"
+    )
+    root = make_provider(tmp_path, source)
+    provider = SubprocessDownloadProvider(
+        root, application_root=tmp_path, analyze_timeout=3
+    )
+
+    with pytest.raises(ProviderProtocolError) as captured:
+        provider.analyze("https://example.com/video")
+
+    detail = str(captured.value)
+    assert "[REDACTED]" in detail
+    assert "provider-secret-value" not in detail
+    assert "provider-cookie-value" not in detail
+    assert "Alice" not in detail
+    assert "Private" not in detail
+    assert "media.mp4" not in detail
+
+
+def test_provider_redacts_structured_failure_without_changing_classification(
+    tmp_path: Path,
+) -> None:
+    diagnostic = (
+        "Authorization: Bearer provider-secret-value\n"
+        "Cookie: session=provider-cookie-value\n"
+        r"C:\Users\Alice\Private\media.mp4"
+        "\nhttps://user:password@example.test/video"
+    )
+    failure_payload = {
+        "code": "RATE_LIMITED",
+        "message": diagnostic,
+        "retryable": True,
+        "details": {"retry_after_seconds": 30},
+    }
+    source = (
+        "import json, sys\n"
+        "json.loads(sys.stdin.readline())\n"
+        f"print(json.dumps({{'type': 'error', 'error': {failure_payload!r}}}), "
+        "flush=True)\n"
+    )
+    root = make_provider(tmp_path, source)
+    provider = SubprocessDownloadProvider(
+        root, application_root=tmp_path, analyze_timeout=3
+    )
+
+    with pytest.raises(ProviderFailure) as captured:
+        provider.analyze("https://example.com/video")
+
+    failure = captured.value.failure
+    assert failure.code is ProviderFailureCode.RATE_LIMITED
+    assert failure.retryable is True
+    for secret in (
+        "provider-secret-value",
+        "provider-cookie-value",
+        "Alice",
+        "Private",
+        "media.mp4",
+        "user",
+        "password",
+    ):
+        assert secret not in failure.message
+        assert secret not in str(captured.value)
+
+
+def test_provider_redaction_keeps_failure_valid_when_message_becomes_empty(
+    tmp_path: Path,
+) -> None:
+    failure_payload = {
+        "code": "TEMPORARY",
+        "message": "\u202e",
+        "retryable": True,
+    }
+    source = (
+        "import json, sys\n"
+        "json.loads(sys.stdin.readline())\n"
+        f"print(json.dumps({{'type': 'error', 'error': {failure_payload!r}}}), "
+        "flush=True)\n"
+    )
+    root = make_provider(tmp_path, source)
+    provider = SubprocessDownloadProvider(
+        root, application_root=tmp_path, analyze_timeout=3
+    )
+
+    with pytest.raises(ProviderFailure) as captured:
+        provider.analyze("https://example.com/video")
+
+    failure = captured.value.failure
+    assert failure.code is ProviderFailureCode.TEMPORARY
+    assert failure.message == "provider failed"
+    assert failure.retryable is True
+
+
+def test_provider_no_result_error_exposes_only_bounded_exit_metadata(
+    tmp_path: Path,
+) -> None:
+    source = (
+        "import json, os, sys\n"
+        "json.loads(sys.stdin.readline())\n"
+        "os._exit(23)\n"
+    )
+    root = make_provider(tmp_path, source)
+    provider = SubprocessDownloadProvider(
+        root, application_root=tmp_path, analyze_timeout=3
+    )
+
+    with pytest.raises(ProviderProtocolError) as captured:
+        provider.analyze("https://example.com/video?token=request-secret")
+
+    error = captured.value
+    assert error.phase == "stdout_eof"
+    assert error.exit_code == 23
+    assert error.stdout_reader_complete is True
+    assert "request-secret" not in str(error)
+
+
+def test_provider_drains_stderr_after_stdout_eof(tmp_path: Path) -> None:
+    source = (
+        "import json, sys, time\n"
+        "json.loads(sys.stdin.readline())\n"
+        "sys.stdout.close()\n"
+        # Remain within the public operation timeout while exceeding the former
+        # private one-second stderr drain cap that made this load-dependent.
+        "time.sleep(1.25)\n"
+        "sys.stderr.write('late provider error')\n"
+        "sys.stderr.flush()\n"
+    )
+    root = make_provider(tmp_path, source)
+    provider = SubprocessDownloadProvider(
+        root, application_root=tmp_path, analyze_timeout=3
+    )
+
+    with pytest.raises(ProviderProtocolError, match="late provider error"):
+        provider.analyze("https://example.com/video")
+
+
+def test_provider_accepts_result_enqueued_after_process_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = (
+        "import json, sys\n"
+        "json.loads(sys.stdin.readline())\n"
+        "print(json.dumps({'type':'result','value':{}}), flush=True)\n"
+    )
+    original_put = subprocess_provider_module.queue.Queue.put
+
+    def delayed_put(self, item, block=True, timeout=None):
+        if isinstance(item, str):
+            # Keep the result behind process exit without consuming most of the
+            # public three-second operation budget on a loaded Windows runner.
+            time.sleep(0.25)
+        return original_put(self, item, block=block, timeout=timeout)
+
+    monkeypatch.setattr(subprocess_provider_module.queue.Queue, "put", delayed_put)
+    root = make_provider(tmp_path, source)
+    provider = SubprocessDownloadProvider(
+        root, application_root=tmp_path, analyze_timeout=3
+    )
+
+    assert provider.analyze("https://example.com/video") == {}
+
+
 def test_provider_rejects_oversized_stdout_message(tmp_path: Path) -> None:
     source = (
         "import json, sys\n"
@@ -186,6 +360,44 @@ def test_download_accepts_nonempty_file_inside_output_directory(
     result = provider.download(request, lambda _: None, threading.Event())
 
     assert Path(result).read_bytes() == b"media"
+
+
+def test_mega_download_accepts_only_explicit_folder_result(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "mega"
+    provider = SubprocessDownloadProvider(root, application_root=tmp_path)
+    output = tmp_path / "out"
+    folder = output / "shared-folder"
+    folder.mkdir(parents=True)
+    (folder / "media.bin").write_bytes(b"data")
+    monkeypatch.setattr(provider, "_execute", lambda *_args, **_kwargs: str(folder))
+    request = DownloadRequest(
+        "https://mega.nz/folder/AbCdEf12#abcdefghijklmnop",
+        output,
+        source_category="mega-folder",
+    )
+
+    result = provider.download(request, lambda _: None, threading.Event())
+
+    assert Path(result) == folder.resolve()
+
+
+def test_mega_folder_result_requires_folder_category(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "mega"
+    provider = SubprocessDownloadProvider(root, application_root=tmp_path)
+    output = tmp_path / "out"
+    folder = output / "shared-folder"
+    folder.mkdir(parents=True)
+    monkeypatch.setattr(provider, "_execute", lambda *_args, **_kwargs: str(folder))
+    request = DownloadRequest(
+        "https://mega.nz/folder/AbCdEf12#abcdefghijklmnop", output
+    )
+
+    with pytest.raises(ProviderProtocolError, match="missing or outside"):
+        provider.download(request, lambda _: None, threading.Event())
 
 
 def test_download_forwards_media_and_bounded_provider_options(

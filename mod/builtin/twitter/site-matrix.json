@@ -1,0 +1,26 @@
+{
+  "schema_version": 2,
+  "provider_id": "twitter",
+  "last_live_check": "2026-07-16",
+  "workflow": {
+    "identify": "supported",
+    "discover": "not-applicable",
+    "analyze": "not-applicable",
+    "preview": "browser-mediated",
+    "queue": "not-applicable",
+    "cancel": "not-applicable",
+    "complete": "conditional"
+  },
+  "ui_capabilities": ["official-page", "offline-archive"],
+  "features": [
+    {"feature_id": "canonical-official-page", "support_status": "offline-contract"},
+    {"feature_id": "official-export-guide", "support_status": "browser-mediated-official"},
+    {"feature_id": "bounded-local-export-import", "support_status": "offline-contract"}
+  ],
+  "boundaries": [
+    "No cookie import or automated login",
+    "No region, payment, DRM or advertisement bypass",
+    "No private profile, post or direct-message access",
+    "No website search or automated media download"
+  ]
+}

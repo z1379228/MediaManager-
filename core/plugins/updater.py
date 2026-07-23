@@ -11,7 +11,13 @@ import zipfile
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from core.plugins.dependency_graph import candidate_dependency_graph_errors
 from core.plugins.installer import PluginInstaller
+from core.plugins.lifecycle import (
+    PluginLifecycleLockError,
+    PluginLifecyclePathError,
+    resolve_lifecycle_path,
+)
 from core.plugins.manager import PluginManager
 from core.plugins.registry import PendingAction, PluginRecord, PluginRegistry
 from core.security.safe_mode import SecurityMode
@@ -39,8 +45,32 @@ class PluginUpdater:
         self.registry = registry
         self.installer = installer
         self.plugin_manager = plugin_manager
+        self.lifecycle_lock = plugin_manager.lifecycle_lock
 
     def update(
+        self,
+        package: Path,
+        plugin_id: str,
+        *,
+        approved_permissions: tuple[str, ...],
+        security_mode: SecurityMode,
+    ) -> UpdateResult:
+        try:
+            with self.lifecycle_lock.hold():
+                return self._update_locked(
+                    package,
+                    plugin_id,
+                    approved_permissions=approved_permissions,
+                    security_mode=security_mode,
+                )
+        except PluginLifecycleLockError:
+            return UpdateResult(
+                False,
+                plugin_id,
+                errors=("plugin lifecycle is busy",),
+            )
+
+    def _update_locked(
         self,
         package: Path,
         plugin_id: str,
@@ -58,7 +88,7 @@ class PluginUpdater:
                 record.installed_version,
                 errors=("plugin is not available for update",),
             )
-        prepared = self.installer.prepare(package, security_mode)
+        prepared = self.installer._prepare_locked(package, security_mode)
         manifest = prepared.manifest
         if not prepared.valid or manifest is None:
             return UpdateResult(
@@ -100,23 +130,41 @@ class PluginUpdater:
                 manifest.version,
                 ("approved permissions exceed the update request",),
             )
-        disabled = self.plugin_manager.set_enabled(plugin_id, False, security_mode)
-        if not disabled.successful:
+        graph_errors = candidate_dependency_graph_errors(
+            self.mod_root,
+            self.registry,
+            manifest,
+        )
+        if graph_errors:
             return UpdateResult(
                 False,
                 plugin_id,
                 record.installed_version,
                 manifest.version,
-                disabled.errors,
+                graph_errors,
             )
-        self.registry.set_enabled(plugin_id, False)
-
-        installed_root = self.mod_root / "installed"
-        target = (installed_root / plugin_id).resolve()
-        backup = (
-            self.mod_root / "backups" / plugin_id / record.installed_version
-        ).resolve()
-        if not target.is_relative_to(self.mod_root) or not target.is_dir():
+        try:
+            installed_root = resolve_lifecycle_path(self.mod_root, "installed")
+            target = resolve_lifecycle_path(
+                self.mod_root,
+                "installed",
+                plugin_id,
+            )
+            backup = resolve_lifecycle_path(
+                self.mod_root,
+                "backups",
+                plugin_id,
+                record.installed_version,
+            )
+        except PluginLifecyclePathError:
+            return UpdateResult(
+                False,
+                plugin_id,
+                record.installed_version,
+                manifest.version,
+                ("plugin update paths are unsafe",),
+            )
+        if not target.is_dir():
             return UpdateResult(
                 False,
                 plugin_id,
@@ -132,11 +180,55 @@ class PluginUpdater:
                 manifest.version,
                 ("backup for installed version already exists",),
             )
-        backup.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            backup = resolve_lifecycle_path(
+                self.mod_root,
+                "backups",
+                plugin_id,
+                record.installed_version,
+            )
+        except (OSError, PluginLifecyclePathError):
+            return UpdateResult(
+                False,
+                plugin_id,
+                record.installed_version,
+                manifest.version,
+                ("plugin update paths are unsafe",),
+            )
+        disabled = self.plugin_manager.set_enabled(plugin_id, False, security_mode)
+        if not disabled.successful:
+            return UpdateResult(
+                False,
+                plugin_id,
+                record.installed_version,
+                manifest.version,
+                disabled.errors,
+            )
+        self.registry.set_enabled(plugin_id, False)
+
         old_record = replace(record, enabled=False, pending_action=PendingAction.NONE)
-        staging = Path(
-            tempfile.mkdtemp(prefix=f".{plugin_id}-update-", dir=installed_root)
-        )
+        try:
+            staging = Path(
+                tempfile.mkdtemp(prefix=f".{plugin_id}-update-", dir=installed_root)
+            )
+            staging = resolve_lifecycle_path(
+                self.mod_root,
+                "installed",
+                staging.name,
+            )
+        except (OSError, PluginLifecyclePathError) as error:
+            try:
+                self.registry.upsert(old_record)
+            except (KeyError, sqlite3.Error):
+                pass
+            return UpdateResult(
+                False,
+                plugin_id,
+                record.installed_version,
+                manifest.version,
+                (f"plugin update failed: {error}",),
+            )
         try:
             with zipfile.ZipFile(io.BytesIO(prepared.package_bytes)) as archive:
                 self.installer.extract_archive(archive, staging)
@@ -189,4 +281,13 @@ class PluginUpdater:
                 (f"plugin update failed: {error}",),
             )
         finally:
-            shutil.rmtree(staging, ignore_errors=True)
+            try:
+                safe_staging = resolve_lifecycle_path(
+                    self.mod_root,
+                    "installed",
+                    staging.name,
+                )
+            except PluginLifecyclePathError:
+                pass
+            else:
+                shutil.rmtree(safe_staging, ignore_errors=True)

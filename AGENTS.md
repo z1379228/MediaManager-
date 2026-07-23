@@ -47,9 +47,13 @@
 ## 驗證命令
 
 ```powershell
-.\.venv\Scripts\python.exe -m ruff check .
-.\.venv\Scripts\python.exe -m pytest -q --basetemp=.work\pytest-agent
+.\.venv\Scripts\python.exe -m tools.quality_audit
+.\.venv\Scripts\python.exe -m tools.run_tests
 .\.venv\Scripts\python.exe -m tools.audit_versions --root Version
+.\.venv\Scripts\python.exe -m tools.copied_folder_smoke `
+  --current Version\Development\32.1 `
+  --previous Version\Development\32.0 `
+  --retained-root Version
 ```
 
 建立版本前，還需執行相符的 provider smoke、一次性簽署演練與 copied-folder
@@ -59,6 +63,8 @@
 ## 版本與文件
 
 - 同步更新 `core/version.py`、`pyproject.toml`、README 與對應 release 文件。
+- 開發來源身分與 UI 使用完整 `X.Y.Z`：`X.Y.0` 是該功能線首次基線，基線後每個
+  material 程式修正依序增加 `Z`；純文件、證據或未改變執行行為的更新不升修正號。
 - 開發版 release 文件以大版本區間整檔保存，例如 `release-6.0-7.0.md`；
   次版本在同一檔案分節，不再為每個次版本建立獨立文件。
 - 開發版、測試版與正式版使用獨立編號。開發版沿用 `5.0`、`6.0` 世代；

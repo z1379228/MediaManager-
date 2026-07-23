@@ -18,14 +18,25 @@ from tools.sign_release import sign_release
 
 
 def run_dry_run(
-    root: Path, *, files: tuple[str, ...] = DEFAULT_RELEASE_FILES
+    root: Path,
+    *,
+    files: tuple[str, ...] = DEFAULT_RELEASE_FILES,
+    temp_root: Path | None = None,
 ) -> dict[str, object]:
-    """Copy, sign, verify and tamper a release without retaining private keys."""
+    """Copy, sign, verify and tamper a release without retaining private keys.
+
+    ``temp_root`` lets callers select a writable user-local directory when the
+    process-wide temporary directory is protected by Windows ACLs.
+    """
 
     root = root.resolve()
     if not files:
         raise ValueError("release signing dry run needs at least one file")
-    with tempfile.TemporaryDirectory(prefix="mediamanager-signing-") as raw_temp:
+    temp_directory = None if temp_root is None else str(temp_root.resolve())
+    with tempfile.TemporaryDirectory(
+        prefix="mediamanager-signing-",
+        dir=temp_directory,
+    ) as raw_temp:
         temporary_root = Path(raw_temp).resolve()
         for name in files:
             relative = PurePosixPath(name)
@@ -86,11 +97,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--file", action="append", dest="files")
+    parser.add_argument(
+        "--temp-root",
+        type=Path,
+        help="Writable user-local directory for the disposable signing workspace",
+    )
     args = parser.parse_args()
     try:
         result = run_dry_run(
             args.root,
             files=tuple(args.files or DEFAULT_RELEASE_FILES),
+            temp_root=args.temp_root,
         )
     except Exception as error:
         print(f"FAIL: {type(error).__name__}: {error}")

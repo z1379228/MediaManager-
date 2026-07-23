@@ -8,11 +8,13 @@ from itertools import chain
 from urllib.parse import urlencode, urlsplit
 
 from contracts.discovery_v1 import DiscoveryItemV1
+from contracts.playlist_v1 import PlaylistEntryV1
 from core.discovery.adapters import FederatedSearchResult
 from core.localization import normalized_core_locale
 from core.mod_groups import load_builtin_mod_group
 from core.site_routing import classify_site_url
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
+from trusted_ui.search_paging import merge_search_results, provider_next_cursor
 from trusted_ui.thumbnail_loader import create_thumbnail_loader
 
 
@@ -21,9 +23,27 @@ BILIBILI_DANMAKU_PROVIDER_ID = "bilibili-danmaku"
 MAX_DOWNLOAD_URLS = 500
 
 
+def filter_bilibili_playlist_entries(
+    entries: tuple[PlaylistEntryV1, ...], query: str
+) -> tuple[PlaylistEntryV1, ...]:
+    """Filter a bounded UP/multipart list without changing its order."""
+
+    normalized = " ".join(str(query).casefold().split())[:100]
+    if not normalized:
+        return entries
+    return tuple(
+        entry
+        for entry in entries
+        if normalized
+        in " ".join(
+            (entry.title, entry.artist, entry.entry_id)
+        ).casefold()
+    )
+
+
 def is_official_bilibili_url(value: object) -> bool:
     route = classify_site_url(value)
-    return route is not None and route.site_family == "bilibili"
+    return route is not None and route.download_provider_id == "bilibili"
 
 
 def bilibili_host_label(url: str) -> str:
@@ -34,6 +54,8 @@ def bilibili_host_label(url: str) -> str:
         "m.bilibili.com": "Bilibili 行動版",
         "space.bilibili.com": "UP 主空間",
         "b23.tv": "b23.tv",
+        "bilibili.tv": "Bilibili 國際版",
+        "www.bilibili.tv": "Bilibili 國際版",
     }.get(host, "—")
 
 
@@ -127,6 +149,9 @@ def create_bilibili_workspace(
             self.cancelled_generations: set[int] = set()
             self.busy = False
             self.closing = False
+            self.last_query = ""
+            self.next_cursor = ""
+            self.loading_more = False
             self.thumbnail_loader = create_thumbnail_loader(self)
             self.bridge = SearchBridge(self)
             self.bridge.finished.connect(self.show_results)
@@ -255,6 +280,11 @@ def create_bilibili_workspace(
             body_layout.addWidget(self.table)
 
             actions = QHBoxLayout()
+            self.more_button = QPushButton("載入更多")
+            self.more_button.setObjectName("ghost")
+            self.more_button.setAccessibleName("載入更多 Bilibili 搜尋結果")
+            self.more_button.clicked.connect(self.load_more)
+            actions.addWidget(self.more_button)
             actions.addStretch()
             self.add_button = QPushButton("將選取結果加入網址清單")
             self.add_button.setObjectName("primary")
@@ -289,6 +319,14 @@ def create_bilibili_workspace(
             }[selected]
             self.title.setText(f"{group.display_name} {module.display_name} {suffix}")
             self.subtitle.setText(module.purpose)
+            self.more_button.setText(
+                {
+                    "zh-TW": "載入更多",
+                    "zh-CN": "加载更多",
+                    "en": "Load more",
+                    "ja": "さらに読み込む",
+                }[selected]
+            )
             child_prefix = {
                 "zh-TW": "啟用",
                 "zh-CN": "启用",
@@ -400,15 +438,40 @@ def create_bilibili_workspace(
                 return
             if self.busy or self.closing:
                 return
+            self.last_query = query
+            self.next_cursor = ""
+            self.start_search(query, cursor="", append=False)
+
+        def load_more(self) -> None:
+            if (
+                self.busy
+                or self.closing
+                or not self.all_results
+                or not self.last_query
+                or not self.next_cursor
+            ):
+                return
+            self.start_search(
+                self.last_query,
+                cursor=self.next_cursor,
+                append=True,
+            )
+
+        def start_search(self, query: str, *, cursor: str, append: bool) -> None:
             self.generation += 1
             generation = self.generation
             self.active_generation = generation
             self.busy = True
-            self.all_results = ()
-            self.results = ()
-            self.table.setRowCount(0)
+            self.loading_more = append
+            if not append:
+                self.all_results = ()
+                self.results = ()
+                self.table.setRowCount(0)
+                self.up_filter.setCurrentIndex(0)
             self.thumbnail_loader.cancel_pending()
-            self.status.setText("正在搜尋 Bilibili…")
+            self.status.setText(
+                "正在載入更多 Bilibili 結果…" if append else "正在搜尋 Bilibili…"
+            )
             self.update_action_state()
 
             def worker() -> None:
@@ -418,6 +481,7 @@ def create_bilibili_workspace(
                         provider_ids=(BILIBILI_SEARCH_PROVIDER_ID,),
                         limit=50,
                         content_type="all",
+                        cursor=cursor,
                     )
                     error = ""
                 except Exception as caught:
@@ -436,7 +500,7 @@ def create_bilibili_workspace(
             if not self.busy:
                 return
             self.cancelled_generations.add(self.active_generation)
-            self.thumbnail_loader.cancel_pending()
+            self.thumbnail_loader.shutdown()
             self.status.setText("已取消顯示；等待目前搜尋安全結束。")
             self.update_action_state()
 
@@ -445,26 +509,46 @@ def create_bilibili_workspace(
         ) -> None:
             if self.closing or generation != self.active_generation:
                 return
+            append = self.loading_more
+            self.loading_more = False
             self.busy = False
             if generation in self.cancelled_generations:
                 self.cancelled_generations.discard(generation)
-                self.all_results = ()
-                self.results = ()
-                self.table.setRowCount(0)
-                self.status.setText("Bilibili 搜尋已取消。")
+                if not append:
+                    self.all_results = ()
+                    self.results = ()
+                    self.table.setRowCount(0)
+                    self.next_cursor = ""
+                self.status.setText(
+                    "已取消載入更多；原搜尋結果仍保留。"
+                    if append
+                    else "Bilibili 搜尋已取消。"
+                )
                 self.refresh_availability()
                 return
             if error:
-                self.all_results = ()
-                self.results = ()
-                self.table.setRowCount(0)
+                if not append:
+                    self.all_results = ()
+                    self.results = ()
+                    self.table.setRowCount(0)
+                    self.next_cursor = ""
+                prefix = "載入更多失敗" if append else "Bilibili 搜尋失敗"
                 self.status.setText(
-                    f"Bilibili 搜尋失敗：{error}；可按「官網搜尋／驗證」後貼回影片網址。"
+                    f"{prefix}：{error}；可按「官網搜尋／驗證」後貼回影片網址。"
                 )
                 self.refresh_availability()
                 return
             if not isinstance(response, FederatedSearchResult):
-                self.status.setText("Bilibili 搜尋失敗：搜尋 MOD 回傳格式無效。")
+                if not append:
+                    self.all_results = ()
+                    self.results = ()
+                    self.table.setRowCount(0)
+                    self.next_cursor = ""
+                self.status.setText(
+                    "載入更多失敗：搜尋 MOD 回傳格式無效。"
+                    if append
+                    else "Bilibili 搜尋失敗：搜尋 MOD 回傳格式無效。"
+                )
                 self.refresh_availability()
                 return
             accepted: list[DiscoveryItemV1] = []
@@ -478,9 +562,20 @@ def create_bilibili_workspace(
                     rejected += 1
                     continue
                 accepted.append(item)
-            self.all_results = tuple(accepted)
+            selected_urls = set(self.selected_urls()) if append else set()
+            previous_count = len(self.all_results) if append else 0
+            self.all_results = merge_search_results(
+                self.all_results if append else (),
+                accepted,
+            )
+            added_count = len(self.all_results) - previous_count
+            if not response.failures:
+                self.next_cursor = provider_next_cursor(
+                    response, BILIBILI_SEARCH_PROVIDER_ID
+                )
             self.populate_uploader_filter()
             self.apply_up_filter()
+            self.restore_selected_urls(selected_urls)
             if response.failures:
                 self.status.setText(
                     f"Bilibili 搜尋失敗：{response.failures[0].message[:240]}"
@@ -490,10 +585,17 @@ def create_bilibili_workspace(
                     {item.artist for item in self.all_results if item.artist}
                 )
                 suffix = f"；略過 {rejected} 筆非官方來源" if rejected else ""
-                self.status.setText(
-                    f"找到 {len(self.all_results)} 筆、{uploader_count} 位 UP 主{suffix}；"
-                    "可先鎖定 UP 主，再批量選取。"
-                )
+                paging = "；可繼續載入" if self.next_cursor else "；已到結果尾端"
+                if append:
+                    self.status.setText(
+                        f"新增 {added_count} 筆，目前共 {len(self.all_results)} 筆、"
+                        f"{uploader_count} 位 UP 主{suffix}{paging}。"
+                    )
+                else:
+                    self.status.setText(
+                        f"找到 {len(self.all_results)} 筆、{uploader_count} 位 UP 主"
+                        f"{suffix}{paging}；可先鎖定 UP 主，再批量選取。"
+                    )
             else:
                 self.status.setText("找不到 Bilibili 結果，請改用較短或不同關鍵字。")
             self.refresh_availability()
@@ -602,6 +704,15 @@ def create_bilibili_workspace(
                 self.results[row].url for row in rows if 0 <= row < len(self.results)
             )
 
+        def restore_selected_urls(self, urls: set[str]) -> None:
+            for row, item in enumerate(self.results):
+                if item.url not in urls:
+                    continue
+                for column in range(self.table.columnCount()):
+                    cell = self.table.item(row, column)
+                    if cell is not None:
+                        cell.setSelected(True)
+
         def add_selected(self) -> None:
             urls = self.selected_urls()
             if not urls:
@@ -635,12 +746,15 @@ def create_bilibili_workspace(
                 has_results and self.table.currentRow() >= 0
             )
             self.select_visible.setEnabled(has_results)
+            self.more_button.setEnabled(
+                can_search and bool(self.all_results) and bool(self.next_cursor)
+            )
             self.add_button.setEnabled(bool(self.selected_urls()) and not self.busy)
 
         def shutdown(self) -> None:
             self.closing = True
             self.generation += 1
-            self.thumbnail_loader.cancel_pending()
+            self.thumbnail_loader.shutdown()
 
         def closeEvent(self, event: object) -> None:
             self.shutdown()

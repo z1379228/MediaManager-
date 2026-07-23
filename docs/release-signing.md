@@ -1,44 +1,57 @@
-# Release signing
+# 簽章與發行 Gate
 
-MediaManager enters `NORMAL` only when `security/release-manifest.json` has a
-valid Ed25519 signature in `security/release-manifest.sig`, the manifest key id
-matches the identity compiled into `core/security/release_key.py`, and every
-listed SHA-256 digest matches.
+目前沒有 Stable build、簽署或發布計畫。本文件只定義未來若重新授權發行時
+不得降低的順序與秘密邊界。
 
-## Required order
+## 兩種不同信任
 
-1. Generate and retain an Ed25519 private key outside the repository and build
-   workspace.
-2. Put only its Base64 raw public key and stable key id in `release_key.py`.
-   A key change requires a new build.
-3. Build `MediaManager.exe` in an isolated work directory.
-4. Apply Windows Authenticode to that work-directory EXE and verify its status is
-   `Valid`.
-5. Stage the already Authenticode-signed EXE, wheel, portable runtimes and release
-   files. Generate the final `release-info.json`, SBOM and `SHA256SUMS.txt` there.
-6. Run `tools.sign_release` against the final staged directory so the Ed25519
-   manifest records the final EXE bytes.
-7. Run release preflight, version audit, copied-folder smoke and candidate evidence
-   validation. Every gate must refer to the same staged artifact.
-8. Distribute the staged directory without modifying any signed or hashed file.
+- **Authenticode**：簽署 Windows EXE；必須由有效程式碼簽署憑證產生，並由
+  `Get-AuthenticodeSignature` 回報 `Valid`。
+- **Ed25519 release manifest**：簽署 final staged set 的檔案 hash 與 release
+  metadata。production 私鑰必須保存在 Repository、`.work`、`Version` 與對話外。
 
-Authenticode changes PE bytes. Applying it after `SHA256SUMS.txt` or the Ed25519
-manifest has been generated invalidates those records and is forbidden.
+兩者不能互相取代。Authenticode 會改變 PE 位元組，所以必須先簽 EXE，再產生
+final checksum 與 Ed25519 manifest。
 
-## Metadata anchors
+## 秘密處理
 
-Stable 簽章檔案集合由 `stable_signed_files()` 產生，除執行期檔案外也包含版本相符的
-wheel、`release-info.json` 與 `SHA256SUMS.txt`。因此公開下載附件的套件、來源／建置
-識別及最終 checksum 清單都必須由同一份 Ed25519 manifest 覆蓋；manifest 與簽章本身
-則是 stage 後唯一允許新增的配對檔案。
+只可提交或在工作紀錄中提供非秘密的 key ID 與 raw 32-byte Ed25519 公鑰。
+下列內容不得貼入 Codex、Issue、PR、命令列紀錄、Log 或版本檔：
 
-## Current tooling status
+- Ed25519 私鑰或 seed。
+- Authenticode 憑證私鑰、PFX、密碼或 PIN。
+- 簽署服務 Token、Cookie、session 或 recovery material。
 
-`tools.build_version` currently builds and stages in one operation, before an
-operator can apply Authenticode to the work-directory EXE. Therefore the old
-single-command stable procedure is not approved for release. A tested release
-operator or sign-before-stage hook must be completed before Stable 1.0 packaging.
+發現疑似外洩時先停止工作，撤銷／輪替，再建立新的可追蹤信任身分。
 
-The signing tool refuses a private key that does not match the compiled public
-key. Never commit, bundle, log, or transmit the private key through MediaManager.
-Unsigned development builds intentionally start in `SAFE_MODE`.
+## 必要順序
+
+1. 使用已授權的乾淨 source-freeze commit。
+2. 執行 Stable build-only，取得唯一工作目錄與 `build-receipt.json`。
+3. 在外部安全環境簽署該目錄中的 exact EXE。
+4. 獨立驗證 Authenticode `Valid`，只回傳非秘密狀態證據。
+5. 執行 stage-built；工具必須重驗 channel、release version、source revision、
+   receipt、wheel digest 與 EXE。
+6. 在 staged set 產生 release metadata、SBOM 與 checksum。
+7. 使用外部 production Ed25519 私鑰簽署 final manifest。
+8. 執行 `release_preflight`、`audit_versions`、copied-folder smoke 與候選驗證。
+9. 另行取得 push／發布／上傳授權。
+
+任何一步失敗都停止；不可使用 self-signed Authenticode、臨時 Ed25519、複製簽章、
+手改 `ready` 或放寬 preflight。
+
+## 驗證範例
+
+以下命令只適用於已存在且另行獲准的候選；目前不應執行：
+
+```powershell
+Get-AuthenticodeSignature -LiteralPath <work-dir>\MediaManager.exe |
+  Select-Object Status, StatusMessage
+
+.\.venv\Scripts\python.exe -m tools.audit_versions --root Version
+.\.venv\Scripts\python.exe -m tools.release_preflight `
+  --root Version\Stable\<version>
+```
+
+簽署命令的私鑰路徑應由 operator 直接在本機安全環境提供，不得寫入此文件、
+Repository 設定或自動化輸出。

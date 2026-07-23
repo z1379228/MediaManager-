@@ -60,11 +60,55 @@ def test_direct_download_capability_construction_is_validated() -> None:
         )
 
 
+def test_download_capability_rejects_unknown_privileged_field() -> None:
+    payload = {
+        "provider_id": "youtube",
+        "sites": ["youtube"],
+        "format_presets": ["best"],
+        "subtitle_modes": ["none"],
+        "timed_comments": ["none"],
+        "supports_playlist": True,
+        "supports_segments": True,
+        "supports_resume": True,
+        "max_batch_size": 100,
+        "unexpected_privileged_field": True,
+    }
+
+    with pytest.raises(DownloadCapabilityError, match="fields"):
+        DownloadCapabilityV2.from_dict(payload)
+
+
 def test_generic_provider_does_not_claim_unverified_social_sites() -> None:
     capability = builtin_download_capability("generic-ytdlp")
 
     assert capability.sites == ("generic",)
     assert not {"facebook", "instagram", "threads"}.intersection(capability.sites)
+    assert {
+        "video-2160",
+        "video-1440",
+        "video-h264-1080",
+        "audio-m4a-256",
+        "audio-mp3-320",
+        "audio-opus",
+        "audio-flac",
+        "audio-wav",
+    }.isdisjoint(capability.format_presets)
+
+
+@pytest.mark.parametrize("provider_id", ("youtube", "bilibili"))
+def test_video_providers_publish_encoding_presets(provider_id: str) -> None:
+    capability = builtin_download_capability(provider_id)
+
+    assert {
+        "video-2160",
+        "video-1440",
+        "video-h264-1080",
+        "audio-m4a-256",
+        "audio-mp3-320",
+        "audio-opus",
+        "audio-flac",
+        "audio-wav",
+    }.issubset(capability.format_presets)
 
 
 def test_facebook_capability_is_public_video_only() -> None:

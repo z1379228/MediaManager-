@@ -33,12 +33,11 @@ def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
             ProviderStatus("bilibili", "Bilibili", False),
             ProviderStatus("facebook", "Facebook", False),
             ProviderStatus("mega", "MEGA", False),
+            ProviderStatus("direct-http", "Direct HTTP", False),
         ),
         (
             ProviderStatus("youtube-search", "Search", True),
             ProviderStatus("bilibili-search", "Bilibili Search", False),
-            ProviderStatus("ani-gamer-search", "AniGamer Search", False),
-            ProviderStatus("ani-gamer-episodes", "AniGamer Episodes", False),
             ProviderStatus("youtube-player", "Player", False),
             ProviderStatus("youtube-history", "History", False),
             ProviderStatus("youtube-recovery", "Recovery", True),
@@ -46,14 +45,25 @@ def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
             ProviderStatus("youtube-auto-split", "Split", True),
         ),
         (
-            FeatureStatus("ani-gamer", "AniGamer", False),
             FeatureStatus("bilibili-danmaku", "Bilibili Danmaku", False),
+            FeatureStatus("instagram", "Instagram", False),
+            FeatureStatus("instagram-page", "Instagram Page", False),
+            FeatureStatus("instagram-export", "Instagram Export", False),
+            FeatureStatus("threads", "Threads", False),
+            FeatureStatus("threads-page", "Threads Page", False),
+            FeatureStatus("threads-export", "Threads Export", False),
+            FeatureStatus("twitter", "X / Twitter", False),
+            FeatureStatus("twitter-page", "X Page", False),
+            FeatureStatus("twitter-export", "X Export", False),
             FeatureStatus("media-convert", "Media Convert", False),
+            FeatureStatus("media-ad-trim", "Local Ad Segment Trim", False),
             FeatureStatus("speech-to-text", "Speech to Text", False),
+            FeatureStatus("gopeed-transfer", "Gopeed Bridge", False),
+            FeatureStatus("p2p-transfer", "P2P Transfer", False),
             FeatureStatus("automation", "Automation", False),
         ),
     )
-    assert len(rows) == 19
+    assert len(rows) == 29
     assert all(row.available for row in rows)
     assert sum(row.enabled for row in rows) == 5
     player = next(row for row in rows if row.provider_id == "youtube-player")
@@ -66,21 +76,31 @@ def test_builtin_mod_rows_keep_missing_expected_mod_visible() -> None:
         "youtube",
         "generic-ytdlp",
         "bilibili",
-        "ani-gamer",
         "facebook",
         "mega",
+        "direct-http",
+        "instagram",
+        "threads",
+        "twitter",
         "youtube-search",
         "bilibili-search",
         "bilibili-danmaku",
-        "ani-gamer-search",
-        "ani-gamer-episodes",
         "youtube-player",
         "youtube-history",
         "youtube-recovery",
         "youtube-similar",
         "youtube-auto-split",
+        "instagram-page",
+        "instagram-export",
+        "threads-page",
+        "threads-export",
+        "twitter-page",
+        "twitter-export",
         "media-convert",
+        "media-ad-trim",
         "speech-to-text",
+        "gopeed-transfer",
+        "p2p-transfer",
         "automation",
     )
     assert not any(row.available for row in rows)
@@ -116,7 +136,8 @@ def test_builtin_mod_rows_preserve_bounded_initialization_reason() -> None:
 def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QTableWidget
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QTreeWidget
 
     class StatusSource:
         def __init__(self, statuses: tuple[ProviderStatus, ...]) -> None:
@@ -134,6 +155,7 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
                 ProviderStatus("bilibili", "Bilibili", False),
                 ProviderStatus("facebook", "Facebook", False),
                 ProviderStatus("mega", "MEGA", False),
+                ProviderStatus("direct-http", "Direct HTTP", False),
             )
         ),
         discovery=StatusSource(
@@ -142,8 +164,6 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
                 for provider_id in (
                     "youtube-search",
                     "bilibili-search",
-                        "ani-gamer-search",
-                        "ani-gamer-episodes",
                     "youtube-player",
                     "youtube-history",
                     "youtube-recovery",
@@ -154,48 +174,68 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
         ),
         features=StatusSource(
             (
-                FeatureStatus("ani-gamer", "AniGamer", False),
                 FeatureStatus("bilibili-danmaku", "Bilibili Danmaku", False),
+                FeatureStatus("instagram", "Instagram", False),
+                FeatureStatus("instagram-page", "Instagram Page", False),
+                FeatureStatus("instagram-export", "Instagram Export", False),
+                FeatureStatus("threads", "Threads", False),
+                FeatureStatus("threads-page", "Threads Page", False),
+                FeatureStatus("threads-export", "Threads Export", False),
+                FeatureStatus("twitter", "X / Twitter", False),
+                FeatureStatus("twitter-page", "X Page", False),
+                FeatureStatus("twitter-export", "X Export", False),
                 FeatureStatus("media-convert", "Media Convert", False),
+                FeatureStatus(
+                    "media-ad-trim", "Local Ad Segment Trim", False
+                ),
                 FeatureStatus("speech-to-text", "Speech to Text", False),
+                FeatureStatus("gopeed-transfer", "Gopeed Bridge", False),
+                FeatureStatus("p2p-transfer", "P2P Transfer", False),
                 FeatureStatus("automation", "Automation", False),
             )
         ),
     )
     panel = create_builtin_mod_panel(context)
-    table = panel.findChild(QTableWidget)
+    tree = panel.findChild(QTreeWidget, "builtinModTree")
     summary = next(
         label
         for label in panel.findChildren(QLabel)
         if label.objectName() == "dependencySummary"
     )
-    visible_planned = tuple(PLANNED_MODS)
-    assert table.rowCount() == 15 + len(visible_planned)
-    assert table.accessibleName() == "內建與製作中 MOD 狀態"
+    assert tree.topLevelItemCount() == 13 + len(PLANNED_MODS)
+    assert tree.accessibleName() == "依網站分組的內建 MOD 清單"
     toggles = [
-        button
-        for button in panel.findChildren(QPushButton)
-        if button.accessibleName().endswith("啟用狀態")
+        toggle
+        for toggle in panel.findChildren(QCheckBox)
+        if toggle.accessibleName().endswith("啟用狀態")
     ]
-    assert len(toggles) == 15
-    assert {button.text() for button in toggles} == {"啟用", "停用"}
+    assert len(toggles) == 19
+    assert {toggle.text() for toggle in toggles} == {"啟用"}
     assert summary.text() == (
-        "內建 MOD 19/19 已註冊 · 10 個已啟用 · "
-        f"目前顯示 15 個父／子 MOD · 製作中 {len(PLANNED_MODS)} 項"
+        "內建 MOD 29/29 已載入 · 8 個已啟用 · "
+        f"7 個網站父 MOD · 規劃中 {len(PLANNED_MODS)} 個"
     )
-    planned_start = table.rowCount() - len(visible_planned)
+    youtube = next(
+        tree.topLevelItem(index)
+        for index in range(tree.topLevelItemCount())
+        if tree.topLevelItem(index).data(0, Qt.ItemDataRole.UserRole)
+        == "group:youtube"
+    )
+    bilibili = next(
+        tree.topLevelItem(index)
+        for index in range(tree.topLevelItemCount())
+        if tree.topLevelItem(index).data(0, Qt.ItemDataRole.UserRole)
+        == "group:bilibili"
+    )
+    assert youtube.childCount() == 7
+    assert bilibili.childCount() == 1
+    assert youtube.child(0).data(0, Qt.ItemDataRole.UserRole) == "youtube"
+    assert youtube.child(1).data(0, Qt.ItemDataRole.UserRole) == "youtube-search"
+    planned_start = tree.topLevelItemCount() - len(PLANNED_MODS)
     assert [
-        table.item(row, 1).text()
-        for row in range(planned_start, table.rowCount())
-    ] == [f"{planned.state} · {planned.priority}" for planned in visible_planned]
-    assert all(
-        table.cellWidget(row, 4) is None
-        for row in range(planned_start, table.rowCount())
-    )
-    assert {
-        table.item(row, 4).text()
-        for row in range(planned_start, table.rowCount())
-    } == {"尚不可用"}
+        tree.topLevelItem(row).text(1)
+        for row in range(planned_start, tree.topLevelItemCount())
+    ] == [f"{planned.state} · {planned.priority}" for planned in PLANNED_MODS]
     panel.close()
     panel.deleteLater()
     app.processEvents()
@@ -204,7 +244,8 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
 def test_builtin_mod_panel_displays_failed_mod_reason(monkeypatch) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QTableWidget
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QTreeWidget
 
     app = QApplication.instance() or QApplication([])
     context = SimpleNamespace(
@@ -225,13 +266,19 @@ def test_builtin_mod_panel_displays_failed_mod_reason(monkeypatch) -> None:
     )
     panel = create_builtin_mod_panel(context)
     try:
-        table = panel.findChild(QTableWidget)
-        assert table.item(0, 1).text() == "初始化失敗"
-        assert "integrity mismatch" in table.item(0, 1).toolTip()
+        tree = panel.findChild(QTreeWidget, "builtinModTree")
+        youtube = next(
+            tree.topLevelItem(index)
+            for index in range(tree.topLevelItemCount())
+            if tree.topLevelItem(index).data(0, Qt.ItemDataRole.UserRole)
+            == "group:youtube"
+        )
+        assert youtube.child(0).text(1) == "初始化失敗"
+        assert "integrity mismatch" in youtube.child(0).toolTip(1)
         youtube_toggle = next(
-            button
-            for button in panel.findChildren(QPushButton)
-            if button.objectName() == "builtinModToggle-youtube"
+            toggle
+            for toggle in panel.findChildren(QCheckBox)
+            if toggle.objectName() == "builtinModToggle-youtube"
         )
         assert not youtube_toggle.isEnabled()
         assert "integrity mismatch" in youtube_toggle.toolTip()
@@ -256,7 +303,7 @@ def test_plugin_manager_defaults_to_actionable_builtin_mods(
         QApplication,
         QComboBox,
         QLabel,
-        QPushButton,
+        QCheckBox,
         QTabWidget,
     )
 
@@ -288,15 +335,18 @@ def test_plugin_manager_defaults_to_actionable_builtin_mods(
 
         bilibili = next(
             toggle
-            for toggle in dialog.findChildren(QPushButton)
+            for toggle in dialog.findChildren(QCheckBox)
             if toggle.objectName() == "builtinModToggle-bilibili"
         )
-        assert not context.download_providers.is_enabled("bilibili")
+        assert context.download_providers.is_enabled("bilibili")
         assert bilibili.text() == "啟用"
         bilibili.click()
         app.processEvents()
+        assert not context.download_providers.is_enabled("bilibili")
+        bilibili.click()
+        app.processEvents()
         assert context.download_providers.is_enabled("bilibili")
-        assert dialog.findChild(QPushButton, "builtinModToggle-bilibili-search")
+        assert dialog.findChild(QCheckBox, "builtinModToggle-bilibili-search")
 
         guided_dialog = create_plugin_manager_dialog(
             context,

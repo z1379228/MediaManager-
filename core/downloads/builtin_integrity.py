@@ -1,29 +1,26 @@
 """Pinned integrity metadata for MODs shipped with this core release."""
 
 BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
-    "ani-gamer": {
-        "feature.json": "8007aeb21bcb58e3e22bee8fbd25174c2b35c84aaa89bb89fb8625a0d38b32bb",
-        "group.json": "9fbec8f5221ae8a7ea2fa5867182458855d7732e92f389e5bb9b09a1b1bb74e6",
-        "locales/en.json": "28fa379e84926e7d6648cec231e8297249f5813e8e08ef0930e654ab4e91ab76",
-        "locales/ja.json": "214384d93de0d21ea520582867e5822ea49ad60207f3f4152e39e559e69e3d70",
-        "locales/zh-CN.json": "b3097e1e15992cb6eb95211752aeeb73e86966f4bc13e45338f5428fb117e232",
-        "locales/zh-TW.json": "6470b8d7308b2837342e1c1067a3edebb247ba63c9257923462f7d2d2f536d08",
-    },
-    "ani-gamer-search": {
-        "provider.py": "e4bb0b63daf1ec0956ee6132d91d62b095f4d5cf3355e7160fce9fe02de3da41",
-        "provider.json": "ea87fe49c16e3a273afe28f7f17e85e69160fd6500b63a72897f1fecca72babe",
-    },
-    "ani-gamer-episodes": {
-        "provider.py": "512222bd9fc311a10f5773a505aed7981e77edc09bf22d0724228c4a1d244d04",
-        "provider.json": "9abb62a3379a4a7cbf3b306ff3c3405ebf9258b9f91edf0ac05126f26e570923",
+    "direct-http": {
+        "provider.py": "cd8473f4e323278cbd40ca16598268256918c86bb64a5176b470a141810a994a",
+        "provider.json": "001b249260a75bb7f284b4cbc53b0d91a646a35d4dfc7027e3a273a757d448c7",
     },
     "automation": {
         "feature.json": "47fe2b5f6277a064ae404b466819e4383b5928862698a4a0c7f44675ff144f4e",
         "policy.json": "3f73591d23b4b01f49abb2e9812710d23e07c8cd219d1e52f37715b22dca380f",
     },
     "media-convert": {
-        "feature.json": "82ebdfa5d8b10c7fbab28166a0aa294f8ad85288e7b248b6ef272f05184d92cf",
-        "presets.json": "5563fa10d9a3ef5bcf258596cb815be32620cab83c6a5c77ac8647818aab0724",
+        "feature.json": "94acc1e77de17499ae118c2c89f3430f3b04721772851823841376c490f62946",
+        "presets.json": "f22eb6ea674e5993d3ca4993c3767247d317c63a84e7c676b1955e4dc3c7b564",
+    },
+    "media-ad-trim": {
+        "feature.json": "49db63e4ae5e3b499702603537bd21495797dfe19e69f588f3570d97c510e69e",
+    },
+    "gopeed-transfer": {
+        "feature.json": "26fd15d5dea7a3a66d21985926dc8d79026af1daae60ae9bc7d0b96786b2cc76",
+    },
+    "p2p-transfer": {
+        "feature.json": "65b1ba694184a3657e9f41f216b2357defde11f1a4a7055999561dae4574bc92",
     },
     "speech-to-text": {
         "adapter.json": "0d155d02eadc79b42abc12479bf5ceee79e3739b6bb43e20ea9d1ffc71403046",
@@ -36,21 +33,66 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "locales/ja.json": "80dff59055ce21ee2dc1fe3102a9b90ee0836bb146bcf0990a3830e85ae8370e",
         "locales/zh-CN.json": "d95a930210405fa1b9948c746d21b3d27ce29d8ec794aa41960c61f4c8501342",
         "locales/zh-TW.json": "83d12ba5a053ca20daa8e10340ddabd92ba86a1c88584ac8ab67e3668d388428",
-        "provider.py": "07de549d08c11fca0d14acf7a419cb9d9d34e30b449478eb280b353b5b012dca",
-        "provider.json": "ebf0c166ce2e43479ab1f8f824b192ac9d36c40d519213b2cf336a1102a0800b",
-        "site-matrix.json": "409b77fe1ee921eab417064399ea57e7bc2555a63ea6f9fa9603459b5c3fb802",
+        "provider.py": "86cb4708bda3a7090509d192509b53fb5025a3dc40a2c50e7fb9aaf83849e3ce",
+        "provider.json": "a918ca9671a1e443b2e84540ad6ee144963add04a7d614130590af56d30a9102",
+        "site-matrix.json": "e364cb7cb43b8a27df46cc910466a0dfdd797d72fc45a38f76cacad691b7ff1d",
     },
     "bilibili-search": {
         "provider.py": "f6af795067fca4306ec0030c7031b2e191eada3745851b7e41559b849da27115",
-        "provider.json": "767a4be4d858c5843c44b52c20c1781ccb0f3e5e5b5ff9654a1565bff987ff34",
+        "provider.json": "c275c393179fdc143c13251889acdabb5b67ae75d4c1b53f41387a2aa5e16a99",
     },
     "bilibili-danmaku": {
         "feature.json": "341085b84f205fb247fee7e1987aab0bb39116b31ceae62840995b8626d00198",
     },
     "generic-ytdlp": {
         "provider.py": "b7a87e87a88cd2fd35122d9f3a71381c9b77a1f1260cf62e6caaf6d0ef8b735b",
-        "provider.json": "23078fd4c45fd250306917973e5f20ba7c15ee423274e7342efae15afc304179",
-        "site-matrix.json": "323947cfa84d5b5b21321dc804e73755abadeb3da9f22ffd120416615e954ce5",
+        "provider.json": "4fcd10d058f1d09be2dfc4cb4af299c4075415b16eae783d61184cf8c4d99d88",
+        "site-matrix.json": "d7e786a806addbc5a0f255e5f1a655606b62232e9d4098254c74c810edefa11f",
+    },
+    "instagram": {
+        "feature.json": "fdfdbb20dea7fc0a5d33d2a5a9107003172a62b83c4efc5bd1799b9ee1796615",
+        "group.json": "2c983755c789a5fedc7a407a60f6efee008e17f3024e416d5ed935fba2c5d2e5",
+        "locales/en.json": "1329d6a38d9f653f953defef029aa7fb193ea223cef86c0567da8dea9aa1fd0f",
+        "locales/ja.json": "67391950eba68bccc5c769ff465bee840b6f12f79b89848fa695b2a6d7cf2711",
+        "locales/zh-CN.json": "7c226eb78befb80087d60f46034e5caaaf42d1cd556c0aaddf310231e3c9da92",
+        "locales/zh-TW.json": "4cc08d1a9c1582da28f96f41390dee700e6d162d4808801f3c35b3aa5d6b81f0",
+        "site-matrix.json": "f1f01690e4ecc8e2d414ad228436cd096dfa25e37d3d7dedc0aca481839747fd",
+    },
+    "instagram-page": {
+        "feature.json": "c91cfb5a2d8a301578024d15b479c1d6b2499eb3c6b15ebf8bd1ae44100f4eed",
+    },
+    "instagram-export": {
+        "feature.json": "658d8bddeeef4aec80bd8b15d42b0876a801f46fc40a331f792c7c99e1b21fa5",
+    },
+    "threads": {
+        "feature.json": "174b0ca4e26a3617cec94c4baeccda9e527e53771c5f8cd21888bec377dbfbcd",
+        "group.json": "53b627eed56b437801266efd8c2e459bfc155674ea673a525389d23c7d90d1d8",
+        "locales/en.json": "7ecd0d0a8cd0d84c95d6875c26ffcf28c9cf797d278d39b4d3f18e6a579efb0f",
+        "locales/ja.json": "a5861d4dd966313c25c8e1f113b57c3d173411e6db43a0ed81f1d4c861fed1c6",
+        "locales/zh-CN.json": "842a01b95b130d9868998dc4b8d67302cd486e3893e57bcb9a2e3b95eaff948a",
+        "locales/zh-TW.json": "687e6ce6f4474634401cb39013c069c71d1e7f10cbcfdac7528e2f55f246e46e",
+        "site-matrix.json": "79f957365a7d291fb11a128c5ebdcbf1aa0d5e25a0572b09d27d50368a55382a",
+    },
+    "threads-page": {
+        "feature.json": "82ce258c4c12f091fb6677b0ad67764c3bbc6a13de601f94b9f8a49a27ca623e",
+    },
+    "threads-export": {
+        "feature.json": "6b4abd4df6e5dcc10cab1a08154147196a8fa23d811a11d47393eabbb474d252",
+    },
+    "twitter": {
+        "feature.json": "5a111e5e21098f6a72b7812be08e9c5ee1f1aaaf2149e354538865738dc3d93f",
+        "group.json": "b8053f2225fbfc53e9858295d9e0a1c0d33583303ea14db2e3565e2e2c0e4c73",
+        "locales/en.json": "956c6b874e451fb09b58091f0aeb238daabad77e065d08b4439af174d1673d40",
+        "locales/ja.json": "7e805bb83c88f42b0cf5f17f5638e60ab19d48e8f6d8d74bd32bc073c8242a1c",
+        "locales/zh-CN.json": "47703164e9b1956d504f72b592b5449787486a80878b7ff53e03ccb2327b764b",
+        "locales/zh-TW.json": "ac934890d0fa611130177d4b459ec3133f7ff5b309feadd6eb0b3ffcbb3727c5",
+        "site-matrix.json": "d66027071e02a0db3768c531b651c86c1b2be20959ca94694fcf122a50aae33e",
+    },
+    "twitter-page": {
+        "feature.json": "bddb81e2f00c226c981c672db00b0feb9f6fd79e206f58e81aeff99ef0178e2d",
+    },
+    "twitter-export": {
+        "feature.json": "1b8f4ce2b1ced089bde5b8f7afc6f97228eb2f0168400e067743d46c292b873b",
     },
     "facebook": {
         "group.json": "8570bb0ae0709deb5b89234ff1d08bab3a12dccc4ab80e0c6bfbe50702d3f680",
@@ -58,8 +100,9 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "locales/ja.json": "bab55ed5c374427f441ad3a516cdf63989dd7c2be70460785d4181fc033fcf9a",
         "locales/zh-CN.json": "1ce4dc6264663c012f80384ad7698895330f71fb87ee734ebf462bab9acb3a72",
         "locales/zh-TW.json": "1bf1853980b013db3bde67ae4fa6a81e8f69608cc9486874770b220503c75d08",
-        "provider.py": "0abf6c41c1060fc350673ec4943a6419631615caa05dcf35fc6e944960546dc4",
-        "provider.json": "b561dcce2a52090618604eb214046cb7894906c0dd7d308f607178be381ed1f7",
+        "provider.py": "6683a85d44712112b07b6ec4f22bef6f3a52f25ffd6f96b599c5a9141a3e4cd3",
+        "provider.json": "32a32a7fafca6dda47b81d3c62bda403a5c0689bf9508f163bc038a0e4b4f493",
+        "site-matrix.json": "c627b8d0492fa11b39537d67497d18e58108dd6dce57e08d4c86bb000c11ef6b",
     },
     "mega": {
         "group.json": "c541dbc81ebbdca4f949ef66419acc0f0486c02a898bd53e472b5652b865e1b6",
@@ -67,16 +110,17 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "locales/ja.json": "11415c166ee2a78818da12b7b91aae5606e23ec0a85c5c9f24b1c7a301d538c7",
         "locales/zh-CN.json": "323edbf13dff9347c81a7b5c207f62d5c4b4054fe55de6206a437d565129faf8",
         "locales/zh-TW.json": "ad832a830a86f8c8c671f3857725268e87715a48ea7952a1d13ae0dbb18397fc",
-        "provider.py": "0fc93d225cd491febc4366112131aa90b00e941011182fa05f684b507d5314c9",
+        "provider.py": "b92ed86680b15e64c972ced25dcaac92a9a9c9f70d63cda590d2f1a29cdcb5d1",
         "provider.json": "21023fe910ac917504ac37cc18f32a618a48bda988bad4c2a4171e126c554513",
+        "site-matrix.json": "96abf365969d51a5d66ac23598fa8fcc40a2cbbe6b848f7056e322311aa13fdd",
     },
     "youtube-player": {
         "provider.py": "972c899b078849b2497929d479bdeefda0b878a9f0d7d1320f0460b6942efaaa",
-        "provider.json": "1066e7d0f6ffbb1522049541013cbc8456a9b7a641ce82e862fdfa276c569ca7",
+        "provider.json": "d69745b75e0b688e3ef9cb1a1afaa31b512ec6512cadecfb15aec496ce0091ed",
     },
     "youtube-auto-split": {
         "provider.py": "654c6b416376c5c010f72c6c22e993cb408b61b74020e1e3f8bdb20fb37a66f1",
-        "provider.json": "e0244a55fe13a9fa7feee5caad1f4756556c1eb9fc891699a8101ba87a8d1bde",
+        "provider.json": "459f4faf6631165c49e93eb568afb91ab2bba0eb4c47b87dde3dadc467293a9e",
     },
     "youtube-similar": {
         "provider.py": "f1c01bc181b81fe2accacdd461a8e9ab604f1c16914be00bbcb747f333932fc4",
@@ -92,7 +136,7 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
     },
     "youtube-search": {
         "provider.py": "fbb4c9271212ea4e95d2d81c4cfd0958632ee284c9c945b6c797236d9bdb344e",
-        "provider.json": "c65f123a2bfd01a3e3b97d823abd8552ee53a9e24d9ec0ddaa0764dc44fa6819",
+        "provider.json": "9f6dd836093f3a5a549335812af2ea8d979474c453711cd8cc17253683b94254",
     },
     "youtube": {
         "group.json": "73e2bd4a2806f7bc5875bd73ba5de850783d3c1ce143e5bc95add5f39283839e",
@@ -100,9 +144,9 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "locales/ja.json": "02536cf0599ff5e866044db79812f8a147ee4775d6b019980246cf6bcd55f7ce",
         "locales/zh-CN.json": "aecb2c1652049bbc57280f4a70ab8e8912d635a7f7516b57c4a46ce7ed43472a",
         "locales/zh-TW.json": "6ab7e060426c53add0a1f9f552ff261572eb2c089d5d3d671c334958198e75b0",
-        "provider.py": "74cd9a7ced2bb62d15170651606d3d6947b88dfbffce6c596c77bd6b699d9c7f",
-        "provider.json": "872ebaf9658b712c45ba11dffdd439997674361852646ffedbf383cb0d69c3a7",
-        "site-matrix.json": "4654a003d2d835585c3a5ca8871e132830b335a4faf1a914cbb6df63e248d1fa",
+        "provider.py": "c10299a295ea2a8c4cf035d725d83aee4b2b3763aaf66d86d4d6a22a06a0e65e",
+        "provider.json": "51b6199ea2197f6364088a10301b4433ca2fd169e5a97a6d600b1f4ce61a6a9f",
+        "site-matrix.json": "1ec046c1b7d6d3e631013d825c0b5478d10f912a3a5a99eb2a0f6785f619feaf",
     }
 }
 

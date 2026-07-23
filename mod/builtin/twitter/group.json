@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "group_id": "twitter",
+  "site_family": "twitter",
+  "parent_provider_id": "twitter",
+  "locales": ["en", "ja", "zh-CN", "zh-TW"],
+  "children": [
+    {"module_id": "official-page", "provider_id": "twitter-page"},
+    {"module_id": "data-export", "provider_id": "twitter-export"}
+  ]
+}

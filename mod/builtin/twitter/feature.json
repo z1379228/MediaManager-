@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "provider_id": "twitter",
+  "display_name": "X / Twitter",
+  "kind": "site-parent",
+  "parent_provider_id": ""
+}

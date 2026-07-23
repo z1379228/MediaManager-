@@ -7,7 +7,7 @@ import re
 from urllib.parse import parse_qsl, urlsplit
 
 
-YOUTUBE_HOSTS = frozenset(
+YOUTUBE_STANDARD_HOSTS = frozenset(
     {
         "youtube.com",
         "www.youtube.com",
@@ -16,25 +16,50 @@ YOUTUBE_HOSTS = frozenset(
         "youtu.be",
     }
 )
-BILIBILI_HOSTS = frozenset(
+YOUTUBE_EMBED_HOSTS = frozenset({"www.youtube-nocookie.com"})
+YOUTUBE_KIDS_HOSTS = frozenset({"youtubekids.com", "www.youtubekids.com"})
+YOUTUBE_HOSTS = YOUTUBE_STANDARD_HOSTS | YOUTUBE_EMBED_HOSTS | YOUTUBE_KIDS_HOSTS
+BILIBILI_PLAYER_HOSTS = frozenset({"player.bilibili.com"})
+BILIBILI_MEDIA_HOSTS = frozenset(
     {
         "bilibili.com",
         "www.bilibili.com",
         "m.bilibili.com",
         "space.bilibili.com",
         "b23.tv",
+        "bilibili.tv",
+        "www.bilibili.tv",
     }
-)
+) | BILIBILI_PLAYER_HOSTS
+BILIBILI_SEARCH_HOSTS = frozenset({"search.bilibili.com"})
+BILIBILI_HOSTS = BILIBILI_MEDIA_HOSTS | BILIBILI_SEARCH_HOSTS
 FACEBOOK_HOSTS = frozenset(
     {
         "facebook.com",
         "www.facebook.com",
         "m.facebook.com",
+        "web.facebook.com",
+        "mbasic.facebook.com",
         "fb.watch",
     }
 )
 MEGA_HOSTS = frozenset({"mega.nz", "www.mega.nz"})
-ANI_GAMER_HOSTS = frozenset({"ani.gamer.com.tw"})
+INSTAGRAM_HOSTS = frozenset({"instagram.com", "www.instagram.com", "m.instagram.com"})
+THREADS_HOSTS = frozenset(
+    {"threads.com", "www.threads.com", "threads.net", "www.threads.net"}
+)
+X_HOSTS = frozenset(
+    {
+        "x.com",
+        "www.x.com",
+        "m.x.com",
+        "mobile.x.com",
+        "twitter.com",
+        "www.twitter.com",
+        "m.twitter.com",
+        "mobile.twitter.com",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +100,25 @@ def _youtube_route(host: str, path: str, query: str) -> SiteRoute | None:
         return None
     video_id = (values.get("v") or ("",))[0]
     playlist_id = (values.get("list") or ("",))[0]
+    if host in YOUTUBE_EMBED_HOSTS:
+        parts = tuple(part for part in path.split("/") if part)
+        if (
+            len(parts) == 2
+            and parts[0] == "embed"
+            and not video_id
+            and not playlist_id
+            and _valid_token(parts[1], maximum=64)
+        ):
+            return SiteRoute("youtube", "video", "youtube", "youtube-search")
+        return None
+    if host in YOUTUBE_KIDS_HOSTS:
+        if (
+            path == "/watch"
+            and not playlist_id
+            and _valid_token(video_id, maximum=64)
+        ):
+            return SiteRoute("youtube", "video", "youtube", "youtube-search")
+        return None
     if host == "youtu.be":
         parts = tuple(part for part in path.split("/") if part)
         if len(parts) != 1 or playlist_id or not _valid_token(parts[0], maximum=64):
@@ -103,9 +147,103 @@ def _youtube_route(host: str, path: str, query: str) -> SiteRoute | None:
     return None
 
 
-def _bilibili_route(host: str, path: str) -> SiteRoute | None:
+def _bilibili_route(host: str, path: str, query: str) -> SiteRoute | None:
+    if host in BILIBILI_SEARCH_HOSTS:
+        values = _query_values(query)
+        keyword = (values.get("keyword") or ("",))[0] if values is not None else ""
+        if (
+            path != "/all"
+            or values is None
+            or set(values) != {"keyword"}
+            or len(values["keyword"]) != 1
+            or not 1 <= len(keyword) <= 200
+            or not keyword.strip()
+            or any(ord(character) < 32 or ord(character) == 127 for character in keyword)
+        ):
+            return None
+        return SiteRoute("bilibili", "search-page", None, "bilibili-search")
+    if host in BILIBILI_PLAYER_HOSTS:
+        allowed = {
+            "aid",
+            "cid",
+            "poster",
+            "autoplay",
+            "muted",
+            "t",
+            "danmaku",
+            "kind",
+            "refer",
+            "p",
+        }
+        raw_fields = tuple(part.partition("=") for part in query.split("&"))
+        raw_aids = tuple(
+            value for key, separator, value in raw_fields if key == "aid" and separator
+        )
+        if (
+            any(
+                separator != "=" or key not in allowed
+                for key, separator, _value in raw_fields
+            )
+            or len(raw_aids) != 1
+            or re.fullmatch(r"[0-9]{1,20}", raw_aids[0]) is None
+            or int(raw_aids[0]) <= 0
+        ):
+            return None
+        values = _query_values(query)
+        if (
+            path != "/player.html"
+            or values is None
+            or not values
+            or set(values) - allowed
+            or any(len(items) != 1 for items in values.values())
+        ):
+            return None
+        aid = (values.get("aid") or ("",))[0]
+        if (
+            not aid.isascii()
+            or not aid.isdigit()
+            or not 1 <= len(aid) <= 20
+            or int(aid) <= 0
+        ):
+            return None
+        for name in ("cid", "t", "kind", "p"):
+            value = (values.get(name) or ("",))[0]
+            if value and (
+                not value.isascii()
+                or not value.isdigit()
+                or len(value) > 20
+                or int(value) <= 0
+            ):
+                return None
+        for name in ("poster", "autoplay", "muted", "danmaku", "refer"):
+            value = (values.get(name) or ("",))[0]
+            if value and value not in {"0", "1"}:
+                return None
+        return SiteRoute(
+            "bilibili",
+            "embedded-video",
+            "bilibili",
+            "bilibili-search",
+        )
     parts = tuple(part for part in path.split("/") if part)
-    if host == "b23.tv" and len(parts) == 1 and _valid_token(parts[0], maximum=64):
+    if host in {"bilibili.tv", "www.bilibili.tv"}:
+        localized = parts[1:] if parts and re.fullmatch(r"[a-z]{2}", parts[0]) else parts
+        if (
+            len(localized) == 2
+            and localized[0] == "video"
+            and localized[1].isascii()
+            and localized[1].isdigit()
+        ):
+            kind = "video"
+        elif (
+            len(localized) == 3
+            and localized[0] == "play"
+            and all(part.isascii() and part.isdigit() for part in localized[1:])
+        ):
+            kind = "episode"
+        else:
+            return None
+    elif host == "b23.tv" and len(parts) == 1 and _valid_token(parts[0], maximum=64):
         kind = "short-link"
     elif host == "space.bilibili.com" and parts and parts[0].isdigit():
         kind = "creator"
@@ -172,27 +310,53 @@ def _mega_route(path: str, query: str, fragment: str) -> SiteRoute | None:
     return SiteRoute("mega", kind, "mega", None)
 
 
-def _ani_gamer_route(path: str, query: str) -> SiteRoute | None:
-    values = _query_values(query)
-    if values is None:
+def _social_route(site_family: str, path: str, query: str) -> SiteRoute | None:
+    """Route official social pages without treating them as download URLs."""
+
+    if query:
         return None
-    serial = (values.get("sn") or ("",))[0]
-    if not serial.isascii() or not serial.isdigit() or not 1 <= len(serial) <= 16:
+    parts = tuple(part for part in path.split("/") if part)
+    if site_family == "instagram":
+        if (
+            len(parts) == 2
+            and parts[0] in {"p", "reel", "tv"}
+            and re.fullmatch(r"[A-Za-z0-9_-]{4,100}", parts[1])
+        ):
+            return SiteRoute(site_family, "official-media", None, None)
         return None
-    if path == "/animeRef.php":
-        kind = "series"
-        download_provider = None
-    elif path == "/animeVideo.php":
-        kind = "episode"
-        download_provider = "ani-gamer-offline"
-    else:
+    if site_family == "threads":
+        if (
+            len(parts) == 3
+            and parts[0].startswith("@")
+            and re.fullmatch(r"@[A-Za-z0-9._-]{1,100}", parts[0])
+            and parts[1] == "post"
+            and re.fullmatch(r"[A-Za-z0-9_-]{4,100}", parts[2])
+        ):
+            return SiteRoute(site_family, "official-post", None, None)
         return None
-    return SiteRoute(
-        "ani-gamer",
-        kind,
-        download_provider,
-        "ani-gamer-search",
-    )
+    if site_family == "twitter":
+        if (
+            len(parts) == 3
+            and re.fullmatch(r"[A-Za-z0-9_]{1,50}", parts[0])
+            and parts[1] == "status"
+            and parts[2].isdigit()
+            and 1 <= len(parts[2]) <= 32
+        ):
+            return SiteRoute(site_family, "official-post", None, None)
+        if (
+            len(parts) == 3
+            and parts[:2] == ("i", "web")
+            and parts[2] == "status"
+        ):
+            return None
+        if (
+            len(parts) == 4
+            and parts[:3] == ("i", "web", "status")
+            and parts[3].isdigit()
+            and 1 <= len(parts[3]) <= 32
+        ):
+            return SiteRoute(site_family, "official-post", None, None)
+    return None
 
 
 def classify_site_url(value: object) -> SiteRoute | None:
@@ -225,9 +389,13 @@ def classify_site_url(value: object) -> SiteRoute | None:
     if host in YOUTUBE_HOSTS:
         return _youtube_route(host, parsed.path, parsed.query)
     if host in BILIBILI_HOSTS:
-        return _bilibili_route(host, parsed.path)
+        return _bilibili_route(host, parsed.path, parsed.query)
     if host in FACEBOOK_HOSTS:
         return _facebook_route(host, parsed.path, parsed.query)
-    if host in ANI_GAMER_HOSTS:
-        return _ani_gamer_route(parsed.path, parsed.query)
+    if host in INSTAGRAM_HOSTS:
+        return _social_route("instagram", parsed.path, parsed.query)
+    if host in THREADS_HOSTS:
+        return _social_route("threads", parsed.path, parsed.query)
+    if host in X_HOSTS:
+        return _social_route("twitter", parsed.path, parsed.query)
     return None

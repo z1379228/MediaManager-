@@ -5,11 +5,30 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from contracts._additive_result import (
+    AdditiveResultError,
+    validate_additive_result,
+)
 from contracts.discovery_v1 import DiscoveryItemV1
 
 
 class HistoryContractError(ValueError):
     pass
+
+
+_HISTORY_EVENT_FIELDS = frozenset(
+    {"event_type", "query", "timestamp", "item"}
+)
+_HISTORY_PREFERENCE_FIELDS = frozenset(
+    {
+        "total_searches",
+        "total_selections",
+        "content_types",
+        "languages",
+        "artists",
+        "categories",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,9 +40,13 @@ class HistoryEventV1:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "HistoryEventV1":
-        required = {"event_type", "query", "timestamp", "item"}
-        if not isinstance(raw, dict) or set(raw) != required:
-            raise HistoryContractError("history event fields invalid")
+        try:
+            validate_additive_result(
+                raw,
+                required_fields=_HISTORY_EVENT_FIELDS,
+            )
+        except AdditiveResultError as exc:
+            raise HistoryContractError("history event fields invalid") from exc
         if raw["event_type"] not in {"search", "selection"}:
             raise HistoryContractError("history event type invalid")
         query, timestamp = raw["query"], raw["timestamp"]
@@ -51,12 +74,15 @@ class HistoryPreferencesV1:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "HistoryPreferencesV1":
-        required = {
-            "total_searches", "total_selections", "content_types",
-            "languages", "artists", "categories",
-        }
-        if not isinstance(raw, dict) or set(raw) != required:
-            raise HistoryContractError("history preferences fields invalid")
+        try:
+            validate_additive_result(
+                raw,
+                required_fields=_HISTORY_PREFERENCE_FIELDS,
+            )
+        except AdditiveResultError as exc:
+            raise HistoryContractError(
+                "history preferences fields invalid"
+            ) from exc
         if not all(
             isinstance(raw[key], int) and 0 <= raw[key] <= 100000
             for key in ("total_searches", "total_selections")
@@ -72,4 +98,11 @@ class HistoryPreferencesV1:
                 for key, value in values.items()
             ):
                 raise HistoryContractError("history preference counters invalid")
-        return cls(**raw)
+        return cls(
+            total_searches=raw["total_searches"],
+            total_selections=raw["total_selections"],
+            content_types=raw["content_types"],
+            languages=raw["languages"],
+            artists=raw["artists"],
+            categories=raw["categories"],
+        )

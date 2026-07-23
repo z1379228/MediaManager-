@@ -79,11 +79,13 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
         QHBoxLayout,
         QHeaderView,
         QLabel,
+        QLayout,
         QLineEdit,
         QMessageBox,
         QPlainTextEdit,
         QProgressBar,
         QPushButton,
+        QScrollArea,
         QSpinBox,
         QTableWidget,
         QTableWidgetItem,
@@ -119,9 +121,23 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             self.workspace_title = QLabel(self.workspace_text["title"])
             self.workspace_title.setObjectName("sectionTitle")
 
-            page = QVBoxLayout(self)
+            shell = QVBoxLayout(self)
+            shell.setContentsMargins(0, 0, 0, 0)
+            self.scroll_area = QScrollArea()
+            self.scroll_area.setObjectName("workspaceScroll")
+            self.scroll_area.setAccessibleName("MEGA 下載工作區捲動內容")
+            self.scroll_area.setWidgetResizable(True)
+            self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+            self.scroll_area.setHorizontalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            )
+            self.scroll_content = QWidget()
+            page = QVBoxLayout(self.scroll_content)
+            page.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
             page.setContentsMargins(2, 4, 2, 2)
             page.setSpacing(12)
+            self.scroll_area.setWidget(self.scroll_content)
+            shell.addWidget(self.scroll_area)
 
             heading = QHBoxLayout()
             titles = QVBoxLayout()
@@ -197,9 +213,9 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             input_layout.addLayout(classification_row)
 
             filename_row = QHBoxLayout()
-            filename_label = QLabel("指定檔名（選填）")
-            filename_label.setObjectName("fieldLabel")
-            filename_row.addWidget(filename_label)
+            self.filename_label = QLabel("指定檔名（僅單檔選填）")
+            self.filename_label.setObjectName("fieldLabel")
+            filename_row.addWidget(self.filename_label)
             self.output_filename = QLineEdit()
             self.output_filename.setMaxLength(180)
             self.output_filename.setPlaceholderText(
@@ -258,8 +274,8 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             )
             self.transfer_note.setObjectName("dependencySummary")
             self.transfer_note.setWordWrap(True)
-            split_controls.addWidget(self.transfer_note, 1)
             split_layout.addLayout(split_controls)
+            split_layout.addWidget(self.transfer_note)
             input_layout.addWidget(split_card)
 
             action_row = QHBoxLayout()
@@ -283,7 +299,7 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             self.table = QTableWidget(0, 5)
             self.table.setAccessibleName("MEGA 下載工作佇列")
             self.table.setHorizontalHeaderLabels(
-                ["MEGA 檔案 / 網址", "狀態", "進度", "速度", "剩餘"]
+                ["MEGA 檔案／資料夾 / 網址", "狀態", "進度", "速度", "剩餘"]
             )
             self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
             self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -299,6 +315,7 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
             self.table.itemSelectionChanged.connect(self.update_action_state)
+            self.table.setMinimumHeight(190)
             page.addWidget(self.table, 1)
 
             controls = QHBoxLayout()
@@ -441,12 +458,19 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
                 and bool(urls)
                 and not too_many
                 and invalid == 0
-                and folders == 0
-                and files == len(urls)
+                and files + folders == len(urls)
                 and self.mega_get_available
                 and (not self.custom_transfer.isChecked() or self.mega_speedlimit_available)
             )
             self.add_download.setEnabled(can_download)
+            filename_available = len(urls) == 1 and files == 1 and folders == 0
+            self.output_filename.setEnabled(filename_available)
+            self.filename_label.setEnabled(filename_available)
+            self.output_filename.setToolTip(
+                ""
+                if filename_available
+                else "整個資料夾或批量工作會沿用 MEGA 提供的名稱"
+            )
             if not urls:
                 message = "尚未輸入 MEGA 公開分享網址。"
             elif too_many:
@@ -456,7 +480,7 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             elif folders:
                 message = (
                     f"已辨識 {folders} 個公開資料夾、{files} 個公開檔案；"
-                    "資料夾下載尚未開放，避免不完整遞迴與輸出驗證錯誤。"
+                    "資料夾會由官方 mega-get 完整下載，完成後驗證本機樹狀輸出。"
                 )
             else:
                 message = f"已辨識 {files} 個公開檔案，可加入 MEGA 專屬佇列。"
@@ -547,34 +571,44 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             if (
                 not urls
                 or len(urls) > 50
-                or folders
                 or invalid
-                or files != len(urls)
+                or files + folders != len(urls)
             ):
                 QMessageBox.information(
                     self,
                     "MEGA 下載",
-                    "只會加入最多 50 個完整的 MEGA 公開檔案連結；資料夾目前不下載。",
+                    "只會加入最多 50 個完整的 MEGA 公開檔案或資料夾連結。",
                 )
                 return
             filename = self.output_filename.text().strip()
-            if filename and len(urls) != 1:
+            if filename and (len(urls) != 1 or folders):
                 QMessageBox.information(
-                    self, "MEGA 檔名", "批量下載時請留空指定檔名，避免多個工作互相覆蓋。"
+                    self,
+                    "MEGA 檔名",
+                    "批量或資料夾下載請留空指定檔名，避免輸出樹互相覆蓋。",
                 )
                 return
             try:
-                requests = tuple(
-                    DownloadRequest(
-                        url=url,
-                        output_dir=Path(self.output.text()),
-                        priority=int(self.priority.currentData()),
-                        output_filename=filename,
-                        source_category="mega-file",
-                        provider_options=self._provider_options(),
+                requests = []
+                for url in urls:
+                    route = classify_site_url(url)
+                    if route is None or route.site_family != "mega":
+                        raise ValueError("MEGA 網址分類已失效")
+                    requests.append(
+                        DownloadRequest(
+                            url=url,
+                            output_dir=Path(self.output.text()),
+                            priority=int(self.priority.currentData()),
+                            output_filename=filename,
+                            source_category=(
+                                "mega-folder"
+                                if route.resource_kind == "public-folder"
+                                else "mega-file"
+                            ),
+                            provider_options=self._provider_options(),
+                        )
                     )
-                    for url in urls
-                )
+                requests = tuple(requests)
                 preflight_download_batch(requests)
             except (OSError, TypeError, ValueError, RuntimeError) as error:
                 QMessageBox.warning(self, "MEGA 下載設定無效", str(error))
@@ -588,7 +622,7 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             answer = QMessageBox.question(
                 self,
                 "確認 MEGA 下載",
-                f"公開檔案：{len(requests)} 個\n"
+                f"公開檔案：{files} 個；公開資料夾：{folders} 個\n"
                 f"分流：{transfer_text}\n"
                 f"輸出：{self.output.text()}\n\n"
                 "檔名與實際檔案類型會由官方 MEGAcmd 下載結果確認。",
@@ -651,10 +685,11 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             state_labels = {
                 DownloadState.QUEUED: "等待中",
                 DownloadState.RUNNING: "下載中",
+                DownloadState.RETRYING: "等待重試",
                 DownloadState.PAUSED: "已暫停",
                 DownloadState.COMPLETED: "已完成",
                 DownloadState.FAILED: "失敗",
-                DownloadState.CANCELLED: "已停止",
+                DownloadState.CANCELLED: "已取消",
             }
             for row, task in enumerate(tasks):
                 title = task.title or task.request.output_filename or task.request.url
@@ -676,7 +711,12 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
                 if task.task_id == selected_id:
                     self.table.selectRow(row)
             active = sum(
-                task.state in {DownloadState.QUEUED, DownloadState.RUNNING}
+                task.state
+                in {
+                    DownloadState.QUEUED,
+                    DownloadState.RUNNING,
+                    DownloadState.RETRYING,
+                }
                 for task in tasks
             )
             failed = sum(task.state is DownloadState.FAILED for task in tasks)
@@ -694,12 +734,14 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             self.pause_button.setText(
                 "繼續" if state is DownloadState.PAUSED else "暫停"
             )
-            self.pause_button.setEnabled(
-                state in {DownloadState.QUEUED, DownloadState.PAUSED}
-            )
-            self.cancel_button.setEnabled(
-                state in {DownloadState.QUEUED, DownloadState.PAUSED}
-            )
+            controllable = {
+                DownloadState.QUEUED,
+                DownloadState.RUNNING,
+                DownloadState.RETRYING,
+                DownloadState.PAUSED,
+            }
+            self.pause_button.setEnabled(state in controllable)
+            self.cancel_button.setEnabled(state in controllable)
             self.open_result_button.setEnabled(
                 safe_task_output_path(task) is not None if task else False
             )
@@ -730,7 +772,8 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             task = self.selected_task()
             output = safe_task_output_path(task) if task else None
             if output is not None:
-                QDesktopServices.openUrl(QUrl.fromLocalFile(str(output.parent)))
+                target = output if output.is_dir() else output.parent
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
 
         def apply_search_result_metadata(self, payload: object) -> None:
             if not isinstance(payload, dict):

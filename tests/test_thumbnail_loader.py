@@ -110,3 +110,34 @@ def test_thumbnail_loader_cancels_pending_replies(monkeypatch) -> None:
     assert reply.aborted
     loader.deleteLater()
     app.processEvents()
+
+
+def test_thumbnail_loader_shutdown_releases_cache_and_pending_replies(monkeypatch) -> None:
+    import pytest
+
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    class Reply:
+        def isRunning(self) -> bool:
+            return True
+
+        def abort(self) -> None:
+            self.aborted = True
+
+    app = QApplication.instance() or QApplication([])
+    loader = create_thumbnail_loader()
+    reply = Reply()
+    loader.cache["https://i.ytimg.com/example.jpg"] = object()
+    loader.pending["https://i.ytimg.com/example.jpg"] = [lambda _: None]
+    loader.replies["https://i.ytimg.com/example.jpg"] = reply
+
+    loader.shutdown()
+
+    assert loader.cache == {}
+    assert loader.pending == {}
+    assert loader.replies == {}
+    assert reply.aborted
+    loader.deleteLater()
+    app.processEvents()

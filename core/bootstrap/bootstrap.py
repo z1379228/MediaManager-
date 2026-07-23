@@ -7,7 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeVar
 
-from core.builtin_mod_catalog import builtin_default_enabled, builtin_mod_descriptor
+from core.builtin_mod_catalog import (
+    BUILTIN_MOD_CHILDREN,
+    builtin_default_enabled,
+    builtin_mod_descriptor,
+)
 from core.bootstrap.lifecycle import Lifecycle
 from core.bootstrap.startup_state import StartupPhase, StartupState
 from core.downloads.builtin import (
@@ -16,6 +20,7 @@ from core.downloads.builtin import (
 )
 from core.dependency_health import find_executable, find_javascript_runtime
 from core.dependency_snapshot import DependencySnapshotService
+from core.builtin_mod_snapshot import BuiltinModSnapshot
 from core.discovery.service import DiscoveryService
 from core.downloads.capabilities import builtin_download_capability
 from core.downloads.builtin_integrity import BUILTIN_PROVIDER_HASHES
@@ -24,17 +29,18 @@ from core.downloads.queue import DownloadQueue
 from core.downloads.subprocess_provider import SubprocessDownloadProvider
 from core.events.event_bus import EventBus
 from core.features import DeclarativeFeatureGate, FeatureModRegistry
-from core.conversion import ConversionService
+from core.conversion import ConversionService, MediaAdTrimFeature
 from core.transcription import SpeechModelManager, TranscriptionService
+from core.transfers import GopeedBridgeService, P2PTransferService
 from core.automation import AutomationCandidate, AutomationDuplicate, AutomationRule, AutomationService
 from core.downloads.archive import DuplicateDownloadError
 from core.downloads.models import DownloadRequest
 from core.logging.audit_log import AuditLog
 from core.logging.logger import configure_logging
 from core.library import LibraryService
-from core.mod_groups import SITE_MOD_CHILDREN
 from core.plugins.cleanup import PluginCleanupManager
 from core.plugins.installer import PluginInstaller
+from core.plugins.lifecycle import PluginLifecycleLock
 from core.plugins.manager import PluginManager
 from core.plugins.maintenance import PluginMaintenanceManager
 from core.plugins.recovery import PluginTransactionRecovery
@@ -48,8 +54,15 @@ from core.security.publisher_manager import PublisherManager
 from core.security.release_key import RELEASE_KEY_ID, RELEASE_PUBLIC_KEY
 from core.security.safe_mode import SafeMode, SecurityMode
 from core.security.trust_store import TrustStore
+from core.site_routing import (
+    BILIBILI_MEDIA_HOSTS,
+    FACEBOOK_HOSTS,
+    MEGA_HOSTS,
+    YOUTUBE_HOSTS,
+)
 from core.settings import (
     Settings,
+    SettingsLoadResult,
     SettingsService,
     normalized_download_workers,
     normalized_language,
@@ -62,7 +75,7 @@ from core.version import BUILD_CHANNEL
 _BUILTIN_DOWNLOAD_DETAILS = {
     "youtube": (
         "YouTube",
-        ("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"),
+        tuple(sorted(YOUTUBE_HOSTS)),
     ),
     "generic-ytdlp": (
         "其他網站 Beta",
@@ -72,42 +85,41 @@ _BUILTIN_DOWNLOAD_DETAILS = {
             "player.vimeo.com",
             "dailymotion.com",
             "www.dailymotion.com",
+            "geo.dailymotion.com",
             "dai.ly",
             "soundcloud.com",
             "www.soundcloud.com",
+            "m.soundcloud.com",
             "on.soundcloud.com",
+            "w.soundcloud.com",
             "tiktok.com",
             "www.tiktok.com",
             "m.tiktok.com",
             "vm.tiktok.com",
+            "vt.tiktok.com",
             "twitch.tv",
             "www.twitch.tv",
             "m.twitch.tv",
             "clips.twitch.tv",
-            "x.com",
-            "www.x.com",
-            "twitter.com",
-            "www.twitter.com",
-            "mobile.twitter.com",
+            "player.twitch.tv",
+            "go.twitch.tv",
         ),
     ),
     "bilibili": (
         "Bilibili",
-        (
-            "bilibili.com",
-            "www.bilibili.com",
-            "m.bilibili.com",
-            "space.bilibili.com",
-            "b23.tv",
-        ),
+        tuple(sorted(BILIBILI_MEDIA_HOSTS)),
     ),
     "facebook": (
         "Facebook",
-        ("facebook.com", "www.facebook.com", "m.facebook.com", "fb.watch"),
+        tuple(sorted(FACEBOOK_HOSTS)),
     ),
     "mega": (
         "MEGA",
-        ("mega.nz", "www.mega.nz"),
+        tuple(sorted(MEGA_HOSTS)),
+    ),
+    "direct-http": (
+        "Direct HTTP",
+        ("direct-http.invalid",),
     ),
 }
 _BuiltinT = TypeVar("_BuiltinT")
@@ -116,6 +128,7 @@ _BuiltinT = TypeVar("_BuiltinT")
 @dataclass(slots=True)
 class AppContext:
     settings: Settings
+    settings_load: SettingsLoadResult
     paths: AppPaths
     logger: object
     events: EventBus
@@ -128,7 +141,6 @@ class AppContext:
     discovery: DiscoveryService
     plugin_registry: PluginRegistry
     plugin_installer: PluginInstaller
-    plugin_supervisor: PluginSupervisor
     plugin_manager: PluginManager
     plugin_cleanup: PluginCleanupManager
     plugin_maintenance: PluginMaintenanceManager
@@ -144,7 +156,10 @@ class AppContext:
     conversion: ConversionService | None
     transcription: TranscriptionService | None
     automation: AutomationService | None
+    gopeed: GopeedBridgeService | None
+    p2p_transfer: P2PTransferService | None
     dependencies: DependencySnapshotService
+    builtin_mod_snapshot: BuiltinModSnapshot | None = None
 
 
 class Bootstrap:
@@ -196,7 +211,8 @@ class Bootstrap:
         dependencies = DependencySnapshotService(paths.application, paths.data)
         self.state.advance(StartupPhase.PATHS_READY, "runtime paths ready")
         settings_service = SettingsService(paths.settings / "settings.json")
-        settings = settings_service.load()
+        settings_load = settings_service.load_with_status()
+        settings = settings_load.settings
         settings.portable_mode = self.portable
         settings.language = normalized_language(settings.language)
         settings.download_workers = normalized_download_workers(
@@ -205,6 +221,12 @@ class Bootstrap:
         self.state.advance(StartupPhase.SETTINGS_READY, "settings loaded")
         logger = configure_logging(paths.logs, settings.log_level)
         audit = AuditLog(paths.logs / "audit.jsonl")
+        audit.write(
+            "settings.loaded",
+            state=settings_load.state,
+            writable=settings_load.writable,
+            diagnostic_codes=settings_load.diagnostics,
+        )
         self.state.advance(StartupPhase.LOGGING_READY, "secure logging ready")
         security, trust_store = self._security_state(paths)
         audit.write("security.bootstrap", mode=security.mode, reason=security.reason)
@@ -221,6 +243,8 @@ class Bootstrap:
         conversion: ConversionService | None = None
         transcription: TranscriptionService | None = None
         automation: AutomationService | None = None
+        gopeed: GopeedBridgeService | None = None
+        p2p_transfer: P2PTransferService | None = None
         builtin_mod_errors: dict[str, str] = {}
         discovery = DiscoveryService(paths.mod / "discovery-state.json")
         javascript_runtime = find_javascript_runtime(paths.application)
@@ -369,6 +393,25 @@ class Bootstrap:
                 builtin_download_capability("mega")
             )
 
+        direct_http = load_builtin(
+            "direct-http",
+            lambda provider_root: SubprocessDownloadProvider(
+                provider_root,
+                application_root=paths.application,
+                expected_hashes=BUILTIN_PROVIDER_HASHES["direct-http"],
+                download_timeout=86_400,
+                idle_timeout=300,
+                runtime_home=paths.temp / "provider-runtime" / "direct-http",
+            ),
+        )
+        if direct_http is not None:
+            download_providers.register(
+                direct_http, enabled=builtin_default_enabled("direct-http")
+            )
+            download_providers.register_capability(
+                builtin_download_capability("direct-http")
+            )
+
         youtube_search = load_builtin(
             "youtube-search",
             lambda provider_root: SubprocessDownloadProvider(
@@ -400,47 +443,28 @@ class Bootstrap:
                 enabled=builtin_default_enabled("bilibili-search"),
             )
 
-        ani_gamer_search = load_builtin(
-            "ani-gamer-search",
-            lambda provider_root: SubprocessDownloadProvider(
-                provider_root,
-                application_root=paths.application,
-                expected_hashes=BUILTIN_PROVIDER_HASHES["ani-gamer-search"],
-                runtime_home=paths.temp / "provider-runtime" / "ani-gamer-search",
-            ),
-        )
-        if ani_gamer_search is not None:
-            discovery.register(
-                ani_gamer_search,
-                enabled=builtin_default_enabled("ani-gamer-search"),
+        for feature_id in (
+            "instagram",
+            "instagram-page",
+            "instagram-export",
+            "threads",
+            "threads-page",
+            "threads-export",
+            "twitter",
+            "twitter-page",
+            "twitter-export",
+        ):
+            social_feature = load_builtin(
+                feature_id,
+                lambda provider_root: DeclarativeFeatureGate.from_file(
+                    provider_root / "feature.json"
+                ),
             )
-
-        ani_gamer_episodes = load_builtin(
-            "ani-gamer-episodes",
-            lambda provider_root: SubprocessDownloadProvider(
-                provider_root,
-                application_root=paths.application,
-                expected_hashes=BUILTIN_PROVIDER_HASHES["ani-gamer-episodes"],
-                runtime_home=paths.temp / "provider-runtime" / "ani-gamer-episodes",
-            ),
-        )
-        if ani_gamer_episodes is not None:
-            discovery.register(
-                ani_gamer_episodes,
-                enabled=builtin_default_enabled("ani-gamer-episodes"),
-            )
-
-        ani_gamer = load_builtin(
-            "ani-gamer",
-            lambda provider_root: DeclarativeFeatureGate.from_file(
-                provider_root / "feature.json"
-            ),
-        )
-        if ani_gamer is not None:
-            features.register(
-                ani_gamer,
-                enabled=builtin_default_enabled("ani-gamer"),
-            )
+            if social_feature is not None:
+                features.register(
+                    social_feature,
+                    enabled=builtin_default_enabled(feature_id),
+                )
 
         bilibili_danmaku = load_builtin(
             "bilibili-danmaku",
@@ -541,6 +565,7 @@ class Bootstrap:
                 find_executable(paths.application, "ffmpeg"),
                 provider_root / "presets.json",
                 paths.temp / "media-convert",
+                ffprobe=find_executable(paths.application, "ffprobe"),
             ),
         )
         if conversion is not None:
@@ -548,6 +573,15 @@ class Bootstrap:
                 conversion,
                 enabled=builtin_default_enabled("media-convert"),
             )
+            media_ad_trim = load_builtin(
+                "media-ad-trim",
+                lambda _provider_root: MediaAdTrimFeature(conversion),
+            )
+            if media_ad_trim is not None:
+                features.register(
+                    media_ad_trim,
+                    enabled=builtin_default_enabled("media-ad-trim"),
+                )
 
         transcription = load_builtin(
             "speech-to-text",
@@ -562,6 +596,25 @@ class Bootstrap:
                 transcription,
                 enabled=builtin_default_enabled("speech-to-text"),
             )
+
+        gopeed = load_builtin(
+            "gopeed-transfer",
+            lambda _provider_root: GopeedBridgeService(),
+        )
+        if gopeed is not None:
+            features.register(
+                gopeed,
+                enabled=builtin_default_enabled("gopeed-transfer"),
+            )
+            p2p_transfer = load_builtin(
+                "p2p-transfer",
+                lambda _provider_root: P2PTransferService(gopeed),
+            )
+            if p2p_transfer is not None:
+                features.register(
+                    p2p_transfer,
+                    enabled=builtin_default_enabled("p2p-transfer"),
+                )
         automation_root = load_builtin("automation", lambda provider_root: provider_root)
         download_queue = DownloadQueue(
             download_providers,
@@ -572,7 +625,13 @@ class Bootstrap:
         if start_background:
             download_queue.start()
         plugin_registry = PluginRegistry(paths.plugin_registry)
-        plugin_installer = PluginInstaller(paths.mod, plugin_registry, trust_store)
+        plugin_lifecycle_lock = PluginLifecycleLock(paths.mod)
+        plugin_installer = PluginInstaller(
+            paths.mod,
+            plugin_registry,
+            trust_store,
+            lifecycle_lock=plugin_lifecycle_lock,
+        )
         plugin_supervisor = PluginSupervisor(paths.mod, plugin_registry)
         plugin_manager = PluginManager(
             paths.mod,
@@ -580,6 +639,7 @@ class Bootstrap:
             plugin_supervisor,
             trust_store,
             allow_executable_plugins=False,
+            lifecycle_lock=plugin_lifecycle_lock,
         )
         if automation_root is not None:
             def dispatch_automation(
@@ -635,9 +695,19 @@ class Bootstrap:
                     suffixes = {
                         "audio-mp3": ".mp3",
                         "audio-flac": ".flac",
+                        "audio-aac": ".m4a",
+                        "audio-opus": ".opus",
+                        "audio-wav": ".wav",
                         "subtitle-srt": ".srt",
                         "video-h264": ".mp4",
                         "compress-h265": ".mkv",
+                        "video-vp9-webm": ".webm",
+                        "video-mpeg4-avi": ".avi",
+                        "image-png": ".png",
+                        "image-jpeg": ".jpg",
+                        "image-webp": ".webp",
+                        "image-bmp": ".bmp",
+                        "image-tiff": ".tiff",
                     }
                     suffix = suffixes.get(conversion_preset, source.suffix)
                     target = output_dir / f"{source.stem}.converted{suffix}"
@@ -677,8 +747,8 @@ class Bootstrap:
                 automation = None
 
         # Flat-MOD builds allowed saved child states to outlive a disabled
-        # site parent. Reconcile every registry after all site feature gates
-        # are registered and before any trusted UI is created.
+        # parent. Reconcile every registry after all feature gates are
+        # registered and before any trusted UI is created.
         def builtin_registry(provider_id: str) -> object:
             kind = builtin_mod_descriptor(provider_id).kind
             return {
@@ -687,7 +757,7 @@ class Bootstrap:
                 "feature": features,
             }[kind]
 
-        for parent_id, child_ids in SITE_MOD_CHILDREN.items():
+        for parent_id, child_ids in BUILTIN_MOD_CHILDREN.items():
             try:
                 parent_enabled = builtin_registry(parent_id).is_enabled(parent_id)
             except (AttributeError, KeyError, RuntimeError):
@@ -702,7 +772,11 @@ class Bootstrap:
                     child_enabled = False
                 if child_enabled:
                     child_registry.set_enabled(child_id, False)
-        plugin_cleanup = PluginCleanupManager(paths.mod, plugin_registry)
+        plugin_cleanup = PluginCleanupManager(
+            paths.mod,
+            plugin_registry,
+            lifecycle_lock=plugin_lifecycle_lock,
+        )
         plugin_recovery = PluginTransactionRecovery(
             paths.mod, plugin_registry, plugin_manager
         )
@@ -740,13 +814,20 @@ class Bootstrap:
             key_id=RELEASE_KEY_ID,
         )
         plugin_maintenance = PluginMaintenanceManager(
-            paths.mod, plugin_registry, plugin_manager
+            paths.mod,
+            plugin_registry,
+            plugin_manager,
         )
         plugin_updater = PluginUpdater(
-            paths.mod, plugin_registry, plugin_installer, plugin_manager
+            paths.mod,
+            plugin_registry,
+            plugin_installer,
+            plugin_manager,
         )
         plugin_rollback = PluginRollbackManager(
-            paths.mod, plugin_registry, plugin_manager
+            paths.mod,
+            plugin_registry,
+            plugin_manager,
         )
         plugin_ui = PluginUIService(
             paths.mod,
@@ -763,21 +844,25 @@ class Bootstrap:
         lifecycle.on_shutdown(features.close)
         started_plugins: list[str] = []
         if security.mode is SecurityMode.NORMAL:
-            for record in plugin_registry.list_enabled():
-                result = plugin_manager.set_enabled(
-                    record.plugin_id, True, security.mode
-                )
+            for plugin_id, result in plugin_manager.start_enabled(security.mode):
                 if result.successful:
-                    started_plugins.append(record.plugin_id)
+                    started_plugins.append(plugin_id)
                 else:
                     audit.write(
                         "plugin.start_rejected",
-                        plugin_id=record.plugin_id,
+                        plugin_id=plugin_id,
                         errors=result.errors,
                     )
         audit.write("plugins.started", plugin_ids=started_plugins)
+        builtin_mod_snapshot = BuiltinModSnapshot.capture(
+            download_providers,
+            discovery,
+            features,
+            builtin_mod_errors,
+        )
         context = AppContext(
             settings=settings,
+            settings_load=settings_load,
             paths=paths,
             logger=logger,
             events=EventBus(),
@@ -790,7 +875,6 @@ class Bootstrap:
             discovery=discovery,
             plugin_registry=plugin_registry,
             plugin_installer=plugin_installer,
-            plugin_supervisor=plugin_supervisor,
             plugin_manager=plugin_manager,
             plugin_cleanup=plugin_cleanup,
             plugin_maintenance=plugin_maintenance,
@@ -806,7 +890,10 @@ class Bootstrap:
             conversion=conversion,
             transcription=transcription,
             automation=automation,
+            gopeed=gopeed,
+            p2p_transfer=p2p_transfer,
             dependencies=dependencies,
+            builtin_mod_snapshot=builtin_mod_snapshot,
         )
         self.state.advance(StartupPhase.READY, "core ready")
         return context

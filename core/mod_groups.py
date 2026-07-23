@@ -22,7 +22,9 @@ SITE_MOD_CHILDREN = {
         "youtube-auto-split",
     ),
     "bilibili": ("bilibili-search", "bilibili-danmaku"),
-    "ani-gamer": ("ani-gamer-search", "ani-gamer-episodes"),
+    "instagram": ("instagram-page", "instagram-export"),
+    "threads": ("threads-page", "threads-export"),
+    "twitter": ("twitter-page", "twitter-export"),
     "facebook": (),
     "mega": (),
 }
@@ -34,6 +36,7 @@ SITE_MOD_PARENT = {
 
 _ID = re.compile(r"^[a-z][a-z0-9-]{1,63}$")
 _MODULE_ID = re.compile(r"^[a-z][a-z0-9-]{1,31}$")
+_DEFAULT_MAX_UI_STRINGS = 128
 _WORKSPACE_KEYS = frozenset(
     {
         "title",
@@ -189,7 +192,10 @@ def load_builtin_mod_group(
     raw_ui = translation.get("ui", {})
     if (
         not isinstance(raw_ui, dict)
-        or len(raw_ui) > 96
+        # Site MODs may expose a compact menu plus localized safety/status
+        # messages. Keep the resource bounded while leaving room for those
+        # controls without forcing translations into the core.
+        or len(raw_ui) > _DEFAULT_MAX_UI_STRINGS
         or not all(
             isinstance(key, str)
             and re.fullmatch(r"[a-z][a-z0-9_]{1,63}", key)

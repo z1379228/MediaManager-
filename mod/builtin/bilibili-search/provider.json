@@ -2,7 +2,7 @@
   "provider_id": "bilibili-search",
   "display_name": "Bilibili Search",
   "entry_point": "provider.py",
-  "url_hosts": ["api.bilibili.com", "bilibili.com", "www.bilibili.com"],
+  "url_hosts": ["api.bilibili.com", "bilibili.com", "www.bilibili.com", "search.bilibili.com"],
   "permissions": ["network.bilibili"],
   "search_capability": {
     "provider_id": "bilibili-search",

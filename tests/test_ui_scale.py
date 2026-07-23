@@ -37,6 +37,14 @@ def test_ui_scale_is_normalized_and_changes_font_density() -> None:
     assert "QFileDialog" in application_stylesheet()
 
 
+def test_tree_views_have_visible_focus_indicator() -> None:
+    stylesheet = application_stylesheet()
+
+    assert """QTreeView:focus, QTreeWidget:focus {
+    border: 2px solid #6f8dff;
+}""" in stylesheet
+
+
 def test_application_palette_keeps_popup_and_viewport_surfaces_dark(
     monkeypatch,
 ) -> None:

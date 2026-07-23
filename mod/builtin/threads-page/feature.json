@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "provider_id": "threads-page",
+  "display_name": "Threads Official Post",
+  "kind": "site-addon",
+  "parent_provider_id": "threads"
+}

@@ -5,11 +5,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from contracts._additive_result import (
+    AdditiveResultError,
+    validate_additive_result,
+)
 from contracts.discovery_v1 import DiscoveryItemV1
 
 
 class RecoveryContractError(ValueError):
     pass
+
+
+_RECOVERY_PLAN_FIELDS = frozenset(
+    {"primary_query", "fallback_queries"}
+)
+_RECOVERY_CANDIDATE_FIELDS = frozenset({"item", "score", "reasons"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,11 +29,13 @@ class RecoveryPlanV1:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "RecoveryPlanV1":
-        if not isinstance(raw, dict) or set(raw) != {
-            "primary_query",
-            "fallback_queries",
-        }:
-            raise RecoveryContractError("recovery plan fields invalid")
+        try:
+            validate_additive_result(
+                raw,
+                required_fields=_RECOVERY_PLAN_FIELDS,
+            )
+        except AdditiveResultError as exc:
+            raise RecoveryContractError("recovery plan fields invalid") from exc
         primary = raw["primary_query"]
         fallback = raw["fallback_queries"]
         if not isinstance(primary, str) or not 1 <= len(primary) <= 200:
@@ -49,8 +61,15 @@ class RecoveryCandidateV1:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "RecoveryCandidateV1":
-        if not isinstance(raw, dict) or set(raw) != {"item", "score", "reasons"}:
-            raise RecoveryContractError("recovery candidate fields invalid")
+        try:
+            validate_additive_result(
+                raw,
+                required_fields=_RECOVERY_CANDIDATE_FIELDS,
+            )
+        except AdditiveResultError as exc:
+            raise RecoveryContractError(
+                "recovery candidate fields invalid"
+            ) from exc
         score, reasons = raw["score"], raw["reasons"]
         if not isinstance(score, int) or not 0 <= score <= 100:
             raise RecoveryContractError("recovery candidate score invalid")

@@ -112,6 +112,6 @@ def test_bootstrap_reports_failed_youtube_initialization_for_its_hosts(
             status.provider_id
             for status in context.download_providers.statuses()
             if status.available
-        } == {"generic-ytdlp", "bilibili", "facebook", "mega"}
+        } == {"generic-ytdlp", "bilibili", "facebook", "mega", "direct-http"}
     finally:
         context.lifecycle.shutdown()

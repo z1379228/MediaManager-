@@ -27,7 +27,14 @@ def classify_provider_failure(value: object) -> ProviderFailureV1:
     patterns = (
         (
             ProviderFailureCode.RATE_LIMITED,
-            ("http error 429", "too many requests", "rate limit"),
+            (
+                "http error 429",
+                "too many requests",
+                "rate limit",
+                "quota exceeded",
+                "bandwidth exceeded",
+                "transfer quota",
+            ),
             True,
         ),
         (
@@ -60,6 +67,8 @@ def classify_provider_failure(value: object) -> ProviderFailureV1:
                 "network",
                 "http error 500",
                 "domain not found",
+                "service unavailable",
+                "connection reset",
             ),
             True,
         ),

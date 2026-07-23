@@ -6,7 +6,8 @@ import hashlib
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from tools.release_preflight import check_release
+from core.security.release_key import RELEASE_KEY_ID, RELEASE_PUBLIC_KEY
+from tools.release_preflight import _valid_identity, check_release
 from tools.sign_release import sign_release
 
 
@@ -17,6 +18,11 @@ def _public_text(private_key: Ed25519PrivateKey) -> str:
             serialization.PublicFormat.Raw,
         )
     ).decode("ascii")
+
+
+def test_compiled_release_identity_is_valid() -> None:
+    assert _valid_identity(RELEASE_KEY_ID, RELEASE_PUBLIC_KEY)
+    assert len(base64.b64decode(RELEASE_PUBLIC_KEY, validate=True)) == 32
 
 
 def test_preflight_blocks_unconfigured_release_identity(tmp_path) -> None:

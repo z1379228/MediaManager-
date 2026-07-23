@@ -9,6 +9,13 @@ import sqlite3
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from core.plugins.dependency_graph import candidate_dependency_graph_errors
+from core.plugins.dependency_graph import read_bounded_manifest
+from core.plugins.lifecycle import (
+    PluginLifecycleLockError,
+    PluginLifecyclePathError,
+    resolve_lifecycle_path,
+)
 from core.plugins.manager import PluginManager
 from core.plugins.manifest import ManifestError, PluginManifest
 from core.plugins.registry import PendingAction, PluginRecord, PluginRegistry
@@ -35,6 +42,7 @@ class PluginRollbackManager:
         self.mod_root = mod_root.resolve()
         self.registry = registry
         self.plugin_manager = plugin_manager
+        self.lifecycle_lock = plugin_manager.lifecycle_lock
 
     def list_versions(self, plugin_id: str) -> tuple[str, ...]:
         root = self.mod_root / "backups" / plugin_id
@@ -57,6 +65,23 @@ class PluginRollbackManager:
         version: str,
         security_mode: SecurityMode,
     ) -> RollbackResult:
+        try:
+            with self.lifecycle_lock.hold():
+                return self._rollback_locked(plugin_id, version, security_mode)
+        except PluginLifecycleLockError:
+            return RollbackResult(
+                False,
+                plugin_id,
+                version=version,
+                errors=("plugin lifecycle is busy",),
+            )
+
+    def _rollback_locked(
+        self,
+        plugin_id: str,
+        version: str,
+        security_mode: SecurityMode,
+    ) -> RollbackResult:
         if security_mode is SecurityMode.BLOCKED:
             return RollbackResult(
                 False,
@@ -74,12 +99,33 @@ class PluginRollbackManager:
                 version,
                 ("plugin is not available for rollback",),
             )
-        source = (self.mod_root / "backups" / plugin_id / version).resolve()
-        target = (self.mod_root / "installed" / plugin_id).resolve()
-        current_backup = (
-            self.mod_root / "backups" / plugin_id / record.installed_version
-        ).resolve()
-        if not source.is_relative_to(self.mod_root) or not source.is_dir():
+        try:
+            source = resolve_lifecycle_path(
+                self.mod_root,
+                "backups",
+                plugin_id,
+                version,
+            )
+            target = resolve_lifecycle_path(
+                self.mod_root,
+                "installed",
+                plugin_id,
+            )
+            current_backup = resolve_lifecycle_path(
+                self.mod_root,
+                "backups",
+                plugin_id,
+                record.installed_version,
+            )
+        except PluginLifecyclePathError:
+            return RollbackResult(
+                False,
+                plugin_id,
+                record.installed_version,
+                version,
+                ("plugin lifecycle path is unsafe",),
+            )
+        if not source.is_dir():
             return RollbackResult(
                 False,
                 plugin_id,
@@ -87,7 +133,7 @@ class PluginRollbackManager:
                 version,
                 ("requested backup version does not exist",),
             )
-        if not target.is_relative_to(self.mod_root) or not target.is_dir():
+        if not target.is_dir():
             return RollbackResult(
                 False,
                 plugin_id,
@@ -104,7 +150,7 @@ class PluginRollbackManager:
                 ("backup for current version already exists",),
             )
         try:
-            manifest_bytes = (source / "plugin.json").read_bytes()
+            manifest_bytes = read_bounded_manifest(source / "plugin.json")
             manifest = PluginManifest.from_dict(json.loads(manifest_bytes))
         except (OSError, ValueError, TypeError, ManifestError) as error:
             return RollbackResult(
@@ -136,6 +182,19 @@ class PluginRollbackManager:
                 version,
                 ("backup is incompatible with the current core",),
             )
+        graph_errors = candidate_dependency_graph_errors(
+            self.mod_root,
+            self.registry,
+            manifest,
+        )
+        if graph_errors:
+            return RollbackResult(
+                False,
+                plugin_id,
+                record.installed_version,
+                version,
+                graph_errors,
+            )
         missing_dependencies = tuple(
             dependency
             for dependency in manifest.dependencies
@@ -166,7 +225,11 @@ class PluginRollbackManager:
             manifest_hash=hashlib.sha256(manifest_bytes).hexdigest(),
             failure_count=record.failure_count,
         )
-        errors = self.plugin_manager.verify_directory(source, candidate)
+        errors = self.plugin_manager.verify_directory(
+            source,
+            candidate,
+            refresh_trust_store=True,
+        )
         if errors:
             return RollbackResult(
                 False,
@@ -195,8 +258,24 @@ class PluginRollbackManager:
             os.replace(target, current_backup)
             try:
                 os.replace(source, target)
+                post_move_errors = self.plugin_manager.verify_directory(
+                    target,
+                    candidate,
+                    refresh_trust_store=True,
+                )
+                if post_move_errors:
+                    os.replace(target, source)
+                    os.replace(current_backup, target)
+                    self.registry.upsert(old_record)
+                    return RollbackResult(
+                        False,
+                        plugin_id,
+                        record.installed_version,
+                        version,
+                        post_move_errors,
+                    )
                 self.registry.upsert(candidate)
-            except OSError, KeyError, sqlite3.Error:
+            except (OSError, KeyError, sqlite3.Error):
                 if target.exists():
                     os.replace(target, source)
                 if current_backup.exists():

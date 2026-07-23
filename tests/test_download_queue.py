@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import json
 import threading
 import time
 from pathlib import Path
@@ -74,6 +75,19 @@ def test_cancel_queued_task(tmp_path: Path) -> None:
     task_id = downloads.add(DownloadRequest("https://youtu.be/x", tmp_path))
     assert downloads.cancel(task_id)
     assert downloads.snapshots()[0].state is DownloadState.CANCELLED
+
+
+def test_state_counts_is_stable_and_includes_empty_states(tmp_path: Path) -> None:
+    downloads = DownloadQueue(RecordingBackend(), workers=1)
+    task_id = downloads.add(DownloadRequest("https://youtu.be/x", tmp_path))
+
+    counts = downloads.state_counts()
+
+    assert counts[DownloadState.QUEUED.value] == 1
+    assert counts[DownloadState.CANCELLED.value] == 0
+    assert set(counts) == {state.value for state in DownloadState}
+    assert downloads.cancel(task_id)
+    assert downloads.state_counts()[DownloadState.CANCELLED.value] == 1
 
 
 
@@ -236,6 +250,52 @@ def test_queue_restores_waiting_task_as_paused(tmp_path: Path) -> None:
     assert task.state is DownloadState.PAUSED
 
 
+def test_queue_restore_redacts_legacy_error_without_changing_task_state(
+    tmp_path: Path,
+) -> None:
+    state = tmp_path / "queue.json"
+    state.write_text(
+        json.dumps(
+            [
+                {
+                    "task_id": "legacy-failure",
+                    "url": "https://youtu.be/legacy",
+                    "output_dir": str(tmp_path),
+                    "priority": 7,
+                    "state": "FAILED",
+                    "title": "Legacy failure",
+                    "progress": 37.5,
+                    "output_path": str(tmp_path / "partial.mp4"),
+                    "error": (
+                        "Authorization: Bearer legacy-secret-value\n"
+                        "Cookie: session=legacy-cookie-value\n"
+                        r"C:\Users\Alice\Private\media.mp4"
+                    ),
+                    "automatic_retries": 2,
+                    "next_retry_seconds": 17,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    task = DownloadQueue(RecordingBackend(), state_path=state).snapshots()[0]
+
+    assert task.state is DownloadState.FAILED
+    assert task.request.priority == 7
+    assert task.title == "Legacy failure"
+    assert task.progress == 37.5
+    assert task.output_path == str(tmp_path / "partial.mp4")
+    assert task.automatic_retries == 2
+    assert task.next_retry_seconds == 17
+    assert "[REDACTED]" in task.error
+    assert "legacy-secret-value" not in task.error
+    assert "legacy-cookie-value" not in task.error
+    assert "Alice" not in task.error
+    assert "Private" not in task.error
+    assert "media.mp4" not in task.error
+
+
 def test_running_task_is_paused_after_restart(tmp_path: Path) -> None:
     state = tmp_path / "queue.json"
     state.write_text(
@@ -297,6 +357,32 @@ def test_requested_pause_and_cancel_survive_restart(tmp_path: Path) -> None:
     cancelling.shutdown()
 
 
+def test_queue_restore_retries_transient_state_read_error(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state = tmp_path / "queue.json"
+    original = DownloadQueue(RecordingBackend(), state_path=state)
+    task_id = original.add(DownloadRequest("https://youtu.be/retry-read", tmp_path))
+    open_path = Path.open
+    attempts = 0
+
+    def flaky_open(path: Path, *args, **kwargs):
+        nonlocal attempts
+        if path == state and attempts == 0:
+            attempts += 1
+            raise PermissionError("queue state replacement is still settling")
+        return open_path(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", flaky_open)
+
+    restored = DownloadQueue(RecordingBackend(), state_path=state)
+
+    assert attempts == 1
+    assert restored.snapshots()[0].task_id == task_id
+    assert restored.snapshots()[0].state is DownloadState.PAUSED
+
+
 def test_failed_task_can_be_retried(tmp_path: Path) -> None:
     backend = FailingOnceBackend()
     downloads = DownloadQueue(backend, workers=1, state_path=tmp_path / "queue.json")
@@ -307,6 +393,64 @@ def test_failed_task_can_be_retried(tmp_path: Path) -> None:
     wait_for(lambda: downloads.snapshots()[0].state is DownloadState.COMPLETED)
     assert backend.calls == 2
     downloads.shutdown()
+
+
+def test_failed_task_redacts_diagnostic_before_persisting_queue_state(
+    tmp_path: Path,
+) -> None:
+    class SecretFailingBackend:
+        def download(self, request, progress, cancel_event):
+            raise RuntimeError(
+                "Authorization: Bearer queue-secret-value\n"
+                "Cookie: session=queue-cookie-value\n"
+                r"C:\Users\Alice\Private\media.mp4"
+            )
+
+    state = tmp_path / "queue.json"
+    downloads = DownloadQueue(
+        SecretFailingBackend(), workers=1, state_path=state
+    )
+    downloads.add(DownloadRequest("https://youtu.be/safe", tmp_path))
+
+    downloads.start()
+    wait_for(lambda: downloads.snapshots()[0].state is DownloadState.FAILED)
+    downloads.shutdown()
+
+    document = json.loads(state.read_text(encoding="utf-8"))
+    persisted = document[0]["error"]
+    assert "[REDACTED]" in persisted
+    assert "queue-secret-value" not in persisted
+    assert "queue-cookie-value" not in persisted
+    assert "Alice" not in persisted
+    assert "Private" not in persisted
+    assert "media.mp4" not in persisted
+
+
+def test_provider_error_with_lone_surrogate_leaves_failed_task(
+    tmp_path: Path,
+) -> None:
+    class SurrogateFailingBackend:
+        def download(self, request, progress, cancel_event):
+            raise RuntimeError("provider diagnostic \ud800 suffix")
+
+    downloads = DownloadQueue(
+        SurrogateFailingBackend(),
+        workers=1,
+        state_path=tmp_path / "queue.json",
+    )
+    downloads.add(DownloadRequest("https://youtu.be/safe", tmp_path))
+
+    downloads.start()
+    try:
+        wait_for(
+            lambda: downloads.snapshots()[0].state is DownloadState.FAILED
+            or not downloads._threads[0].is_alive()
+        )
+        task = downloads.snapshots()[0]
+        assert task.state is DownloadState.FAILED
+        task.error.encode("utf-8")
+    finally:
+        downloads.shutdown()
 
 
 def test_retryable_provider_failure_is_retried_with_persisted_bound(
@@ -320,6 +464,8 @@ def test_retryable_provider_failure_is_retried_with_persisted_bound(
         state_path=state,
         retry_wait=lambda _delay, _event: False,
     )
+    observed: list[DownloadState] = []
+    downloads.subscribe(lambda task: observed.append(task.state))
     downloads.add(DownloadRequest("https://youtu.be/x", tmp_path))
 
     downloads.start()
@@ -329,6 +475,7 @@ def test_retryable_provider_failure_is_retried_with_persisted_bound(
     task = downloads.snapshots()[0]
 
     assert backend.calls == 3
+    assert DownloadState.RETRYING in observed
     assert task.automatic_retries == 2
     assert task.next_retry_seconds == 0
     restored = DownloadQueue(RecordingBackend(), state_path=state).snapshots()[0]
@@ -544,6 +691,20 @@ def test_clear_finished_keeps_active_tasks(tmp_path: Path) -> None:
     assert len(snapshots) == 1 and snapshots[0].task_id == waiting
     restored = DownloadQueue(RecordingBackend(), state_path=tmp_path / "queue.json")
     assert len(restored.snapshots()) == 1
+
+
+def test_cancel_all_cancels_every_non_terminal_task(tmp_path: Path) -> None:
+    downloads = DownloadQueue(RecordingBackend(), state_path=tmp_path / "queue.json")
+    for index in range(3):
+        downloads.add(DownloadRequest(f"https://youtu.be/{index}", tmp_path))
+    snapshots = downloads.snapshots()
+    assert downloads.pause(snapshots[0].task_id)
+
+    assert downloads.cancel_all() == 3
+    assert all(
+        task.state is DownloadState.CANCELLED for task in downloads.snapshots()
+    )
+    assert downloads.cancel_all() == 0
 
 
 def test_clear_finished_rolls_back_when_persistence_fails(

@@ -31,16 +31,57 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements-lock.txt pytest-timeout
+          python -m pip install -r requirements-lock.txt
           python -m pip install -e . --no-deps
 
       - name: Ruff
-        run: >-
-          python -m ruff check contracts core tests tools trusted_ui views
-          main.py desktop.py
+        run: python -m tools.quality_audit --ruff-only
 
       - name: Pytest
         shell: pwsh
+        env:
+          # Keep cancelled or retried Windows jobs from sharing stale temp files.
+          PYTEST_BASETEMP: .work/pytest-ci-${{ github.run_id }}
         run: |
           New-Item -ItemType Directory -Force .work | Out-Null
-          python -m pytest -vv -rs --timeout=60 --basetemp=.work/pytest-ci
+          python -m pytest -vv -rs --timeout=60 --basetemp="$env:PYTEST_BASETEMP"
+
+      - name: Static project audits
+        shell: pwsh
+        run: |
+          python -m tools.quality_audit --text-only
+          python -m tools.audit_mod_groups
+          python -m tools.site_quality_audit
+          python -m tools.dependency_lock_audit
+          python -m tools.audit_version_docs
+          if (Test-Path -LiteralPath Version -PathType Container) {
+            python -m tools.audit_versions --root Version
+          } else {
+            Write-Output "VERSION_ARTIFACT_AUDIT=SKIP reason=Version is a local ignored release-artifact root"
+          }
+
+  symlink-security:
+    name: Symlink security tests (Ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-lock.txt
+          python -m pip install -e . --no-deps
+
+      - name: Run symlink security tests
+        run: >-
+          python -m pytest -vv -rs
+          tests/test_builtin_download_provider.py::test_builtin_provider_integrity_rejects_symlink
+          tests/test_library_service.py::test_scan_is_bounded_and_does_not_follow_symlink

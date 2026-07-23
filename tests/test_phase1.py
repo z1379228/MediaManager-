@@ -10,7 +10,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from core.logging.redaction import redact
+from core.logging.redaction import bounded_redacted_text, redact
 from core.security.integrity_verifier import (
     IntegrityVerifier,
     release_signed_payload,
@@ -73,6 +73,121 @@ class PhaseOneTests(unittest.TestCase):
         self.assertNotIn("abcdefghijklmnop", result)
         self.assertNotIn("Alice", result)
         self.assertIn("C:\\Users\\[USER]", result)
+
+    def test_redacts_url_userinfo_without_changing_public_url(self) -> None:
+        private_url = "https://user:password@example.test/video?x=1"
+        public_url = "https://example.test/video?x=1"
+
+        self.assertEqual(
+            redact(private_url),
+            "https://[REDACTED]@example.test/video?x=1",
+        )
+        self.assertEqual(redact(public_url), public_url)
+
+    def test_redacts_complete_authorization_cookie_and_private_user_path(self) -> None:
+        value = (
+            "Authorization: Bearer bearer-secret-value\n"
+            "Cookie: session=cookie-secret-value; csrf=csrf-secret-value\n"
+            'failed at "C:\\Users\\Alice Smith\\Private Folder\\media.mp4"\n'
+            "not_token=public-value"
+        )
+
+        result = str(redact(value))
+
+        for secret in (
+            "bearer-secret-value",
+            "cookie-secret-value",
+            "csrf-secret-value",
+            "Alice Smith",
+            "Private Folder",
+            "media.mp4",
+        ):
+            self.assertNotIn(secret, result)
+        self.assertIn("Authorization: [REDACTED]", result)
+        self.assertIn("Cookie: [REDACTED]", result)
+        self.assertIn("not_token=public-value", result)
+
+    def test_bounded_redaction_handles_quoted_and_structured_secrets(self) -> None:
+        values = (
+            bounded_redacted_text({"token": "structured secret value"}),
+            bounded_redacted_text('password="dummy alpha beta"'),
+            bounded_redacted_text('{"token": "json secret value"}'),
+            bounded_redacted_text(
+                "{'Authorization': 'Bearer dictionary secret'}"
+            ),
+            bounded_redacted_text(
+                '{"Authorization": Bearer unquoted-header-secret}'
+            ),
+            bounded_redacted_text(
+                "{'Cookie': session=unquoted-cookie-secret}"
+            ),
+            bounded_redacted_text('{"token": unquoted-token-secret}'),
+        )
+
+        for result in values:
+            self.assertIn("[REDACTED]", result)
+            for secret in (
+                "structured secret value",
+                "dummy alpha beta",
+                "json secret value",
+                "dictionary secret",
+                "unquoted-header-secret",
+                "unquoted-cookie-secret",
+                "unquoted-token-secret",
+            ):
+                self.assertNotIn(secret, result)
+
+    def test_bounded_redaction_is_idempotent_for_cookie_marker(self) -> None:
+        value = "Cookie: session=cookie-secret-value"
+
+        once = bounded_redacted_text(value)
+        twice = bounded_redacted_text(once)
+
+        self.assertEqual(once, "Cookie: [REDACTED]")
+        self.assertEqual(twice, once)
+
+    def test_redacts_absolute_paths_without_hiding_diagnostic_fields(self) -> None:
+        value = (
+            r"failed at C:\Users\Alice,Smith\Private\media.mp4 "
+            "exit_code=0x80000003 module=qt6core.dll\n"
+            r"D:\Profiles\DemoUser\Private\file.mp4"
+            "\n"
+            r"\\server\home\RemoteUser\Private\file.mp4"
+            "\n/home/posix-user/private/file.mp4\n"
+            r"C:\Dev\MediaManager\private\file.mp4"
+        )
+
+        result = str(redact(value))
+
+        for private_text in (
+            "Alice",
+            "Smith",
+            "DemoUser",
+            "RemoteUser",
+            "posix-user",
+            "MediaManager",
+            "media.mp4",
+            "file.mp4",
+        ):
+            self.assertNotIn(private_text, result)
+        self.assertIn("exit_code=0x80000003", result)
+        self.assertIn("module=qt6core.dll", result)
+
+    def test_bounded_redaction_replaces_lone_surrogates(self) -> None:
+        result = bounded_redacted_text(chr(0xD800), max_utf8_bytes=32)
+
+        self.assertLessEqual(len(result.encode("utf-8")), 32)
+        result.encode("utf-8").decode("utf-8")
+
+    def test_bounded_redacted_text_limits_utf8_bytes_after_redaction(self) -> None:
+        result = bounded_redacted_text(
+            "token=secret-value " + "界" * 100,
+            max_utf8_bytes=64,
+        )
+
+        self.assertNotIn("secret-value", result)
+        self.assertLessEqual(len(result.encode("utf-8")), 64)
+        result.encode("utf-8").decode("utf-8")
 
     def test_integrity_verification(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

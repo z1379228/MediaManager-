@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "provider_id": "facebook",
+  "last_live_check": "2026-07-23",
+  "workflow": {
+    "identify": "supported",
+    "discover": "not-applicable",
+    "analyze": "conditional",
+    "preview": "conditional",
+    "queue": "supported",
+    "cancel": "supported",
+    "complete": "supported"
+  },
+  "ui_capabilities": ["thumbnail", "download", "pause", "cancel"],
+  "features": [
+    {"feature_id": "public-video-url", "support_status": "offline-contract"},
+    {"feature_id": "public-video-analysis", "support_status": "verified-public-analysis"},
+    {"feature_id": "thumbnail", "support_status": "verified-public-analysis"},
+    {"feature_id": "queue-download", "support_status": "offline-contract"}
+  ],
+  "boundaries": [
+    "No cookie import or automated login",
+    "No region, payment, DRM or advertisement bypass",
+    "No private post, account, group or friends-only access",
+    "No search, subtitle, audio-only or playlist controls"
+  ]
+}

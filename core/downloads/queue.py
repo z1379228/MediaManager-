@@ -18,11 +18,19 @@ from core.downloads.archive import DownloadArchive, DuplicateDownloadError
 from core.downloads.errors import DownloadCancelled, ProviderFailure
 from core.downloads.models import DownloadRequest, DownloadState, DownloadTask
 from core.downloads.negotiation import retry_decision
+from core.logging.redaction import bounded_redacted_text
 
 
 _MAX_QUEUE_TASKS = 10_000
 _MAX_QUEUE_STATE_BYTES = 16 * 1024 * 1024
+_MAX_TASK_ERROR_BYTES = 4096
+_QUEUE_STATE_READ_ATTEMPTS = 3
+_QUEUE_STATE_READ_RETRY_SECONDS = 0.01
 _SHUTDOWN_PRIORITY = -1000
+
+
+def _safe_task_error(value: object) -> str:
+    return bounded_redacted_text(value, max_utf8_bytes=_MAX_TASK_ERROR_BYTES)
 
 
 class DownloadBackend(Protocol):
@@ -106,7 +114,7 @@ class DownloadQueue:
             self._stopping.set()
             threads = tuple(self._threads)
             for task in self._tasks.values():
-                if task.state is DownloadState.RUNNING:
+                if task.state in {DownloadState.RUNNING, DownloadState.RETRYING}:
                     task.cancel_event.set()
             for _ in threads:
                 self._pending.put(
@@ -236,6 +244,7 @@ class DownloadQueue:
             if task is None or task.state not in {
                 DownloadState.QUEUED,
                 DownloadState.RUNNING,
+                DownloadState.RETRYING,
             }:
                 return False
             if task.pause_requested.is_set() or task.cancel_event.is_set():
@@ -289,7 +298,11 @@ class DownloadQueue:
         task_ids = tuple(
             task.task_id
             for task in self.snapshots()
-            if task.state in {DownloadState.QUEUED, DownloadState.RUNNING}
+            if task.state in {
+                DownloadState.QUEUED,
+                DownloadState.RUNNING,
+                DownloadState.RETRYING,
+            }
         )
         return sum(self.pause(task_id) for task_id in task_ids)
 
@@ -311,12 +324,29 @@ class DownloadQueue:
             }:
                 return False
             task.cancel_event.set()
-            if task.state in {DownloadState.QUEUED, DownloadState.PAUSED}:
+            if task.state in {
+                DownloadState.QUEUED,
+                DownloadState.RETRYING,
+                DownloadState.PAUSED,
+            }:
                 task.state = DownloadState.CANCELLED
             self._persist_locked()
             snapshot = replace(task)
         self._notify(snapshot)
         return True
+
+    def cancel_all(self) -> int:
+        task_ids = tuple(
+            task.task_id
+            for task in self.snapshots()
+            if task.state
+            not in {
+                DownloadState.COMPLETED,
+                DownloadState.FAILED,
+                DownloadState.CANCELLED,
+            }
+        )
+        return sum(self.cancel(task_id) for task_id in task_ids)
 
     def clear_finished(self) -> int:
         terminal = {
@@ -345,6 +375,15 @@ class DownloadQueue:
         with self._lock:
             return tuple(replace(task) for task in self._tasks.values())
 
+    def state_counts(self) -> dict[str, int]:
+        """Return a stable, read-only count for every queue state."""
+
+        counts = {state.value: 0 for state in DownloadState}
+        with self._lock:
+            for task in self._tasks.values():
+                counts[task.state.value] += 1
+        return counts
+
     def _enqueue(self, task: DownloadTask) -> None:
         self._pending.put(
             (-task.request.priority, next(self._sequence), task.task_id)
@@ -367,7 +406,9 @@ class DownloadQueue:
                     self._persist_locked()
                 except OSError as persist_error:
                     task.state = DownloadState.FAILED
-                    task.error = f"queue state write failed: {persist_error}"
+                    task.error = _safe_task_error(
+                        f"queue state write failed: {persist_error}"
+                    )
                     snapshot = replace(task)
                     persistence_failed = True
                 else:
@@ -400,6 +441,7 @@ class DownloadQueue:
                             raise
                         with self._lock:
                             task.automatic_retries += 1
+                            task.state = DownloadState.RETRYING
                             task.next_retry_seconds = decision.delay_seconds
                             task.speed = ""
                             task.eta = ""
@@ -420,6 +462,7 @@ class DownloadQueue:
                         ):
                             raise DownloadCancelled("automatic retry cancelled")
                         with self._lock:
+                            task.state = DownloadState.RUNNING
                             task.next_retry_seconds = 0
                             task.error = ""
             except DownloadCancelled:
@@ -442,7 +485,7 @@ class DownloadQueue:
                         else DownloadState.FAILED
                     )
                 )
-                error_text = str(error)
+                error_text = _safe_task_error(error)
             with self._lock:
                 task.output_path = output_path
                 task.state = terminal_state
@@ -470,12 +513,14 @@ class DownloadQueue:
                     try:
                         self.archive.record(task.request)
                     except (OSError, RuntimeError) as error:
-                        task.error = f"archive warning: {error}"
+                        task.error = _safe_task_error(f"archive warning: {error}")
                 try:
                     self._persist_locked()
                 except OSError as error:
-                    warning = f"queue state warning: {error}"
-                    task.error = f"{task.error}; {warning}" if task.error else warning
+                    warning = _safe_task_error(f"queue state warning: {error}")
+                    task.error = _safe_task_error(
+                        f"{task.error}; {warning}" if task.error else warning
+                    )
                 snapshot = replace(task)
             self._notify(snapshot)
 
@@ -513,12 +558,29 @@ class DownloadQueue:
         self._notify(snapshot)
 
     def _restore(self) -> None:
-        if self.state_path is None or not self.state_path.is_file():
+        if self.state_path is None:
+            return
+        state_text: str | None = None
+        for attempt in range(_QUEUE_STATE_READ_ATTEMPTS):
+            try:
+                with self.state_path.open("rb") as state_file:
+                    state_bytes = state_file.read(_MAX_QUEUE_STATE_BYTES + 1)
+                if len(state_bytes) > _MAX_QUEUE_STATE_BYTES:
+                    return
+                state_text = state_bytes.decode("utf-8")
+                break
+            except FileNotFoundError:
+                return
+            except UnicodeDecodeError:
+                return
+            except OSError:
+                if attempt + 1 == _QUEUE_STATE_READ_ATTEMPTS:
+                    return
+                time.sleep(_QUEUE_STATE_READ_RETRY_SECONDS)
+        if state_text is None:
             return
         try:
-            if self.state_path.stat().st_size > _MAX_QUEUE_STATE_BYTES:
-                return
-            raw = json.loads(self.state_path.read_text(encoding="utf-8"))
+            raw = json.loads(state_text)
             if not isinstance(raw, list):
                 return
             for item in raw[:_MAX_QUEUE_TASKS]:
@@ -529,7 +591,12 @@ class DownloadQueue:
                 if task.task_id in self._tasks:
                     continue
                 if (
-                    task.state in {DownloadState.QUEUED, DownloadState.PAUSED}
+                    task.state
+                    in {
+                        DownloadState.QUEUED,
+                        DownloadState.PAUSED,
+                        DownloadState.RETRYING,
+                    }
                     and self.archive.contains(task.request)
                 ):
                     task.state = DownloadState.COMPLETED
@@ -623,7 +690,11 @@ class DownloadQueue:
             state = DownloadState.PAUSED
         elif cancel_requested:
             state = DownloadState.CANCELLED
-        elif state in {DownloadState.RUNNING, DownloadState.QUEUED}:
+        elif state in {
+            DownloadState.RUNNING,
+            DownloadState.RETRYING,
+            DownloadState.QUEUED,
+        }:
             # A restored process no longer owns a live provider subprocess.
             # Never restart network work merely because the application opened.
             state = DownloadState.PAUSED
@@ -642,7 +713,7 @@ class DownloadQueue:
             title=text_value("title", "", 500),
             progress=float(progress),
             output_path=text_value("output_path", "", 32_767),
-            error=text_value("error", "", 4096),
+            error=_safe_task_error(text_value("error", "", 4096)),
             automatic_retries=integer_value(
                 "automatic_retries", minimum=0, maximum=2
             ),
@@ -692,7 +763,8 @@ class DownloadQueue:
                 "cancel_requested": (
                     task.cancel_event.is_set()
                     and not task.pause_requested.is_set()
-                    and task.state is DownloadState.RUNNING
+                    and task.state
+                    in {DownloadState.RUNNING, DownloadState.RETRYING}
                 ),
             }
             for task in self._tasks.values()

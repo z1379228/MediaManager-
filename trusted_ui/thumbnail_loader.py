@@ -147,6 +147,12 @@ def create_thumbnail_loader(parent: object = None) -> object:
                 if reply.isRunning():
                     reply.abort()
 
+        def shutdown(self) -> None:
+            """Cancel network work and release cached pixmaps before widget teardown."""
+
+            self.cancel_pending()
+            self.cache.clear()
+
         def load(self, url: str, callback: Callable[[object | None], None]) -> None:
             if not valid_thumbnail_url(url):
                 callback(None)

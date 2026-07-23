@@ -3,6 +3,7 @@ curl-cffi==0.15.0
 PyInstaller==6.21.0
 PySide6==6.11.1
 pytest==9.1.1
+pytest-timeout==2.3.1
 ruff==0.15.21
 setuptools==83.0.0
 yt-dlp[default,curl-cffi]==2026.7.4

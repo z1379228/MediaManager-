@@ -11,9 +11,13 @@ from core.downloads.notifications import (
     DownloadCompletionTracker,
     completion_message,
 )
-from core.settings import SettingsService, normalized_language
+from core.settings import (
+    SettingsService,
+    SettingsWriteBlockedError,
+    normalized_language,
+)
 from core.site_routing import classify_site_url
-from core.version import display_version
+from core.version import application_display_name
 from trusted_ui.app_icon import app_icon_path
 from trusted_ui.background import (
     clear_background_copy,
@@ -27,10 +31,18 @@ from trusted_ui.dependency_dialog import (
     startup_dependency_prompt_required,
 )
 from trusted_ui.download_panel import create_download_panel
-from trusted_ui.ani_gamer_workspace import create_ani_gamer_workspace
+from trusted_ui.direct_http_workspace import create_direct_http_workspace
 from trusted_ui.mega_workspace import create_mega_workspace
-from trusted_ui.conversion_panel import create_conversion_panel
+from trusted_ui.official_social_workspace import create_official_social_workspace
+from trusted_ui.conversion_panel import (
+    CONVERSION_WORKSPACE_LABEL,
+    create_conversion_panel,
+)
 from trusted_ui.transcription_panel import create_transcription_panel
+from trusted_ui.transfer_panel import (
+    TRANSFER_WORKSPACE_LABEL,
+    create_transfer_panel,
+)
 from trusted_ui.automation_panel import create_automation_panel
 from trusted_ui.library_panel import create_library_panel
 from trusted_ui.optional_workspace_manager import (
@@ -38,6 +50,7 @@ from trusted_ui.optional_workspace_manager import (
     OptionalWorkspaceSpec,
 )
 from trusted_ui.plugin_manager import show_plugin_manager
+from trusted_ui.initial_mod_setup import show_initial_mod_setup
 from trusted_ui.search_panel import create_search_panel
 from trusted_ui.theme import (
     UI_SCALE_VALUES,
@@ -189,7 +202,7 @@ def run_main_window(context: object) -> int:
     class Window(QMainWindow):
         def __init__(self) -> None:
             super().__init__()
-            self.setWindowTitle(f"MediaManager {display_version()}")
+            self.setWindowTitle(application_display_name())
             self.setAccessibleName("MediaManager 主視窗")
             self.resize(1180, 780)
             self.setMinimumSize(940, 620)
@@ -234,7 +247,8 @@ def run_main_window(context: object) -> int:
             mode = QLabel(mode_text)
             mode.setObjectName("badge")
             mode.setProperty("securityState", mode_state)
-            mode.setAccessibleName("安全狀態")
+            mode.setAccessibleName(f"安全狀態：{mode_text}")
+            mode.setAccessibleDescription(mode_tip)
             mode.setToolTip(mode_tip)
             header.addWidget(mode)
 
@@ -358,15 +372,43 @@ def run_main_window(context: object) -> int:
                 tabs,
                 (
                     OptionalWorkspaceSpec(
-                        "ani-gamer",
-                        lambda: feature_enabled("ani-gamer"),
+                        "instagram",
+                        lambda: feature_enabled("instagram"),
                         lambda: any(
-                            status.provider_id == "ani-gamer"
+                            status.provider_id == "instagram"
                             for status in context.features.statuses()
                         ),
-                        lambda: create_ani_gamer_workspace(context, self),
+                        lambda: create_official_social_workspace(
+                            context, self, site_family="instagram"
+                        ),
                         lambda panel: panel.title.text(),
-                        "動畫瘋官方近期熱播、新上架、分類與作品搜尋",
+                        "Instagram 官方媒體頁與帳號資料匯出工具；不自動擷取內容",
+                    ),
+                    OptionalWorkspaceSpec(
+                        "threads",
+                        lambda: feature_enabled("threads"),
+                        lambda: any(
+                            status.provider_id == "threads"
+                            for status in context.features.statuses()
+                        ),
+                        lambda: create_official_social_workspace(
+                            context, self, site_family="threads"
+                        ),
+                        lambda panel: panel.title.text(),
+                        "Threads 官方貼文頁與帳號資料匯出工具；不自動擷取內容",
+                    ),
+                    OptionalWorkspaceSpec(
+                        "twitter",
+                        lambda: feature_enabled("twitter"),
+                        lambda: any(
+                            status.provider_id == "twitter"
+                            for status in context.features.statuses()
+                        ),
+                        lambda: create_official_social_workspace(
+                            context, self, site_family="twitter"
+                        ),
+                        lambda panel: panel.title.text(),
+                        "X/Twitter 官方貼文頁與帳號資料封存工具；不使用網站自動化",
                     ),
                     OptionalWorkspaceSpec(
                         "facebook",
@@ -387,12 +429,31 @@ def run_main_window(context: object) -> int:
                         "MEGA 公開檔案、類型判定與官方 MEGAcmd 連線分流",
                     ),
                     OptionalWorkspaceSpec(
+                        "direct-http",
+                        lambda: context.download_providers.is_enabled("direct-http"),
+                        lambda: "direct-http" in registered_downloads,
+                        lambda: create_direct_http_workspace(context, self),
+                        lambda panel: panel.title.text(),
+                        "明確 HTTPS 檔案、續傳與 SHA-256 驗證；不接管網站 MOD",
+                    ),
+                    OptionalWorkspaceSpec(
                         "media-convert",
                         lambda: feature_enabled("media-convert"),
                         lambda: context.conversion is not None,
                         lambda: create_conversion_panel(context, self),
-                        lambda _panel: "Media Convert",
+                        lambda _panel: CONVERSION_WORKSPACE_LABEL,
                         "本機轉封裝、轉檔、壓縮、串接與切割",
+                    ),
+                    OptionalWorkspaceSpec(
+                        "gopeed-transfer",
+                        lambda: feature_enabled("gopeed-transfer"),
+                        lambda: (
+                            context.gopeed is not None
+                            and context.p2p_transfer is not None
+                        ),
+                        lambda: create_transfer_panel(context, self),
+                        lambda _panel: TRANSFER_WORKSPACE_LABEL,
+                        "localhost Gopeed REST 橋接與明確 P2P 傳輸；不自動啟動或開埠",
                     ),
                     OptionalWorkspaceSpec(
                         "speech-to-text",
@@ -478,7 +539,7 @@ def run_main_window(context: object) -> int:
             hint.setObjectName("muted")
             footer_layout.addWidget(hint)
             footer_layout.addStretch()
-            version = QLabel(f"核心 {display_version()}")
+            version = QLabel(application_display_name())
             version.setObjectName("muted")
             footer_layout.addWidget(version)
             page.addWidget(footer)
@@ -517,38 +578,79 @@ def run_main_window(context: object) -> int:
             choose_background.triggered.connect(select_background)
             reset_background.triggered.connect(restore_background)
 
-            def save_settings() -> None:
-                context.settings.in_app_download_notifications = (
-                    self.in_app_notifications.isChecked()
-                )
-                context.settings.system_download_notifications = (
-                    self.system_notifications.isChecked()
-                )
-                SettingsService(self.settings_root / "settings.json").save(
-                    context.settings
-                )
+            def persist_settings(**changes: object) -> bool:
+                try:
+                    saved = SettingsService(
+                        self.settings_root / "settings.json"
+                    ).patch(
+                        **changes
+                    )
+                except OSError as error:
+                    detail = (
+                        "設定檔目前受安全保護，變更已復原。"
+                        if isinstance(error, SettingsWriteBlockedError)
+                        else "設定檔目前無法寫入，變更已復原。"
+                    )
+                    QMessageBox.warning(
+                        self,
+                        "無法儲存設定",
+                        f"{detail}\n{error}",
+                    )
+                    return False
+                for name in changes:
+                    setattr(context.settings, name, getattr(saved, name))
+                return True
+
+            def restore_checked_action(group: object, value: str) -> None:
+                for candidate in group.actions():
+                    candidate.setChecked(candidate.data() == value)
+
+            def save_notification_settings() -> None:
+                previous_in_app = context.settings.in_app_download_notifications
+                previous_system = context.settings.system_download_notifications
+                if not persist_settings(
+                    in_app_download_notifications=(
+                        self.in_app_notifications.isChecked()
+                    ),
+                    system_download_notifications=(
+                        self.system_notifications.isChecked()
+                    ),
+                ):
+                    self.in_app_notifications.blockSignals(True)
+                    self.system_notifications.blockSignals(True)
+                    try:
+                        self.in_app_notifications.setChecked(previous_in_app)
+                        self.system_notifications.setChecked(previous_system)
+                    finally:
+                        self.in_app_notifications.blockSignals(False)
+                        self.system_notifications.blockSignals(False)
+                    return
                 if not self.system_notifications.isChecked():
                     self.remove_system_tray()
 
             def change_ui_scale(action: object) -> None:
                 scale = normalized_ui_scale(action.data())
-                context.settings.ui_scale = scale
+                previous_scale = normalized_ui_scale(context.settings.ui_scale)
+                if not persist_settings(ui_scale=scale):
+                    restore_checked_action(self.ui_scale_group, previous_scale)
+                    return
                 application = QApplication.instance()
                 if application is not None:
                     apply_application_theme(application, scale)
-                save_settings()
 
             def change_core_language(action: object) -> None:
                 locale = normalized_language(action.data())
-                context.settings.language = locale
+                previous_locale = normalized_language(context.settings.language)
+                if not persist_settings(language=locale):
+                    restore_checked_action(self.language_group, previous_locale)
+                    return
                 context.plugin_ui.locale = locale
-                save_settings()
                 context.events.publish("ui.language.changed", {"locale": locale})
 
             self.language_group.triggered.connect(change_core_language)
             self.ui_scale_group.triggered.connect(change_ui_scale)
-            self.in_app_notifications.toggled.connect(save_settings)
-            self.system_notifications.toggled.connect(save_settings)
+            self.in_app_notifications.toggled.connect(save_notification_settings)
+            self.system_notifications.toggled.connect(save_notification_settings)
 
             self.shortcuts: list[QShortcut] = []
             for sequence, index in (("Ctrl+1", 0), ("Ctrl+2", 1), ("Ctrl+3", 2)):
@@ -647,6 +749,7 @@ def run_main_window(context: object) -> int:
         if not icon.isNull():
             app.setWindowIcon(icon)
     apply_application_theme(app, context.settings.ui_scale)
+    show_initial_mod_setup(context)
     window = Window()
     window.show()
     window.raise_()

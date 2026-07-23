@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.metadata
 import importlib.resources
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -90,6 +91,8 @@ JAVASCRIPT_RUNTIME_SPECS = (
 YTDLP_MINIMUM = (2026, 7, 4)
 EJS_MINIMUM = (0, 8, 0)
 FFMPEG_MINIMUM = (6, 0, 0)
+_SPEECH_MODEL_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def find_executable(application_root: Path, name: str) -> str | None:
@@ -167,6 +170,54 @@ def _at_least(value: str, minimum: tuple[int, ...]) -> bool:
     return found + (0,) * (size - len(found)) >= minimum + (0,) * (
         size - len(minimum)
     )
+
+
+def _speech_model_files(model_root: Path | None) -> tuple[Path, ...]:
+    """List manifest-owned models without trusting unrelated files."""
+
+    if model_root is None or not model_root.is_dir() or model_root.is_symlink():
+        return ()
+    manifest = model_root / "models.json"
+    if not manifest.is_file() or manifest.is_symlink():
+        return ()
+    try:
+        if manifest.stat().st_size > 256_000:
+            return ()
+        document = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError):
+        return ()
+    models = document.get("models") if isinstance(document, dict) else None
+    if (
+        not isinstance(document, dict)
+        or document.get("schema_version") != 1
+        or not isinstance(models, dict)
+    ):
+        return ()
+    found: list[Path] = []
+    for model_id, metadata in list(models.items())[:64]:
+        if not isinstance(model_id, str) or not _SPEECH_MODEL_ID.fullmatch(model_id):
+            continue
+        if not isinstance(metadata, dict):
+            continue
+        digest = metadata.get("sha256")
+        size = metadata.get("size")
+        path = model_root / f"{model_id}.bin"
+        try:
+            if (
+                not isinstance(digest, str)
+                or not _SHA256.fullmatch(digest)
+                or not isinstance(size, int)
+                or isinstance(size, bool)
+                or size <= 0
+                or path.is_symlink()
+                or not path.is_file()
+                or path.stat().st_size != size
+            ):
+                continue
+        except OSError:
+            continue
+        found.append(path)
+    return tuple(found)
 
 
 def _package_version(distribution: str) -> str:
@@ -363,7 +414,10 @@ def check_dependencies(
         (
             "本機語音轉文字執行器可用"
             if whisper_path
-            else "未偵測到 whisper-cli；Speech to Text 無法執行"
+            else (
+                "未偵測到 whisper-cli；請將官方 whisper-cli.exe 放入程式 "
+                "tools 目錄、程式根目錄或 PATH"
+            )
         ),
     )
     model_root = (
@@ -371,16 +425,7 @@ def check_dependencies(
         if data_root is not None
         else None
     )
-    model_files: tuple[Path, ...] = ()
-    if model_root is not None and model_root.is_dir() and not model_root.is_symlink():
-        try:
-            model_files = tuple(
-                path
-                for path in model_root.iterdir()
-                if path.is_file() and not path.is_symlink() and path.stat().st_size > 0
-            )[:64]
-        except OSError:
-            model_files = ()
+    model_files = _speech_model_files(model_root)
     speech_model = DependencyStatus(
         "speech-model",
         "Speech model",
@@ -390,7 +435,10 @@ def check_dependencies(
         (
             "至少一個本機語音模型可用"
             if model_files
-            else "尚未匯入本機語音模型；Speech to Text 無法開始轉錄"
+            else (
+                "尚未匯入本機語音模型；請在 Speech to Text 工作區以來源 "
+                "SHA-256 驗證後匯入"
+            )
         ),
     )
     return DependencyReport(
