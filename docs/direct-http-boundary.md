@@ -8,9 +8,11 @@
 - 只接受 HTTPS、無帳密、無自訂連接埠、無 fragment，且路徑以明確允許副檔名結尾。
 - 初始主機與每次重新導向都要解析為全域公開 IP；私有、回送、link-local、保留與
   無法解析的位址全部拒絕。
-- YouTube、Bilibili、動畫瘋、Facebook、Instagram、Threads（`threads.com`／舊
+- YouTube、Bilibili、Facebook、Instagram、Threads（`threads.com`／舊
   `threads.net`）、X/Twitter、MEGA（`mega.io`／`mega.nz`）
   及既有通用影音站網域全部排除，必須回到各自 MOD。
+- 動畫瘋網域仍維持排除，但其 provider 已退役；請求不會轉送到
+  `generic-ytdlp` 或 `direct-http`。
 - 單檔上限 64 GiB；一次最多建立 100 個工作。
 
 ## 下載與完整性

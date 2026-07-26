@@ -51,9 +51,12 @@ Repository 既有資料路徑；刪除虛擬環境不等於刪除使用者資料
 
 ```powershell
 .\.venv\Scripts\python.exe --version
-.\.venv\Scripts\python.exe -m tools.dependency_health
 .\.venv\Scripts\python.exe -B .\main.py --verify-only
 ```
+
+`--verify-only` 只檢查核心完整性。啟動 UI 後，按主畫面的核心／選用 MOD
+工具狀態按鈕開啟「執行環境」，再按「重新檢查」取得實際依賴狀態。目前沒有
+獨立的依賴健康檢查 CLI。
 
 若 UI 套件未安裝，重新執行 `pip install -e ".[ui]"`。外部工具未就緒時，
 與其無關的媒體庫及 MOD 仍可使用；不要以關閉完整性或信任檢查作為修復方式。

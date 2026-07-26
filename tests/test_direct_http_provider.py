@@ -79,6 +79,7 @@ def test_direct_http_candidate_is_explicit_and_never_takes_site_mod_urls() -> No
         "https://downloads.example.org/page",
         "https://127.0.0.1/release.zip",
         "https://www.youtube.com/media/release.zip",
+        "https://ani.gamer.com.tw/media/episode.mp4",
         "https://cdn.facebook.com/media/video.mp4",
         "https://mega.nz/file/release.zip",
         "https://mega.io/file/release.zip",
