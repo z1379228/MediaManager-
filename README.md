@@ -7,7 +7,7 @@
 目前來源版本為開發版 39.0（核心相容版本 39.0.10）。`MediaManager v1.0`
 是產品顯示名稱，不表示 Stable 已發布。未簽署、維持 `SAFE_MODE` 的
 [Testing 1.1（39.0.10 重整）](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.1.0-r2)
-已作為 prerelease 發布；它不是已簽署的 Stable 正式套件。
+已發布供測試；它不是已簽署的 Stable 正式套件。
 
 ## 主要能力
 
@@ -22,22 +22,54 @@
 [網站主機清冊](docs/site-host-inventory.md)為準。外部工具名稱不表示 MediaManager
 會自動安裝、捆綁或承諾其全部功能。
 
-## 下載 Testing 1.1 或從原始碼執行
+## 安裝
 
-Testing 1.1 提供 portable ZIP、單獨 EXE、wheel、SBOM、依賴清單與 SHA-256
-資料。下載後先比對同頁的 `.zip.sha256`、`SHA256SUMS.txt` 與
-`release-info.json`；發行附件不包含 `UserData`。完整說明見
-[Testing 1.1 文件](docs/release-testing-1.1.md)。
+### 方法一：Testing 1.1 portable ZIP（一般使用者）
 
-從原始碼執行的完整步驟見 [INSTALL.md](INSTALL.md)；最短啟動方式：
+1. 從 [Testing 1.1 Release](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.1.0-r2)
+   下載
+   [`MediaManager-Testing-1.1.0-r2.zip`](https://github.com/z1379228/MediaManager-/releases/download/test-v1.1.0-r2/MediaManager-Testing-1.1.0-r2.zip)
+   及
+   [`MediaManager-Testing-1.1.0-r2.zip.sha256`](https://github.com/z1379228/MediaManager-/releases/download/test-v1.1.0-r2/MediaManager-Testing-1.1.0-r2.zip.sha256)。
+2. 將兩個檔案放在同一資料夾，於該資料夾開啟 PowerShell 並核對雜湊：
+
+   ```powershell
+   Get-FileHash -Algorithm SHA256 .\MediaManager-Testing-1.1.0-r2.zip
+   Get-Content .\MediaManager-Testing-1.1.0-r2.zip.sha256
+   ```
+
+   兩者的 SHA-256 必須相同；目前發布值為
+   `31a1ab2c61ada07bc07eb8121107e8bbc7a16692347cae54af5fc5edb7dcf912`。
+3. 將 ZIP 解壓縮到新的空資料夾，進入含有 `MediaManager.exe` 的資料夾後執行
+   `MediaManager.exe`。不需要另外安裝 Python。
+
+Testing 1.1 是未簽署測試版，Windows 可能顯示無法驗證發布者的警告。只應從上述
+GitHub Release 下載並在雜湊一致時執行；不要關閉 Windows 安全功能。portable
+ZIP 已包含目前封裝的執行檔、資產與可攜工具，建議優先使用 ZIP，而不是單獨下載
+`MediaManager.exe`。發行附件不包含 `UserData`。
+
+### 方法二：從原始碼安裝
+
+必要條件為 Windows 10／11 x64、Git 與 Python 3.14 以上。在 PowerShell 執行：
 
 ```powershell
+git clone https://github.com/z1379228/MediaManager-.git
+Set-Location .\MediaManager-
+py -3.14 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -e ".[ui]"
+.\.venv\Scripts\python.exe -B .\main.py --verify-only
 .\.venv\Scripts\python.exe .\main.py
 ```
 
+若要執行測試與開發工具，將安裝命令改為
+`.\.venv\Scripts\python.exe -m pip install -e ".[ui,dev]"`。`--verify-only`
+只驗證核心完整性；啟動 UI 後可從主畫面的核心／選用 MOD 工具狀態按鈕開啟
+「執行環境」，再按「重新檢查」確認外部工具。
+
 `main.py` 是唯一正式入口；`desktop.py` 只保留為舊版相容轉接。可攜模式會把
-使用者資料放在程式旁的 `UserData/`，請勿在保留版 `Version/` 目錄內直接執行
-會寫入資料的 smoke test。
+使用者資料放在程式旁的 `UserData/`。更完整的更新、移除與排錯說明見
+[INSTALL.md](INSTALL.md)及[依賴檢查](docs/dependency-health.md)。
 
 ## 安全邊界
 

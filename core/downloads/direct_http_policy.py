@@ -38,8 +38,8 @@ DIRECT_HTTP_SUFFIXES = frozenset(
     }
 )
 
-# A direct-file MOD must not become a fallback extractor for existing website
-# MODs. Subdomains of these official domains remain owned by their site MOD.
+# A direct-file MOD must not become a fallback extractor for known website
+# domains. Reserved domains stay excluded even if their site MOD is retired.
 SITE_OWNED_DOMAINS = frozenset(
     {
         "youtube.com",
