@@ -1,17 +1,27 @@
 # 安裝與啟動
 
-目前沒有可供一般使用者下載的已簽署 Stable 套件。本文件只說明從 Repository
-執行目前來源；不要把自行建置的 Development EXE 標示為正式發行版。
+目前沒有可供一般使用者下載的已簽署 Stable 套件。本文件分別說明既有 Testing
+附件與從 Repository 執行來源；不要把自行建置的 Development EXE 標示為正式
+發行版。
+
+Testing 1.2 已進入獲授權的本機 source-freeze／打包流程，但沒有 GitHub 發布。
+下列下載流程仍指向目前既有的 Testing 1.1，不會以 1.2 名稱冒用舊產物。
 
 ## Testing 1.1 預發行版
 
 若要使用已打包的未簽署測試版，請由
 [Testing 1.1（39.0.10 重整）](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.1.0-r2)
-下載 portable ZIP。它維持 `SAFE_MODE`、不是 Stable，Windows 可能顯示未簽署
-程式警告。下載後先比對 `.zip.sha256`，並可用同頁的 `SHA256SUMS.txt` 與
-`release-info.json` 核對內部檔案及來源 revision。
+下載免安裝、自包含 ZIP。它維持 `SAFE_MODE`、不是 Stable，Windows 可能顯示
+未簽署程式警告。下載後先比對 `.zip.sha256`，並可用同頁的
+`SHA256SUMS.txt` 與 `release-info.json` 核對內部檔案及來源 revision。解壓後
+直接雙擊 `MediaManager.exe`，不需要另外安裝 Python。
 
-## 必要條件
+雙擊 EXE 會使用 `%APPDATA%\MediaManager`、`%LOCALAPPDATA%\MediaManager` 與
+`Downloads\MediaManager`，不等同於資料完全可攜；發行附件本身不包含
+`UserData`。完整內容與發行者流程見
+[GitHub 免安裝自包含 ZIP](docs/self-contained-zip.md)。
+
+## 從原始碼執行的必要條件
 
 - Windows 10／11 x64。
 - Python 3.14 以上。

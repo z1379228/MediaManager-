@@ -37,6 +37,18 @@ def _capability(provider_id: str) -> SearchCapabilityV2:
     )
 
 
+def _wide_capability(provider_id: str) -> SearchCapabilityV2:
+    return SearchCapabilityV2(
+        provider_id,
+        ("youtube",),
+        ("all", "music", "video"),
+        50,
+        "offset",
+        True,
+        False,
+    )
+
+
 def test_search_query_is_normalized_and_bounded() -> None:
     query = SearchQueryV2("  synth   wave  ", "music", 200)
     assert query.normalized(_capability("one")) == SearchQueryV2(
@@ -130,6 +142,60 @@ def test_federated_search_preserves_provider_next_cursor() -> None:
     result = registry.search(SearchQueryV2("music"), provider_ids=("paged",))
 
     assert result.next_cursors == (("paged", "next-token"),)
+
+
+def test_single_source_search_honors_its_bounded_page_capability() -> None:
+    registry = SearchAdapterRegistry()
+    received: list[int] = []
+
+    def search(query: SearchQueryV2) -> SearchPageV2:
+        received.append(query.page_size)
+        return SearchPageV2(
+            "youtube-search",
+            tuple(_item(f"video-{index}") for index in range(query.page_size)),
+            "50",
+        )
+
+    registry.register(_wide_capability("youtube-search"), search)
+
+    result = registry.search(
+        SearchQueryV2("music", page_size=50),
+        provider_ids=("youtube-search",),
+        limit=50,
+    )
+
+    assert received == [50]
+    assert len(result.items) == 50
+    assert result.next_cursors == (("youtube-search", "50"),)
+
+
+def test_multi_source_search_keeps_per_provider_fanout_bounded() -> None:
+    registry = SearchAdapterRegistry()
+    received: dict[str, int] = {}
+
+    def adapter(provider_id: str):
+        def search(query: SearchQueryV2) -> SearchPageV2:
+            received[provider_id] = query.page_size
+            return SearchPageV2(
+                provider_id,
+                tuple(
+                    _item(f"{provider_id}-{index}")
+                    for index in range(query.page_size)
+                ),
+            )
+
+        return search
+
+    registry.register(_wide_capability("one"), adapter("one"))
+    registry.register(_wide_capability("two"), adapter("two"))
+
+    registry.search(
+        SearchQueryV2("music", page_size=50),
+        provider_ids=("one", "two"),
+        limit=50,
+    )
+
+    assert received == {"one": 20, "two": 20}
 
 
 def test_federated_search_round_robins_bounded_results_from_every_source() -> None:

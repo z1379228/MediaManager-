@@ -6,7 +6,8 @@
 - Source revision：`09b3a86e00938241d27050088583ebf81d9fb182`
 - 本機路徑：`Version/Testing/1.1`
 - 安全狀態：未簽署、`SAFE_MODE`
-- 發布狀態：已於 2026-07-23 發布為 GitHub prerelease；不是 Latest 或 Stable
+- 發布狀態：已於 2026-07-23 發布；GitHub metadata 目前誤設為非 prerelease
+  並被視為 Latest，待另行授權修正；產物本身仍是未簽署 Testing，不是 Stable
 - Tag：`test-v1.1.0-r2`
 - Release：[MediaManager 測試版 1.1（39.0.10 重整）](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.1.0-r2)
 
@@ -33,7 +34,7 @@
 - Staged runtime audit 通過：Deno `2.9.2`、FFmpeg `8.1.2`，共 6 項檢查。
 - `SHA256SUMS.txt` 的 105 個受控檔案全部閉合；GitHub 9 個附件的 digest 與
   本機逐檔 SHA-256 一致。
-- Portable ZIP SHA-256：
+- 免安裝自包含 ZIP SHA-256：
   `31a1ab2c61ada07bc07eb8121107e8bbc7a16692347cae54af5fc5edb7dcf912`。
 - Authenticode 狀態為 `NotSigned`，且沒有 production signed release manifest；
-  這不阻擋 Testing prerelease，但仍阻擋 Stable Gate。
+  這不阻擋 Testing 使用，但仍阻擋 Stable Gate。

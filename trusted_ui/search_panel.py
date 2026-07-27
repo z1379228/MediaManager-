@@ -12,7 +12,10 @@ from core.discovery.query_ranking import (
     prepare_search_query,
     rank_search_results,
 )
-from core.discovery.suggestions import preference_search_queries
+from core.discovery.suggestions import (
+    preference_search_queries,
+    recent_history_queries,
+)
 from core.mod_groups import (
     SITE_MOD_PARENT,
     BuiltinModGroupError,
@@ -91,31 +94,6 @@ def search_source_for_url(url: object) -> str:
 
     route = classify_site_url(url)
     return route.search_provider_id if route is not None else ""
-
-
-def recent_history_queries(
-    events: object,
-    *,
-    limit: int = 8,
-) -> tuple[str, ...]:
-    """Return bounded, newest-first unique queries for the compact history UI."""
-
-    if not isinstance(events, (list, tuple)):
-        return ()
-    bounded_limit = max(1, min(int(limit), 20))
-    queries: list[str] = []
-    seen: set[str] = set()
-    for event in events:
-        value = getattr(event, "query", "")
-        query = " ".join(value.split()) if isinstance(value, str) else ""
-        key = query.casefold()
-        if not query or key in seen:
-            continue
-        seen.add(key)
-        queries.append(query)
-        if len(queries) >= bounded_limit:
-            break
-    return tuple(queries)
 
 
 def recent_history_selections(

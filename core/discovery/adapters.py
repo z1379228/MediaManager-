@@ -13,6 +13,7 @@ from core.logging.redaction import bounded_redacted_text
 SearchCallable = Callable[[SearchQueryV2], SearchPageV2]
 _MAX_SEARCH_SOURCES = 16
 _MAX_RESULTS_PER_SOURCE = 20
+_MAX_SINGLE_SOURCE_RESULTS = 50
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +75,11 @@ class SearchAdapterRegistry:
         bounded_limit = max(1, min(int(limit), 50))
         if len(selected) > _MAX_SEARCH_SOURCES:
             raise ValueError("too many search MODs selected")
+        per_source_limit = (
+            _MAX_SINGLE_SOURCE_RESULTS
+            if len(selected) == 1
+            else _MAX_RESULTS_PER_SOURCE
+        )
         collected: list[tuple[str, tuple[DiscoveryItemV1, ...]]] = []
         next_cursors: list[tuple[str, str]] = []
         failures: list[SearchAdapterFailure] = []
@@ -89,7 +95,7 @@ class SearchAdapterRegistry:
                 normalized = SearchQueryV2(
                     query.query,
                     query.content_type,
-                    min(query.page_size, bounded_limit, _MAX_RESULTS_PER_SOURCE),
+                    min(query.page_size, bounded_limit, per_source_limit),
                     query.cursor,
                 ).normalized(capability)
                 page = adapter(normalized)
@@ -98,7 +104,7 @@ class SearchAdapterRegistry:
                 if page.next_cursor:
                     next_cursors.append((provider_id, page.next_cursor))
                 collected.append(
-                    (provider_id, tuple(page.items[:_MAX_RESULTS_PER_SOURCE]))
+                    (provider_id, tuple(page.items[:per_source_limit]))
                 )
             except Exception as error:
                 category = (

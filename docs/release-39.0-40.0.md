@@ -24,6 +24,21 @@
 - 暫存清理保留 `dist/UserData` 及整個 `.work`；`.work` 可能包含 rollback
   backups、build receipts、Git worktrees 與驗證證據，只能經精準人工稽核清除。
 
+## 39.0.11
+
+- YouTube 搜尋新增內容類型、頁面／數量、時長、排序、來源與顯示欄位，並保留
+  多來源搜尋的逐 provider 上限及取消、歷史與選取流程。
+- 新增只接受已稽核 staged release 的 deterministic 自包含 ZIP 工具；拒絕
+  UserData、秘密、link-like、路徑衝突、來源 revision 不一致與覆寫既有附件。
+- Testing 公開候選身分升為 `1.2.0`；`MediaManager v1.0` 產品名稱及 Stable
+  `1.0.0` 身分不變。
+- 候選來源已通過 `90` 項定向回歸、完整 `1364 passed, 7 skipped`、quality
+  audit、Repository 外 compileall、版本／MOD／網站／依賴稽核及
+  `git diff --check`。
+- 本次獲授權 commit 作為 Development `39.0.11` source freeze；build、未簽署
+  EXE、Testing staging 與 ZIP 亦已獲授權，但仍必須由工具輸出證明。push、
+  簽署與發布未獲授權，不得將 1.1 產物改名為 1.2。
+
 ## Validation
 
 - 完整 repository runner：`1317 passed, 7 skipped`。
@@ -39,11 +54,20 @@
 ## Testing 1.1 Gate
 
 使用者已授權 Development 39.0.10 的 stage、commit、source freeze，以及由同一
-乾淨 revision 建立、上傳未簽署 `SAFE_MODE` Testing `1.1.0`。GitHub prerelease
+乾淨 revision 建立、上傳未簽署 `SAFE_MODE` Testing `1.1.0`。GitHub Release
 使用唯一 tag `test-v1.1.0-r2`，精確指向 `09b3a86e00938241d27050088583ebf81d9fb182`；
-9 個附件的 GitHub digest 與本機 SHA-256 一致。Testing 1.0 與既有 tags 不覆寫。
+9 個附件的 GitHub digest 與本機 SHA-256 一致。遠端 metadata 目前誤設為非
+prerelease 並被視為 Latest，需另行授權修正；Testing 1.0 與既有 tags 不覆寫。
 Authenticode 與 production signed release manifest 仍未成立，因此 Stable Gate
 保持阻擋。
+
+## Testing 1.2 Gate
+
+使用者已明確授權 stage、commit、source freeze Development `39.0.11`，以及由
+同一 revision 執行 build、建立未簽署 EXE、stage Testing `1.2.0` 與產生
+自包含 ZIP。push、簽署與發布未獲授權。候選必須把 Testing 身分、YouTube
+回歸及 ZIP 工具納入同一乾淨 revision，再建立 `Version/Testing/1.2`。
+Testing 維持未簽署 `SAFE_MODE`，不得宣稱 Stable，也不得預先建立 tag 或下載 URL。
 
 ## 40.0
 

@@ -37,15 +37,35 @@ Development、Testing 與 Stable 是互相獨立的發行軌，數字不可跨�
 .\.venv\Scripts\python.exe -m tools.audit_versions --root Version --full-history
 ```
 
+## 免安裝自包含 ZIP
+
+GitHub 一般使用者附件應由一個已通過版本與 runtime 稽核的 staged release
+產生，ZIP 內只有一個頂層資料夾；解壓後可直接雙擊 `MediaManager.exe`，不需
+系統 Python。ZIP 不得混入 UserData、下載內容、快取、Log、秘密或私鑰。
+
+```powershell
+$sourceRevision = "<已獨立確認的 40 或 64 位小寫 source revision>"
+.\.venv\Scripts\python.exe -m tools.package_self_contained_zip `
+  --release-root Version\Testing\1.2 `
+  --output-dir .work\release-upload-test-v1.2 `
+  --expected-source-revision $sourceRevision
+```
+
+此命令只封裝既有 staged folder，不授權或執行 build、簽署、stage、commit、
+push、上傳或發布。資料位置、deterministic 驗證與 GitHub revision 規則見
+[GitHub 免安裝自包含 ZIP](self-contained-zip.md)。
+
 ## 建置與發布授權
 
 stage、commit、source freeze、build、建立 EXE、Testing／Stable、Authenticode、
 Ed25519 簽署、stage-built、push、發布與上傳都是分開的外部狀態變更，必須逐項
 取得明確授權。授權其中一項不自動授權下一項。
 
-目前沒有 Development 40.0 或 Stable 發布計畫；Testing 1.1 已以未簽署
-`SAFE_MODE` prerelease `test-v1.1.0-r2` 發布。下列完整 Stable 發布流程仍是
-保留契約，不因 Testing prerelease 而視為完成：
+目前沒有 Development 40.0 或 Stable 發布計畫；Testing 1.2 已進入獲授權的
+本機 source-freeze／打包流程，但未獲授權 push、簽署或發布。Testing 1.1 已以
+未簽署 `SAFE_MODE` 的 `test-v1.1.0-r2` 發布；其 GitHub metadata 目前誤設為
+非 prerelease 並被視為 Latest，需另行授權修正。下列完整 Stable 發布流程仍是
+保留契約，不因 Testing 發布而視為完成：
 
 1. 建立乾淨、不可變的 source-freeze revision。
 2. 在 Repository 外的唯一工作目錄執行 receipt-bound build-only。

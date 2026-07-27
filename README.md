@@ -4,8 +4,10 @@
 佇列、媒體庫與可信 UI；網站解析、轉換、轉錄及自動化等重功能由可個別停用的
 內建或第三方 MOD 提供。
 
-目前來源版本為開發版 39.0（核心相容版本 39.0.10）。`MediaManager v1.0`
-是產品顯示名稱，不表示 Stable 已發布。未簽署、維持 `SAFE_MODE` 的
+目前來源版本為開發版 39.0（核心相容版本 39.0.11）。`MediaManager v1.0`
+是產品顯示名稱，不表示 Stable 已發布。Testing 1.2 已進入獲授權的本機
+source-freeze／打包流程，但沒有 GitHub 發布；目前可下載的仍是未簽署、維持
+`SAFE_MODE` 的
 [Testing 1.1（39.0.10 重整）](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.1.0-r2)
 已發布供測試；它不是已簽署的 Stable 正式套件。
 
@@ -24,7 +26,7 @@
 
 ## 安裝
 
-### 方法一：Testing 1.1 portable ZIP（一般使用者）
+### 方法一：Testing 1.1 免安裝、自包含 ZIP（一般使用者）
 
 1. 從 [Testing 1.1 Release](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.1.0-r2)
    下載
@@ -44,9 +46,11 @@
    `MediaManager.exe`。不需要另外安裝 Python。
 
 Testing 1.1 是未簽署測試版，Windows 可能顯示無法驗證發布者的警告。只應從上述
-GitHub Release 下載並在雜湊一致時執行；不要關閉 Windows 安全功能。portable
-ZIP 已包含目前封裝的執行檔、資產與可攜工具，建議優先使用 ZIP，而不是單獨下載
-`MediaManager.exe`。發行附件不包含 `UserData`。
+GitHub Release 下載並在雜湊一致時執行；不要關閉 Windows 安全功能。自包含 ZIP
+已包含目前封裝的執行檔、資產與可攜工具，建議優先使用 ZIP，而不是單獨下載
+`MediaManager.exe`。發行附件不包含 `UserData`；直接雙擊 EXE 時使用標準 Windows
+使用者資料位置，不等同於 `--portable` 資料模式。詳見
+[GitHub 免安裝自包含 ZIP](docs/self-contained-zip.md)。
 
 ### 方法二：從原始碼安裝
 
@@ -119,6 +123,7 @@ Repository 測試應透過 `tools.run_tests` 使用 Repository 外的每輪唯�
 - [下載工作契約](docs/downloads-v1.md)
 - [第三方 MOD 開發指南](docs/mod-developer-guide.md)
 - [版本與發布政策](docs/version-layout.md)
+- [GitHub 免安裝自包含 ZIP](docs/self-contained-zip.md)
 
 舊 roadmap、過期候選與逐版日誌不再留在目前樹；需要稽核時由 Git 歷史與
 GitHub Releases 的不可變附件追查。已公開的 EXE、checksum、release metadata

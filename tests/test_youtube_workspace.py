@@ -28,16 +28,19 @@ def _item(
     url: str,
     title: str,
     *,
+    artist: str = "頻道",
     duration: int | None = 120,
+    language: str = "",
+    category: str = "video",
 ) -> DiscoveryItemV1:
     return DiscoveryItemV1(
         video_id,
         url,
         title,
-        "頻道",
+        artist,
         duration,
-        "",
-        "video",
+        language,
+        category,
         "",
     )
 
@@ -50,6 +53,12 @@ def _wait_until(app: object, predicate: object, timeout: float = 2.0) -> None:
             return
         time.sleep(0.005)
     raise AssertionError("timed out waiting for YouTube workspace")
+
+
+def _select_combo_data(combo: object, value: object) -> None:
+    index = combo.findData(value)
+    assert index >= 0, f"missing combo option: {value!r}"
+    combo.setCurrentIndex(index)
 
 
 def test_youtube_workspace_accepts_only_exact_official_https_hosts() -> None:
@@ -351,7 +360,7 @@ def test_youtube_workspace_uses_one_source_and_only_prefills_selected_urls(
             {
                 "query": "幻月環",
                 "provider_ids": ("youtube-search",),
-                "limit": 24,
+                "limit": 20,
                 "content_type": "all",
                 "cursor": "",
             }
@@ -387,6 +396,557 @@ def test_youtube_workspace_uses_one_source_and_only_prefills_selected_urls(
         assert added[-1] == ("https://youtu.be/direct",)
         assert len(calls) == 2
     finally:
+        workspace.shutdown()
+        workspace.close()
+        workspace.deleteLater()
+        app.processEvents()
+
+
+def test_youtube_workspace_forwards_normalized_query_scope_and_page_size(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    calls: list[dict[str, object]] = []
+
+    def federated_search(query: str, **options: object) -> FederatedSearchResult:
+        calls.append({"query": query, **options})
+        return FederatedSearchResult((), (), ())
+
+    context = SimpleNamespace(
+        discovery=SimpleNamespace(
+            statuses=lambda: (
+                ProviderStatus("youtube-search", "YouTube Search", True),
+            ),
+            is_enabled=lambda provider_id: provider_id == "youtube-search",
+            federated_search=federated_search,
+        ),
+        download_providers=SimpleNamespace(
+            is_enabled=lambda provider_id: provider_id == "youtube"
+        ),
+        events=None,
+        audit=None,
+    )
+    workspace = create_youtube_workspace(context, lambda _urls: None)
+    try:
+        assert tuple(
+            workspace.content_type.itemData(index)
+            for index in range(workspace.content_type.count())
+        ) == ("all", "music", "video")
+        page_sizes = tuple(
+            workspace.page_size.itemData(index)
+            for index in range(workspace.page_size.count())
+        )
+        assert 12 in page_sizes
+        assert 20 in page_sizes
+
+        _select_combo_data(workspace.content_type, "music")
+        _select_combo_data(workspace.page_size, 12)
+        workspace.query.setText("  lo fi   offical  ")
+        workspace.search()
+        _wait_until(app, lambda: not workspace.busy)
+
+        _select_combo_data(workspace.content_type, "video")
+        _select_combo_data(workspace.page_size, 20)
+        workspace.query.setText("  夜曲   現場  ")
+        workspace.search()
+        _wait_until(app, lambda: not workspace.busy)
+
+        assert calls == [
+            {
+                "query": "lofi official",
+                "provider_ids": ("youtube-search",),
+                "limit": 12,
+                "content_type": "music",
+                "cursor": "",
+            },
+            {
+                "query": "夜曲 現場",
+                "provider_ids": ("youtube-search",),
+                "limit": 20,
+                "content_type": "video",
+                "cursor": "",
+            },
+        ]
+    finally:
+        workspace.shutdown()
+        workspace.close()
+        workspace.deleteLater()
+        app.processEvents()
+
+
+def test_youtube_workspace_local_filter_and_sort_do_not_search_again(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    calls: list[dict[str, object]] = []
+    items = (
+        _item(
+            "provider-first",
+            "https://www.youtube.com/watch?v=provider-first",
+            "Unrelated clip",
+            duration=180,
+        ),
+        _item(
+            "relevant-long",
+            "https://www.youtube.com/watch?v=relevant-long",
+            "Target live session",
+            artist="target",
+            duration=900,
+        ),
+        _item(
+            "relevant-short",
+            "https://www.youtube.com/watch?v=relevant-short",
+            "Target short",
+            duration=90,
+        ),
+    )
+
+    def federated_search(query: str, **options: object) -> FederatedSearchResult:
+        calls.append({"query": query, **options})
+        return FederatedSearchResult(
+            items,
+            (),
+            tuple("youtube-search" for _ in items),
+        )
+
+    context = SimpleNamespace(
+        discovery=SimpleNamespace(
+            statuses=lambda: (
+                ProviderStatus("youtube-search", "YouTube Search", True),
+            ),
+            is_enabled=lambda provider_id: provider_id == "youtube-search",
+            federated_search=federated_search,
+        ),
+        download_providers=SimpleNamespace(
+            is_enabled=lambda provider_id: provider_id == "youtube"
+        ),
+        events=None,
+        audit=None,
+    )
+    workspace = create_youtube_workspace(context, lambda _urls: None)
+
+    def visible_titles() -> tuple[str, ...]:
+        return tuple(
+            workspace.table.item(row, 1).text()
+            for row in range(workspace.table.rowCount())
+        )
+
+    try:
+        _select_combo_data(workspace.sort_mode, "provider")
+        workspace.duration_filter.setCurrentIndex(0)
+        workspace.query.setText("target")
+        workspace.search()
+        _wait_until(app, lambda: not workspace.busy)
+
+        assert visible_titles() == tuple(item.title for item in items)
+        assert len(calls) == 1
+
+        _select_combo_data(workspace.sort_mode, "relevance")
+        app.processEvents()
+        assert visible_titles() == (
+            "Target live session",
+            "Target short",
+            "Unrelated clip",
+        )
+        assert len(calls) == 1
+
+        workspace.duration_filter.setCurrentIndex(1)
+        app.processEvents()
+        assert visible_titles() == ("Target short", "Unrelated clip")
+        assert len(calls) == 1
+
+        _select_combo_data(workspace.sort_mode, "provider")
+        app.processEvents()
+        assert visible_titles() == ("Unrelated clip", "Target short")
+        assert len(calls) == 1
+    finally:
+        workspace.shutdown()
+        workspace.close()
+        workspace.deleteLater()
+        app.processEvents()
+
+
+def test_youtube_workspace_preserves_multiple_selected_rows_across_pages(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtCore import QItemSelectionModel
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    first_page = (
+        _item("one", "https://www.youtube.com/watch?v=one", "第一首"),
+        _item("two", "https://www.youtube.com/watch?v=two", "第二首"),
+        _item("three", "https://www.youtube.com/watch?v=three", "第三首"),
+    )
+    next_page = (
+        first_page[0],
+        _item("four", "https://www.youtube.com/watch?v=four", "第四首"),
+    )
+
+    def federated_search(
+        _query: str, **options: object
+    ) -> FederatedSearchResult:
+        if options.get("cursor"):
+            return FederatedSearchResult(
+                next_page,
+                (),
+                ("youtube-search", "youtube-search"),
+            )
+        return FederatedSearchResult(
+            first_page,
+            (),
+            tuple("youtube-search" for _ in first_page),
+            (("youtube-search", "next-token"),),
+        )
+
+    context = SimpleNamespace(
+        discovery=SimpleNamespace(
+            statuses=lambda: (
+                ProviderStatus("youtube-search", "YouTube Search", True),
+            ),
+            is_enabled=lambda provider_id: provider_id == "youtube-search",
+            federated_search=federated_search,
+        ),
+        download_providers=SimpleNamespace(
+            is_enabled=lambda provider_id: provider_id == "youtube"
+        ),
+        events=None,
+        audit=None,
+    )
+    workspace = create_youtube_workspace(context, lambda _urls: None)
+    try:
+        workspace.query.setText("跨頁選取")
+        workspace.search()
+        _wait_until(app, lambda: not workspace.busy)
+
+        selection = workspace.table.selectionModel()
+        flags = (
+            QItemSelectionModel.SelectionFlag.Select
+            | QItemSelectionModel.SelectionFlag.Rows
+        )
+        selection.select(workspace.table.model().index(0, 0), flags)
+        selection.select(workspace.table.model().index(2, 0), flags)
+        assert workspace.selected_urls() == (
+            first_page[0].url,
+            first_page[2].url,
+        )
+
+        workspace.load_more()
+        _wait_until(app, lambda: not workspace.busy)
+
+        assert workspace.table.rowCount() == 4
+        assert workspace.selected_urls() == (
+            first_page[0].url,
+            first_page[2].url,
+        )
+    finally:
+        workspace.shutdown()
+        workspace.close()
+        workspace.deleteLater()
+        app.processEvents()
+
+
+def test_youtube_workspace_shows_recent_searches_only_when_history_is_available(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+
+    def make_context(history_available: bool) -> SimpleNamespace:
+        enabled = {"youtube-search"}
+        statuses = [
+            ProviderStatus("youtube-search", "YouTube Search", True),
+        ]
+        if history_available:
+            enabled.add("youtube-history")
+            statuses.append(
+                ProviderStatus("youtube-history", "YouTube History", True)
+            )
+        return SimpleNamespace(
+            discovery=SimpleNamespace(
+                statuses=lambda: tuple(statuses),
+                is_enabled=lambda provider_id: provider_id in enabled,
+                federated_search=lambda *_args, **_options: FederatedSearchResult(
+                    (), (), ()
+                ),
+                recent_history=lambda **_options: (),
+                record_history=lambda *_args, **_options: None,
+            ),
+            download_providers=SimpleNamespace(
+                is_enabled=lambda provider_id: provider_id == "youtube"
+            ),
+            events=None,
+            audit=None,
+        )
+
+    unavailable = create_youtube_workspace(
+        make_context(False), lambda _urls: None
+    )
+    available = create_youtube_workspace(make_context(True), lambda _urls: None)
+    try:
+        assert unavailable.history_button.isHidden()
+        assert not available.history_button.isHidden()
+    finally:
+        for workspace in (unavailable, available):
+            workspace.shutdown()
+            workspace.close()
+            workspace.deleteLater()
+        app.processEvents()
+
+
+def test_youtube_workspace_disables_all_search_options_while_busy(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    started = threading.Event()
+    release = threading.Event()
+
+    def federated_search(
+        *_args: object, **_options: object
+    ) -> FederatedSearchResult:
+        started.set()
+        release.wait(1.0)
+        return FederatedSearchResult((), (), ())
+
+    context = SimpleNamespace(
+        discovery=SimpleNamespace(
+            statuses=lambda: (
+                ProviderStatus("youtube-search", "YouTube Search", True),
+                ProviderStatus("youtube-history", "YouTube History", True),
+            ),
+            is_enabled=lambda provider_id: provider_id
+            in {"youtube-search", "youtube-history"},
+            federated_search=federated_search,
+            record_history=Mock(),
+        ),
+        download_providers=SimpleNamespace(
+            is_enabled=lambda provider_id: provider_id == "youtube"
+        ),
+        events=None,
+        audit=None,
+    )
+    workspace = create_youtube_workspace(context, lambda _urls: None)
+    controls = (
+        workspace.content_type,
+        workspace.page_size,
+        workspace.duration_filter,
+        workspace.sort_mode,
+        workspace.history_button,
+    )
+    try:
+        assert all(control.isEnabled() for control in controls)
+
+        workspace.query.setText("busy controls")
+        workspace.search()
+        assert started.wait(1.0)
+        app.processEvents()
+        assert not any(control.isEnabled() for control in controls)
+
+        release.set()
+        _wait_until(app, lambda: not workspace.busy)
+        assert all(control.isEnabled() for control in controls)
+    finally:
+        release.set()
+        workspace.shutdown()
+        workspace.close()
+        workspace.deleteLater()
+        app.processEvents()
+
+
+def test_youtube_workspace_can_load_more_when_local_filter_hides_first_page(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    calls: list[dict[str, object]] = []
+    hidden = _item(
+        "long",
+        "https://www.youtube.com/watch?v=long",
+        "長影片",
+        duration=900,
+    )
+    visible = _item(
+        "short",
+        "https://www.youtube.com/watch?v=short",
+        "短影片",
+        duration=120,
+    )
+
+    def federated_search(
+        query: str, **options: object
+    ) -> FederatedSearchResult:
+        calls.append({"query": query, **options})
+        if options.get("cursor"):
+            return FederatedSearchResult(
+                (visible,),
+                (),
+                ("youtube-search",),
+            )
+        return FederatedSearchResult(
+            (hidden,),
+            (),
+            ("youtube-search",),
+            (("youtube-search", "next-token"),),
+        )
+
+    context = SimpleNamespace(
+        discovery=SimpleNamespace(
+            statuses=lambda: (
+                ProviderStatus("youtube-search", "YouTube Search", True),
+            ),
+            is_enabled=lambda provider_id: provider_id == "youtube-search",
+            federated_search=federated_search,
+        ),
+        download_providers=SimpleNamespace(
+            is_enabled=lambda provider_id: provider_id == "youtube"
+        ),
+        events=None,
+        audit=None,
+    )
+    workspace = create_youtube_workspace(context, lambda _urls: None)
+    try:
+        workspace.duration_filter.setCurrentIndex(1)
+        workspace.query.setText("本機篩選續頁")
+        workspace.search()
+        _wait_until(app, lambda: not workspace.busy)
+
+        assert workspace.source_results == (hidden,)
+        assert workspace.results == ()
+        assert workspace.table.rowCount() == 0
+        assert workspace.next_cursor == "next-token"
+        assert workspace.more_button.isEnabled()
+
+        workspace.load_more()
+        _wait_until(app, lambda: not workspace.busy)
+
+        assert calls[1]["cursor"] == "next-token"
+        assert workspace.source_results == (hidden, visible)
+        assert workspace.results == (visible,)
+        assert workspace.table.rowCount() == 1
+    finally:
+        workspace.shutdown()
+        workspace.close()
+        workspace.deleteLater()
+        app.processEvents()
+
+
+def test_youtube_workspace_records_only_successful_initial_searches(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    record_history = Mock()
+    cancel_started = threading.Event()
+    cancel_release = threading.Event()
+    first = _item(
+        "first",
+        "https://www.youtube.com/watch?v=first",
+        "成功結果",
+    )
+    second = _item(
+        "second",
+        "https://www.youtube.com/watch?v=second",
+        "續頁結果",
+    )
+
+    def federated_search(
+        query: str, **options: object
+    ) -> FederatedSearchResult:
+        if query == "failure":
+            raise RuntimeError("expected search failure")
+        if query == "cancelled":
+            cancel_started.set()
+            cancel_release.wait(1.0)
+            return FederatedSearchResult(
+                (first,),
+                (),
+                ("youtube-search",),
+            )
+        if options.get("cursor"):
+            return FederatedSearchResult(
+                (second,),
+                (),
+                ("youtube-search",),
+            )
+        return FederatedSearchResult(
+            (first,),
+            (),
+            ("youtube-search",),
+            (("youtube-search", "next-token"),),
+        )
+
+    context = SimpleNamespace(
+        discovery=SimpleNamespace(
+            statuses=lambda: (
+                ProviderStatus("youtube-search", "YouTube Search", True),
+                ProviderStatus("youtube-history", "YouTube History", True),
+            ),
+            is_enabled=lambda provider_id: provider_id
+            in {"youtube-search", "youtube-history"},
+            federated_search=federated_search,
+            record_history=record_history,
+        ),
+        download_providers=SimpleNamespace(
+            is_enabled=lambda provider_id: provider_id == "youtube"
+        ),
+        events=None,
+        audit=None,
+    )
+    workspace = create_youtube_workspace(context, lambda _urls: None)
+    try:
+        workspace.query.setText("success")
+        workspace.search()
+        _wait_until(app, lambda: not workspace.busy)
+        record_history.assert_called_once_with("search", "success")
+
+        workspace.load_more()
+        _wait_until(app, lambda: not workspace.busy)
+        record_history.assert_called_once_with("search", "success")
+
+        workspace.query.setText("failure")
+        workspace.search()
+        _wait_until(app, lambda: not workspace.busy)
+        record_history.assert_called_once_with("search", "success")
+
+        workspace.query.setText("cancelled")
+        workspace.search()
+        assert cancel_started.wait(1.0)
+        workspace.cancel_search()
+        cancel_release.set()
+        _wait_until(app, lambda: not workspace.busy)
+        record_history.assert_called_once_with("search", "success")
+    finally:
+        cancel_release.set()
         workspace.shutdown()
         workspace.close()
         workspace.deleteLater()

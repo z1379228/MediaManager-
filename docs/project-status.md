@@ -1,14 +1,15 @@
 # 目前專案狀態
 
-狀態日期：2026-07-23
+狀態日期：2026-07-27
 
 ## 結論
 
-MediaManager 目前來源停在 Development `39.0.10`。既定 Development 34.0～39.0
-工作已整併；使用者決定不建立 Development 40.0 或後續版本計畫。Repository
-沒有可發布 Stable 候選。Development 39.0.10 已完成 source freeze；由該精確
-revision 建立的未簽署、`SAFE_MODE` Testing 1.1 已以 `test-v1.1.0-r2`
-prerelease 發布。這不等於 Stable 發行。
+MediaManager 目前以 Development `39.0.11`／Testing `1.2.0` 作為獲授權的
+source-freeze 與本機打包候選，包含 YouTube 搜尋增強與可重現的自包含 ZIP
+工具。Development 40.0 仍為 `NO PLAN / NO RELEASE`，Repository 也沒有可發布
+Stable 候選。Testing 1.2 未獲授權 push、簽署或發布；目前已存在的未簽署、
+`SAFE_MODE` Testing 1.1 仍是 `test-v1.1.0-r2`。其 GitHub metadata 目前誤設
+為非 prerelease 並被視為 Latest，待另行授權修正；這不等於 Stable 發行。
 
 ## 已完成範圍
 
@@ -31,7 +32,12 @@ prerelease 發布。這不等於 Stable 發行。
 
 ## 目前 Testing 工作
 
-- Testing 公開身分為 `1.1.0`，本機路徑為 `Version/Testing/1.1`。
+- Testing 1.2 候選公開身分為 `1.2.0`；預定本機路徑為
+  `Version/Testing/1.2`；實際是否建立以該不可變資料夾及稽核結果為準。
+- 候選核心身分為 Development `39.0.11`；完整驗證、乾淨 commit、
+  source freeze、未簽署 EXE、Testing staging 與 ZIP 已取得本輪明確授權。
+- Testing 1.2 必須由同一 source revision 執行 receipt-bound build、staging、
+  runtime audit、copied-folder smoke 與 deterministic ZIP 比對。
 - Testing 1.0 是不可覆寫的歷史版本，不以目前 39.x 來源重建或冒用。
 - Testing 1.1 使用唯一修訂 tag `test-v1.1.0-r2`，精確指向 source revision
   `09b3a86e00938241d27050088583ebf81d9fb182`；9 個附件已發布且 digest 閉合。
@@ -46,8 +52,7 @@ prerelease 發布。這不等於 Stable 發行。
   真實互動流程仍需人工驗證。
 - 外部網站會變動；離線 regression 與 extractor 存在不等於即時網站 smoke。
 
-這些未成立項目不阻擋已明確標示的 Testing prerelease，但阻擋任何 Stable
-或已簽署正式發布宣稱。
+這些未成立項目不阻擋 Testing 使用，但阻擋任何 Stable 或已簽署正式發布宣稱。
 
 ## 歷史與回復
 

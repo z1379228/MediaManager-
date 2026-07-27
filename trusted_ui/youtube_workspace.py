@@ -9,6 +9,15 @@ from urllib.parse import urlsplit
 
 from contracts.discovery_v1 import DiscoveryItemV1
 from core.discovery.adapters import FederatedSearchResult
+from core.discovery.query_ranking import (
+    matching_search_indices,
+    prepare_search_query,
+    rank_search_results,
+)
+from core.discovery.suggestions import (
+    preference_search_queries,
+    recent_history_queries,
+)
 from core.localization import normalized_core_locale
 from core.mod_groups import load_builtin_mod_group
 from core.site_routing import YOUTUBE_HOSTS, classify_site_url
@@ -133,11 +142,14 @@ def create_youtube_workspace(
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QCheckBox,
+        QComboBox,
         QFrame,
+        QGridLayout,
         QHBoxLayout,
         QHeaderView,
         QLabel,
         QLineEdit,
+        QMenu,
         QPushButton,
         QTableWidget,
         QTableWidgetItem,
@@ -152,6 +164,7 @@ def create_youtube_workspace(
         def __init__(self) -> None:
             super().__init__(parent)
             self.setObjectName("card")
+            self.source_results: tuple[DiscoveryItemV1, ...] = ()
             self.results: tuple[DiscoveryItemV1, ...] = ()
             self.generation = 0
             self.active_generation = 0
@@ -159,8 +172,13 @@ def create_youtube_workspace(
             self.busy = False
             self.closing = False
             self.last_query = ""
+            self.last_content_type = "all"
+            self.last_page_size = 20
+            self.last_corrections: tuple[str, ...] = ()
             self.next_cursor = ""
             self.loading_more = False
+            self.selected_result_urls: set[str] = set()
+            self.repopulating_results = False
             self.thumbnail_loader = create_thumbnail_loader(self)
             self.bridge = SearchBridge()
             self.bridge.finished.connect(self.show_results)
@@ -221,6 +239,62 @@ def create_youtube_workspace(
             self.status.setWordWrap(True)
             body_layout.addWidget(self.status)
 
+            options = QGridLayout()
+            options.setSpacing(8)
+            content_type_label = QLabel("內容")
+            self.content_type = QComboBox()
+            self.content_type.setAccessibleName("YouTube 搜尋內容類型")
+            self.content_type.addItem("全部", "all")
+            self.content_type.addItem("音樂", "music")
+            self.content_type.addItem("影片", "video")
+            content_type_label.setBuddy(self.content_type)
+            options.addWidget(content_type_label, 0, 0)
+            options.addWidget(self.content_type, 0, 1)
+            page_size_label = QLabel("每頁")
+            self.page_size = QComboBox()
+            self.page_size.setAccessibleName("YouTube 每頁搜尋結果數量")
+            for value in (12, 20, 30, 50):
+                self.page_size.addItem(f"{value} 筆", value)
+            self.page_size.setCurrentIndex(1)
+            page_size_label.setBuddy(self.page_size)
+            options.addWidget(page_size_label, 0, 2)
+            options.addWidget(self.page_size, 0, 3)
+            duration_label = QLabel("長度")
+            self.duration_filter = QComboBox()
+            self.duration_filter.setAccessibleName("YouTube 搜尋結果長度篩選")
+            self.duration_filter.addItem("所有長度", (None, None))
+            self.duration_filter.addItem("4 分鐘內", (None, 240))
+            self.duration_filter.addItem("4–20 分鐘", (241, 1200))
+            self.duration_filter.addItem("20 分鐘以上", (1201, None))
+            duration_label.setBuddy(self.duration_filter)
+            options.addWidget(duration_label, 1, 0)
+            options.addWidget(self.duration_filter, 1, 1)
+            sort_mode_label = QLabel("排序")
+            self.sort_mode = QComboBox()
+            self.sort_mode.setAccessibleName("YouTube 搜尋結果排序")
+            self.sort_mode.addItem("YouTube 順序", "provider")
+            self.sort_mode.addItem("本機相關度", "relevance")
+            sort_mode_label.setBuddy(self.sort_mode)
+            options.addWidget(sort_mode_label, 1, 2)
+            options.addWidget(self.sort_mode, 1, 3)
+            self.history_button = QPushButton("最近搜尋")
+            self.history_button.setObjectName("ghost")
+            self.history_button.setAccessibleName("YouTube 最近搜尋與本機建議")
+            self.history_menu = QMenu(self.history_button)
+            self.history_menu.aboutToShow.connect(self.populate_history_menu)
+            self.history_button.setMenu(self.history_menu)
+            options.addWidget(
+                self.history_button,
+                0,
+                4,
+                2,
+                1,
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+            )
+            options.setColumnStretch(1, 1)
+            options.setColumnStretch(3, 1)
+            body_layout.addLayout(options)
+
             self.table = QTableWidget(0, 5)
             self.table.setAccessibleName("YouTube 搜尋結果")
             self.table.setAccessibleDescription(
@@ -278,6 +352,18 @@ def create_youtube_workspace(
             self.add_button.clicked.connect(self.add_selected)
             actions.addWidget(self.add_button)
             body_layout.addLayout(actions)
+            self.content_type.currentIndexChanged.connect(
+                self.invalidate_network_options
+            )
+            self.page_size.currentIndexChanged.connect(
+                self.invalidate_network_options
+            )
+            self.duration_filter.currentIndexChanged.connect(
+                self.apply_local_result_options
+            )
+            self.sort_mode.currentIndexChanged.connect(
+                self.apply_local_result_options
+            )
             layout.addWidget(self.body)
             self.body.hide()
             self.apply_language(
@@ -309,6 +395,111 @@ def create_youtube_workspace(
                 }[selected]
             )
 
+        def history_enabled(self) -> bool:
+            try:
+                return context.discovery.is_enabled("youtube-history")
+            except (AttributeError, KeyError, RuntimeError, ValueError):
+                return False
+
+        def populate_history_menu(self) -> None:
+            self.history_menu.clear()
+            if not self.history_enabled():
+                unavailable = self.history_menu.addAction("YouTube 搜尋紀錄 MOD 未啟用")
+                unavailable.setEnabled(False)
+                return
+            try:
+                events = context.discovery.recent_history(limit=30)
+                preferences = context.discovery.history_preferences()
+            except (AttributeError, KeyError, RuntimeError, ValueError):
+                unavailable = self.history_menu.addAction("暫時無法讀取本機搜尋紀錄")
+                unavailable.setEnabled(False)
+                return
+
+            suggestions = preference_search_queries(
+                preferences,
+                events,
+                limit=4,
+            )
+            queries = recent_history_queries(events, limit=8)
+            if suggestions:
+                heading = self.history_menu.addAction("依本機偏好建議")
+                heading.setEnabled(False)
+                for query in suggestions:
+                    label = query if len(query) <= 52 else f"{query[:49]}…"
+                    action = self.history_menu.addAction(f"建議：{label}")
+                    action.setToolTip(query)
+                    action.triggered.connect(
+                        lambda _checked=False, value=query: self.search_from_history(
+                            value
+                        )
+                    )
+            if queries:
+                if suggestions:
+                    self.history_menu.addSeparator()
+                heading = self.history_menu.addAction("最近搜尋")
+                heading.setEnabled(False)
+                for query in queries:
+                    label = query if len(query) <= 60 else f"{query[:57]}…"
+                    action = self.history_menu.addAction(label)
+                    action.setToolTip(query)
+                    action.triggered.connect(
+                        lambda _checked=False, value=query: self.search_from_history(
+                            value
+                        )
+                    )
+            if not suggestions and not queries:
+                empty = self.history_menu.addAction("尚無本機搜尋紀錄")
+                empty.setEnabled(False)
+
+        def search_from_history(self, query: str) -> None:
+            self.query.setText(query)
+            self.search()
+
+        def invalidate_network_options(self) -> None:
+            if self.busy or not self.last_query:
+                return
+            selected_content_type = str(self.content_type.currentData() or "all")
+            selected_page_size = int(self.page_size.currentData() or 20)
+            if (
+                selected_content_type == self.last_content_type
+                and selected_page_size == self.last_page_size
+            ):
+                return
+            self.next_cursor = ""
+            self.status.setText(
+                "搜尋範圍或每頁筆數已變更；按「搜尋 YouTube」套用。"
+                "現有結果仍保留。"
+            )
+            self.update_action_state()
+
+        def ordered_visible_results(
+            self,
+        ) -> tuple[DiscoveryItemV1, ...]:
+            minimum_duration, maximum_duration = self.duration_filter.currentData()
+            matched = matching_search_indices(
+                self.source_results,
+                minimum_duration=minimum_duration,
+                maximum_duration=maximum_duration,
+            )
+            visible = tuple(self.source_results[index] for index in matched)
+            if self.sort_mode.currentData() != "relevance":
+                return visible
+            rankings = rank_search_results(self.last_query, visible)
+            return tuple(visible[ranking.index] for ranking in rankings)
+
+        def apply_local_result_options(self) -> None:
+            if self.busy:
+                return
+            self.selected_result_urls.update(self.selected_urls())
+            self.results = self.ordered_visible_results()
+            self.populate_results()
+            self.restore_selected_urls(self.selected_result_urls)
+            if self.source_results:
+                self.status.setText(
+                    f"本機篩選後顯示 {len(self.results)}／"
+                    f"{len(self.source_results)} 筆結果；未重新連線。"
+                )
+
         def toggle_body(self, expanded: bool) -> None:
             self.body.setVisible(expanded)
             self.toggle_button.setText("收合搜尋" if expanded else "展開搜尋")
@@ -339,6 +530,11 @@ def create_youtube_workspace(
             return PreviewSource(item.url, item.duration, item.title)
 
         def handle_selection_changed(self) -> None:
+            if self.repopulating_results:
+                return
+            visible_urls = {item.url for item in self.results}
+            self.selected_result_urls.difference_update(visible_urls)
+            self.selected_result_urls.update(self.selected_urls())
             self.preview_controls.refresh()
             self.update_action_state()
 
@@ -398,6 +594,7 @@ def create_youtube_workspace(
             if len(query) > 200:
                 self.status.setText("搜尋文字不可超過 200 個字元。")
                 return
+            prepared = prepare_search_query(query)
             try:
                 enabled = (
                     context.download_providers.is_enabled("youtube")
@@ -410,15 +607,27 @@ def create_youtube_workspace(
                 return
             if self.busy or self.closing:
                 return
-            self.last_query = query
+            self.query.setText(prepared.query)
+            self.last_query = prepared.query
+            self.last_content_type = str(
+                self.content_type.currentData() or "all"
+            )
+            self.last_page_size = int(self.page_size.currentData() or 20)
+            self.last_corrections = prepared.corrections
             self.next_cursor = ""
-            self.start_search(query, cursor="", append=False)
+            self.start_search(
+                prepared.query,
+                cursor="",
+                append=False,
+                content_type=self.last_content_type,
+                page_size=self.last_page_size,
+            )
 
         def load_more(self) -> None:
             if (
                 self.busy
                 or self.closing
-                or not self.results
+                or (not self.source_results and not self.results)
                 or not self.last_query
                 or not self.next_cursor
             ):
@@ -427,22 +636,40 @@ def create_youtube_workspace(
                 self.last_query,
                 cursor=self.next_cursor,
                 append=True,
+                content_type=self.last_content_type,
+                page_size=self.last_page_size,
             )
 
-        def start_search(self, query: str, *, cursor: str, append: bool) -> None:
+        def start_search(
+            self,
+            query: str,
+            *,
+            cursor: str,
+            append: bool,
+            content_type: str,
+            page_size: int,
+        ) -> None:
             self.generation += 1
             generation = self.generation
             self.active_generation = generation
             self.busy = True
             self.loading_more = append
             if not append:
+                self.source_results = ()
                 self.results = ()
+                self.selected_result_urls.clear()
                 self.table.setRowCount(0)
             self.thumbnail_loader.cancel_pending()
             self.preview_controls.stop_all()
-            self.status.setText(
-                "正在載入更多 YouTube 結果…" if append else "正在搜尋 YouTube…"
-            )
+            if append:
+                self.status.setText("正在載入更多 YouTube 結果…")
+            else:
+                correction_note = (
+                    f"（已修正：{'、'.join(self.last_corrections)}）"
+                    if self.last_corrections
+                    else ""
+                )
+                self.status.setText(f"正在搜尋 YouTube…{correction_note}")
             self.update_action_state()
 
             def worker() -> None:
@@ -450,8 +677,8 @@ def create_youtube_workspace(
                     result = context.discovery.federated_search(
                         query,
                         provider_ids=(YOUTUBE_SEARCH_PROVIDER_ID,),
-                        limit=24,
-                        content_type="all",
+                        limit=page_size,
+                        content_type=content_type,
                         cursor=cursor,
                     )
                     error = ""
@@ -471,7 +698,7 @@ def create_youtube_workspace(
             if not self.busy:
                 return
             self.cancelled_generations.add(self.active_generation)
-            self.thumbnail_loader.shutdown()
+            self.thumbnail_loader.cancel_pending()
             self.status.setText("已取消顯示；等待目前搜尋安全結束。")
             self.update_action_state()
 
@@ -486,7 +713,9 @@ def create_youtube_workspace(
             if generation in self.cancelled_generations:
                 self.cancelled_generations.discard(generation)
                 if not append:
+                    self.source_results = ()
                     self.results = ()
+                    self.selected_result_urls.clear()
                     self.table.setRowCount(0)
                     self.next_cursor = ""
                 self.status.setText(
@@ -498,7 +727,9 @@ def create_youtube_workspace(
                 return
             if error:
                 if not append:
+                    self.source_results = ()
                     self.results = ()
+                    self.selected_result_urls.clear()
                     self.table.setRowCount(0)
                     self.next_cursor = ""
                 prefix = "載入更多失敗" if append else "YouTube 搜尋失敗"
@@ -507,7 +738,9 @@ def create_youtube_workspace(
                 return
             if not isinstance(response, FederatedSearchResult):
                 if not append:
+                    self.source_results = ()
                     self.results = ()
+                    self.selected_result_urls.clear()
                     self.table.setRowCount(0)
                     self.next_cursor = ""
                 self.status.setText(
@@ -529,33 +762,55 @@ def create_youtube_workspace(
                     rejected += 1
                     continue
                 accepted.append(item)
-            selected_urls = set(self.selected_urls()) if append else set()
-            previous_count = len(self.results) if append else 0
-            self.results = merge_search_results(
-                self.results if append else (),
+            if append:
+                self.selected_result_urls.update(self.selected_urls())
+            else:
+                self.selected_result_urls.clear()
+            previous_count = len(self.source_results) if append else 0
+            self.source_results = merge_search_results(
+                self.source_results if append else (),
                 accepted,
             )
-            added_count = len(self.results) - previous_count
+            added_count = len(self.source_results) - previous_count
+            self.results = self.ordered_visible_results()
             if not response.failures:
                 self.next_cursor = provider_next_cursor(
                     response, YOUTUBE_SEARCH_PROVIDER_ID
                 )
             self.populate_results()
-            self.restore_selected_urls(selected_urls)
+            self.restore_selected_urls(self.selected_result_urls)
+            if (
+                not append
+                and not response.failures
+                and self.history_enabled()
+            ):
+                try:
+                    context.discovery.record_history("search", self.last_query)
+                except (
+                    AttributeError,
+                    KeyError,
+                    OSError,
+                    RuntimeError,
+                    TypeError,
+                    ValueError,
+                ):
+                    pass
             if response.failures:
                 message = response.failures[0].message[:240]
                 self.status.setText(f"YouTube 搜尋失敗：{message}")
-            elif self.results:
+            elif self.source_results:
                 suffix = f"；已略過 {rejected} 筆非官方來源" if rejected else ""
                 paging = "；可繼續載入" if self.next_cursor else "；已到結果尾端"
                 if append:
                     self.status.setText(
-                        f"新增 {added_count} 筆，目前共 {len(self.results)} 筆"
-                        f" YouTube 結果{suffix}{paging}。"
+                        f"來源新增 {added_count} 筆，目前顯示 {len(self.results)}／"
+                        f"{len(self.source_results)} 筆 YouTube 結果"
+                        f"{suffix}{paging}。"
                     )
                 else:
                     self.status.setText(
-                        f"找到 {len(self.results)} 筆 YouTube 結果{suffix}{paging}；"
+                        f"來源找到 {len(self.source_results)} 筆，目前顯示"
+                        f" {len(self.results)} 筆 YouTube 結果{suffix}{paging}；"
                         "可按 Ctrl／Shift 多選。"
                     )
             else:
@@ -565,30 +820,38 @@ def create_youtube_workspace(
         def populate_results(self) -> None:
             self.thumbnail_loader.cancel_pending()
             generation = self.active_generation
-            self.table.setRowCount(len(self.results))
-            for row, item in enumerate(self.results):
-                self.table.setRowHeight(row, 62)
-                preview = QTableWidgetItem("載入中" if item.thumbnail_url else "—")
-                preview.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.table.setItem(row, 0, preview)
-                title = QTableWidgetItem(item.title)
-                title.setData(Qt.ItemDataRole.UserRole, item.url)
-                title.setToolTip(item.url)
-                self.table.setItem(row, 1, title)
-                self.table.setItem(row, 2, QTableWidgetItem(item.artist or "—"))
-                duration = QTableWidgetItem(_duration_label(item.duration))
-                duration.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.table.setItem(row, 3, duration)
-                source = QTableWidgetItem(youtube_host_label(item.url))
-                source.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.table.setItem(row, 4, source)
-                if item.thumbnail_url:
-                    self.thumbnail_loader.load(
-                        item.thumbnail_url,
-                        lambda pixmap, generation=generation, row=row, item=item: (
-                            self.show_thumbnail(generation, row, item, pixmap)
-                        ),
+            self.repopulating_results = True
+            try:
+                self.table.setRowCount(len(self.results))
+                for row, item in enumerate(self.results):
+                    self.table.setRowHeight(row, 62)
+                    preview = QTableWidgetItem(
+                        "載入中" if item.thumbnail_url else "—"
                     )
+                    preview.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    self.table.setItem(row, 0, preview)
+                    title = QTableWidgetItem(item.title)
+                    title.setData(Qt.ItemDataRole.UserRole, item.url)
+                    title.setToolTip(item.url)
+                    self.table.setItem(row, 1, title)
+                    self.table.setItem(
+                        row, 2, QTableWidgetItem(item.artist or "—")
+                    )
+                    duration = QTableWidgetItem(_duration_label(item.duration))
+                    duration.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    self.table.setItem(row, 3, duration)
+                    source = QTableWidgetItem(youtube_host_label(item.url))
+                    source.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    self.table.setItem(row, 4, source)
+                    if item.thumbnail_url:
+                        self.thumbnail_loader.load(
+                            item.thumbnail_url,
+                            lambda pixmap, generation=generation, row=row, item=item: (
+                                self.show_thumbnail(generation, row, item, pixmap)
+                            ),
+                        )
+            finally:
+                self.repopulating_results = False
             self.update_action_state()
 
         def show_thumbnail(
@@ -617,13 +880,21 @@ def create_youtube_workspace(
             )
 
         def restore_selected_urls(self, urls: set[str]) -> None:
-            for row, item in enumerate(self.results):
-                if item.url not in urls:
-                    continue
-                for column in range(self.table.columnCount()):
-                    cell = self.table.item(row, column)
-                    if cell is not None:
-                        cell.setSelected(True)
+            self.selected_result_urls.update(urls)
+            previous = self.repopulating_results
+            self.repopulating_results = True
+            try:
+                for row, item in enumerate(self.results):
+                    if item.url not in urls:
+                        continue
+                    for column in range(self.table.columnCount()):
+                        cell = self.table.item(row, column)
+                        if cell is not None:
+                            cell.setSelected(True)
+            finally:
+                self.repopulating_results = previous
+            self.preview_controls.refresh()
+            self.update_action_state()
 
         def add_selected(self) -> None:
             urls = self.selected_urls()
@@ -650,9 +921,22 @@ def create_youtube_workspace(
             self.query.setEnabled(not self.busy)
             self.search_button.setEnabled(enabled and not self.busy)
             self.cancel_button.setEnabled(self.busy and not cancelled)
+            for control in (
+                self.content_type,
+                self.page_size,
+                self.duration_filter,
+                self.sort_mode,
+            ):
+                control.setEnabled(not self.busy)
+            history_available = self.history_enabled()
+            self.history_button.setVisible(history_available)
+            self.history_button.setEnabled(history_available and not self.busy)
             self.table.setEnabled(not self.busy)
             self.more_button.setEnabled(
-                enabled and not self.busy and bool(self.results) and bool(self.next_cursor)
+                enabled
+                and not self.busy
+                and bool(self.source_results)
+                and bool(self.next_cursor)
             )
             self.add_button.setEnabled(not self.busy and bool(self.selected_urls()))
             self.preview_controls.setEnabled(not self.busy)

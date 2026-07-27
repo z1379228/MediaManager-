@@ -7,6 +7,31 @@ from collections.abc import Iterable
 from contracts.history_v1 import HistoryEventV1, HistoryPreferencesV1
 
 
+def recent_history_queries(
+    events: object,
+    *,
+    limit: int = 8,
+) -> tuple[str, ...]:
+    """Return bounded, newest-first unique queries for compact history UIs."""
+
+    if not isinstance(events, (list, tuple)):
+        return ()
+    bounded_limit = max(1, min(int(limit), 20))
+    queries: list[str] = []
+    seen: set[str] = set()
+    for event in events:
+        value = getattr(event, "query", "")
+        query = " ".join(value.split()) if isinstance(value, str) else ""
+        key = query.casefold()
+        if not query or key in seen:
+            continue
+        seen.add(key)
+        queries.append(query)
+        if len(queries) >= bounded_limit:
+            break
+    return tuple(queries)
+
+
 def preference_search_queries(
     preferences: HistoryPreferencesV1,
     events: Iterable[HistoryEventV1] = (),
