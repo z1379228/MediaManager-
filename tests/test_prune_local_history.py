@@ -68,6 +68,142 @@ def test_plan_keeps_current_and_previous_and_lists_only_local_release_dirs(
     assert update_info.read_text(encoding="utf-8") == "retained update information"
 
 
+def test_plan_keeps_testing_correction_separate_from_baseline_and_sorts_versions(
+    tmp_path: Path,
+) -> None:
+    version_root = tmp_path / "Version"
+    stable = _write_release(version_root, "Stable/1.0")
+    baseline = _write_release(version_root, "Testing/1.2", payload=b"baseline")
+    retained = _write_release(
+        version_root,
+        "Testing/1.2.1",
+        payload=b"retained correction",
+    )
+    correction = _write_release(
+        version_root,
+        "Testing/1.2.10",
+        payload=b"later correction",
+    )
+    later_minor = _write_release(version_root, "Testing/1.10", payload=b"later minor")
+
+    plan = plan_local_history_prune(
+        version_root,
+        keep=("Stable/1.0", "Testing/1.2.1"),
+        audit_checker=_valid_audit,
+        preflight_checker=_ready_preflight,
+    )
+
+    assert plan.ready_to_apply
+    assert plan.kept == ("Stable/1.0", "Testing/1.2.1")
+    assert tuple(item.relative_path for item in plan.candidates) == (
+        "Testing/1.2",
+        "Testing/1.2.10",
+        "Testing/1.10",
+    )
+    assert stable.is_dir()
+    assert baseline.is_dir()
+    assert retained.is_dir()
+    assert correction.is_dir()
+    assert later_minor.is_dir()
+
+
+def test_apply_retains_testing_correction_without_overwriting_baseline_identity(
+    tmp_path: Path,
+) -> None:
+    version_root = tmp_path / "Version"
+    stable = _write_release(version_root, "Stable/1.0")
+    baseline = _write_release(version_root, "Testing/1.2", payload=b"baseline")
+    retained = _write_release(
+        version_root,
+        "Testing/1.2.1",
+        payload=b"retained correction",
+    )
+    plan = plan_local_history_prune(
+        version_root,
+        keep=("Stable/1.0", "Testing/1.2.1"),
+        audit_checker=_valid_audit,
+        preflight_checker=_ready_preflight,
+    )
+
+    deleted = apply_local_history_prune(
+        plan,
+        confirmation=APPLY_CONFIRMATION,
+        audit_checker=_valid_audit,
+        preflight_checker=_ready_preflight,
+    )
+
+    assert deleted == ("Testing/1.2",)
+    assert stable.is_dir()
+    assert not baseline.exists()
+    assert retained.is_dir()
+    assert (retained / "payload.bin").read_bytes() == b"retained correction"
+
+
+@pytest.mark.parametrize(
+    "invalid_release",
+    [
+        "1.2.1",
+        "Development/39.0.1",
+        "Stable/1.0.1",
+        "Testing/1.2.0",
+    ],
+)
+def test_plan_rejects_corrections_outside_testing_and_zero_testing_patch(
+    tmp_path: Path,
+    invalid_release: str,
+) -> None:
+    version_root = tmp_path / "Version"
+    _write_release(version_root, "Stable/1.0")
+    _write_release(version_root, invalid_release)
+
+    with pytest.raises(ValueError):
+        plan_local_history_prune(
+            version_root,
+            keep=("Stable/1.0", invalid_release),
+            audit_checker=_valid_audit,
+            preflight_checker=_ready_preflight,
+        )
+
+
+@pytest.mark.parametrize(
+    ("invalid_release", "expected_error"),
+    [
+        ("1.2.1", "unexpected version root entry: 1.2.1"),
+        (
+            "Development/39.0.1",
+            "unexpected or link-like release entry: Development/39.0.1",
+        ),
+        (
+            "Stable/1.0.1",
+            "unexpected or link-like release entry: Stable/1.0.1",
+        ),
+        (
+            "Testing/1.2.0",
+            "unexpected or link-like release entry: Testing/1.2.0",
+        ),
+    ],
+)
+def test_discovery_fails_closed_for_disallowed_correction_folders(
+    tmp_path: Path,
+    invalid_release: str,
+    expected_error: str,
+) -> None:
+    version_root = tmp_path / "Version"
+    _write_release(version_root, "Stable/1.0")
+    _write_release(version_root, "Development/38.0")
+    _write_release(version_root, invalid_release)
+
+    plan = plan_local_history_prune(
+        version_root,
+        keep=("Stable/1.0", "Development/38.0"),
+        audit_checker=_valid_audit,
+        preflight_checker=_ready_preflight,
+    )
+
+    assert not plan.ready_to_apply
+    assert expected_error in plan.blocked
+
+
 def test_plan_fails_closed_when_old_release_contains_userdata(tmp_path: Path) -> None:
     version_root = tmp_path / "Version"
     _write_release(version_root, "Stable/1.0")
@@ -244,3 +380,33 @@ def test_cli_defaults_to_json_dry_run_and_never_deletes(tmp_path: Path, capsys) 
     assert output["mode"] == "dry-run"
     assert output["ready_to_apply"] is True
     assert obsolete.is_dir()
+
+
+def test_cli_accepts_exact_testing_correction_keep(tmp_path: Path, capsys) -> None:
+    version_root = tmp_path / "Version"
+    _write_release(version_root, "Stable/1.0")
+    baseline = _write_release(version_root, "Testing/1.2")
+    correction = _write_release(version_root, "Testing/1.2.1")
+
+    exit_code = main(
+        [
+            "--root",
+            str(version_root),
+            "--keep",
+            "Stable/1.0",
+            "--keep",
+            "Testing/1.2.1",
+            "--json",
+        ],
+        audit_checker=_valid_audit,
+        preflight_checker=_ready_preflight,
+    )
+    output = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert output["kept"] == ["Stable/1.0", "Testing/1.2.1"]
+    assert [item["relative_path"] for item in output["candidates"]] == [
+        "Testing/1.2"
+    ]
+    assert baseline.is_dir()
+    assert correction.is_dir()

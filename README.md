@@ -4,16 +4,20 @@
 佇列、媒體庫與可信 UI；網站解析、轉換、轉錄及自動化等重功能由可個別停用的
 內建或第三方 MOD 提供。
 
-目前來源版本為開發版 39.0（核心相容版本 39.0.11）。`MediaManager v1.0`
-是產品顯示名稱，不表示 Stable 已發布。Testing 1.2 已進入獲授權的本機
-source-freeze／打包流程，但沒有 GitHub 發布；目前可下載的仍是未簽署、維持
-`SAFE_MODE` 的
+目前來源版本為開發版 39.0（核心相容版本 39.0.12）。`MediaManager v1.0`
+是產品顯示名稱，不表示 Stable 已發布。Testing `1.2.0` 已由 Development
+`39.0.11` 建立本機歷史封存，但沒有 GitHub 發布，也不包含 39.0.12 相似音樂
+入口。Testing `1.2.1` 已獲授權由 Development `39.0.12` 建立新的
+`Version/Testing/1.2.1`、未簽署 EXE、自包含 ZIP 與 tag `test-v1.2.1` 並上傳
+GitHub；在完整驗證與遠端查核完成前仍是待完成、未發布狀態。目前可下載的仍是
+未簽署、維持 `SAFE_MODE` 的
 [Testing 1.1（39.0.10 重整）](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.1.0-r2)
 已發布供測試；它不是已簽署的 Stable 正式套件。
 
 ## 主要能力
 
-- YouTube、Bilibili、MEGA、Direct HTTP 與網站矩陣明列的獨立工作區。
+- YouTube 公開搜尋、單一結果的相似音樂候選、Bilibili、MEGA、Direct HTTP
+  與網站矩陣明列的獨立工作區。
 - 本機媒體庫、原子寫入的下載佇列、歷史、取消、重試與恢復。
 - 格式工廠：使用本機 FFmpeg 進行影片、音訊、影像與字幕處理。
 - Gopeed Bridge／P2P Transfer：只連接使用者自行啟動的 localhost Gopeed API。
@@ -26,7 +30,11 @@ source-freeze／打包流程，但沒有 GitHub 發布；目前可下載的仍�
 
 ## 安裝
 
-### 方法一：Testing 1.1 免安裝、自包含 ZIP（一般使用者）
+### 方法一：目前已發布的 Testing 1.1 免安裝、自包含 ZIP（一般使用者）
+
+Testing `1.2.1` 的預定附件名稱是 `MediaManager-Testing-1.2.1.zip` 與
+`MediaManager-Testing-1.2.1.zip.sha256`，但尚未完成上傳驗證，因此目前不要
+使用推測的 1.2.1 下載網址。發布完成前請使用下列既有 Testing 1.1 附件。
 
 1. 從 [Testing 1.1 Release](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.1.0-r2)
    下載

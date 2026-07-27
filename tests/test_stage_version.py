@@ -92,9 +92,12 @@ def _prepare_source(root: Path, version: str = "1.2.3") -> None:
         path.write_bytes(name.encode("utf-8"))
 
 
-def test_version_folder_uses_major_minor() -> None:
+def test_version_folder_is_patch_aware_only_for_testing() -> None:
     assert version_folder_name("1.0.0") == "1.0"
     assert version_folder_name("12.34.5") == "12.34"
+    assert version_folder_name("12.34.5", channel="stable") == "12.34"
+    assert version_folder_name("12.34.0", channel="testing") == "12.34"
+    assert version_folder_name("12.34.5", channel="testing") == "12.34.5"
 
 
 def test_stage_version_creates_complete_version_folder(tmp_path: Path) -> None:
@@ -183,7 +186,7 @@ def test_stage_version_refuses_to_replace_existing_version(tmp_path: Path) -> No
     target = stage_version(tmp_path, version="1.2.3", channel="development")
     (target / "stale.txt").write_text("old", encoding="utf-8")
     (tmp_path / "dist" / "MediaManager.exe").write_bytes(b"new")
-    with pytest.raises(FileExistsError, match="increment the development minor"):
+    with pytest.raises(FileExistsError, match="increment the release version"):
         stage_version(tmp_path, version="1.2.3", channel="development")
     assert (target / "MediaManager.exe").read_bytes() == b"exe"
     assert (target / "stale.txt").read_text(encoding="utf-8") == "old"
@@ -223,7 +226,7 @@ def test_stage_version_recovers_legacy_backup_without_overwriting_target(
     backup.mkdir()
     (backup / "MediaManager.exe").write_bytes(b"old")
 
-    with pytest.raises(FileExistsError, match="increment the development minor"):
+    with pytest.raises(FileExistsError, match="increment the release version"):
         stage_version(tmp_path, version="1.2.3", channel="development")
 
     assert (track / "1.2" / "MediaManager.exe").read_bytes() == b"old"
@@ -262,3 +265,37 @@ def test_stage_version_separates_testing_and_core_versions(tmp_path: Path) -> No
     assert info["release_version"] == "1.0.0"
     assert info["build_channel"] == "testing"
     assert info["release_track"] == "Testing"
+
+
+def test_stage_version_keeps_zero_patch_and_patch_release_side_by_side(
+    tmp_path: Path,
+) -> None:
+    _prepare_source(tmp_path, "11.0.0")
+
+    baseline = stage_version(
+        tmp_path,
+        version="11.0.0",
+        release_version="1.2.0",
+        channel="testing",
+    )
+    patch = stage_version(
+        tmp_path,
+        version="11.0.0",
+        release_version="1.2.1",
+        channel="testing",
+    )
+
+    assert baseline == tmp_path / "Version" / "Testing" / "1.2"
+    assert patch == tmp_path / "Version" / "Testing" / "1.2.1"
+    assert baseline.is_dir()
+    assert patch.is_dir()
+    baseline_info = json.loads(
+        (baseline / "release-info.json").read_text(encoding="utf-8")
+    )
+    patch_info = json.loads(
+        (patch / "release-info.json").read_text(encoding="utf-8")
+    )
+    assert baseline_info["release_version"] == "1.2.0"
+    assert baseline_info["version_folder"] == "1.2"
+    assert patch_info["release_version"] == "1.2.1"
+    assert patch_info["version_folder"] == "1.2.1"

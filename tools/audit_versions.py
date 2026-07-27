@@ -12,6 +12,10 @@ import zipfile
 
 
 _FOLDER_PATTERN = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+_TESTING_FOLDER_PATTERN = re.compile(
+    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:\.(0|[1-9][0-9]*))?$"
+)
 _VERSION_PATTERN = re.compile(
     r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$"
 )
@@ -140,11 +144,16 @@ def audit_version(root: Path) -> VersionAudit:
     )
     if release_version_match is None:
         errors.append("release_version must use canonical major.minor.patch")
-    elif (
-        f"{release_version_match.group(1)}.{release_version_match.group(2)}"
-        != folder
-    ):
-        errors.append("release_version does not match the version folder")
+    else:
+        patch = release_version_match.group(3)
+        expected_folder = (
+            f"{release_version_match.group(1)}."
+            f"{release_version_match.group(2)}"
+        )
+        if expected_track == "Testing" and patch != "0":
+            expected_folder = f"{expected_folder}.{patch}"
+        if expected_folder != folder:
+            errors.append("release_version does not match the version folder")
     if info.get("version_folder") != folder:
         errors.append("release-info version_folder does not match the folder")
     declared_track = info.get("release_track")
@@ -270,11 +279,16 @@ def audit_versions(
         if path.is_dir() and not path.is_symlink() and _FOLDER_PATTERN.fullmatch(path.name):
             grouped_roots["Legacy"].append(path)
         elif path.is_dir() and not path.is_symlink() and path.name in _RELEASE_TRACKS:
+            folder_pattern = (
+                _TESTING_FOLDER_PATTERN
+                if path.name == "Testing"
+                else _FOLDER_PATTERN
+            )
             for candidate in path.iterdir():
                 if (
                     candidate.is_dir()
                     and not candidate.is_symlink()
-                    and _FOLDER_PATTERN.fullmatch(candidate.name)
+                    and folder_pattern.fullmatch(candidate.name)
                 ):
                     grouped_roots[path.name].append(candidate)
                 else:

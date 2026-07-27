@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-CORE_VERSION = "39.0.11"
+CORE_VERSION = "39.0.12"
 BUILD_CHANNEL = "development"
 DEVELOPMENT_GENERATION = "39.0"
-TESTING_VERSION = "1.2.0"
+TESTING_VERSION = "1.2.1"
 STABLE_VERSION = "1.0.0"
 SUPPORTED_BUILD_CHANNELS = frozenset({"development", "testing", "stable"})
 
@@ -20,7 +20,7 @@ def display_version() -> str:
     if BUILD_CHANNEL == "development":
         return f"開發版 {CORE_VERSION}"
     if BUILD_CHANNEL == "testing":
-        return f"測試版 {TESTING_VERSION.rsplit('.', 1)[0]}"
+        return f"測試版 {TESTING_VERSION}"
     return f"正式版 {STABLE_VERSION.rsplit('.', 1)[0]}"
 
 

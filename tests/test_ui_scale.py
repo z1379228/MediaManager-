@@ -129,6 +129,11 @@ def test_core_panels_expose_accessible_controls_at_minimum_width(
         assert search.next_page_button.accessibleName() == "搜尋下一頁"
         assert search.limit.accessibleName() == "搜尋結果數量"
         assert search.table.accessibleName() == "單一網站搜尋結果"
+        assert download.youtube_workspace is not None
+        assert (
+            download.youtube_workspace.similar_button.accessibleName()
+            == "以選取的 YouTube 結果搜尋相似音樂"
+        )
         assert (
             download.scroll_area.horizontalScrollBarPolicy()
             == Qt.ScrollBarPolicy.ScrollBarAlwaysOff

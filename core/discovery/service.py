@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import hmac
 import json
@@ -612,7 +612,13 @@ class DiscoveryService:
         *,
         provider_id: str = "youtube-similar",
         limit: int = 12,
+        content_type: str = "all",
+        use_preferences: bool = True,
     ) -> tuple[SimilarSelectionV1, ...]:
+        if content_type not in {"all", "music", "video"}:
+            raise ValueError("similar content type is invalid")
+        if not isinstance(use_preferences, bool):
+            raise ValueError("similar preference mode is invalid")
         if not self._registry.is_enabled(provider_id):
             raise RuntimeError("similar MOD is disabled")
         provider = self._similar_providers.get(provider_id)
@@ -622,13 +628,18 @@ class DiscoveryService:
         if search_provider_id is None:
             raise RuntimeError("similar MOD has no bound search source")
         _require_bound_original_source(original, search_provider_id)
+        scoring_original = (
+            original
+            if content_type == "all"
+            else replace(original, category=content_type)
+        )
         preferences = HistoryPreferencesV1(0, 0, {}, {}, {}, {})
-        if self._registry.is_enabled("youtube-history"):
+        if use_preferences and self._registry.is_enabled("youtube-history"):
             try:
                 preferences = self.history_preferences()
             except (OSError, RuntimeError, ValueError):
                 pass
-        plan = provider.similar_plan(original, preferences)
+        plan = provider.similar_plan(scoring_original, preferences)
         bounded_limit = max(1, min(int(limit), 50))
         unique: dict[str, DiscoveryItemV1] = {}
         for query in plan.queries:
@@ -636,11 +647,12 @@ class DiscoveryService:
                 query,
                 provider_id=search_provider_id,
                 limit=bounded_limit,
+                content_type=content_type,
             ):
                 if item.video_id != original.video_id:
                     unique.setdefault(item.video_id, item)
         return provider.rank_similar(
-            original,
+            scoring_original,
             tuple(unique.values()),
             preferences,
             limit=bounded_limit,

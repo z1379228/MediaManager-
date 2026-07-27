@@ -31,6 +31,7 @@ from trusted_ui.thumbnail_loader import create_thumbnail_loader
 
 
 YOUTUBE_SEARCH_PROVIDER_ID = "youtube-search"
+YOUTUBE_SIMILAR_PROVIDER_ID = "youtube-similar"
 YOUTUBE_RESULT_HOSTS = YOUTUBE_HOSTS
 MAX_DOWNLOAD_URLS = 500
 
@@ -177,6 +178,8 @@ def create_youtube_workspace(
             self.last_corrections: tuple[str, ...] = ()
             self.next_cursor = ""
             self.loading_more = False
+            self.active_operation = ""
+            self.result_mode = "search"
             self.selected_result_urls: set[str] = set()
             self.repopulating_results = False
             self.thumbnail_loader = create_thumbnail_loader(self)
@@ -346,6 +349,13 @@ def create_youtube_workspace(
             self.more_button.clicked.connect(self.load_more)
             actions.addWidget(self.more_button)
             actions.addStretch()
+            self.similar_button = QPushButton("搜尋相似音樂")
+            self.similar_button.setObjectName("ghost")
+            self.similar_button.setAccessibleName(
+                "以選取的 YouTube 結果搜尋相似音樂"
+            )
+            self.similar_button.clicked.connect(self.find_similar_music)
+            actions.addWidget(self.similar_button)
             self.add_button = QPushButton("將選取結果加入網址清單")
             self.add_button.setObjectName("primary")
             self.add_button.setAccessibleName("將選取的 YouTube 結果加入下載網址")
@@ -392,6 +402,14 @@ def create_youtube_workspace(
                     "zh-CN": "加载更多",
                     "en": "Load more",
                     "ja": "さらに読み込む",
+                }[selected]
+            )
+            self.similar_button.setText(
+                {
+                    "zh-TW": "搜尋相似音樂",
+                    "zh-CN": "搜索相似音乐",
+                    "en": "Find Similar Music",
+                    "ja": "類似音楽を検索",
                 }[selected]
             )
 
@@ -482,7 +500,10 @@ def create_youtube_workspace(
                 maximum_duration=maximum_duration,
             )
             visible = tuple(self.source_results[index] for index in matched)
-            if self.sort_mode.currentData() != "relevance":
+            if (
+                self.result_mode == "similar"
+                or self.sort_mode.currentData() != "relevance"
+            ):
                 return visible
             rankings = rank_search_results(self.last_query, visible)
             return tuple(visible[ranking.index] for ranking in rankings)
@@ -523,11 +544,36 @@ def create_youtube_workspace(
             )
 
         def selected_preview_source(self) -> PreviewSource | None:
+            item = self.selected_item()
+            if item is None:
+                return None
+            return PreviewSource(item.url, item.duration, item.title)
+
+        def selected_item(self) -> DiscoveryItemV1 | None:
             row = self.table.currentRow()
             if not 0 <= row < len(self.results):
                 return None
-            item = self.results[row]
-            return PreviewSource(item.url, item.duration, item.title)
+            return self.results[row]
+
+        def single_selected_item(self) -> DiscoveryItemV1 | None:
+            rows = {
+                index.row()
+                for index in self.table.selectionModel().selectedRows()
+                if 0 <= index.row() < len(self.results)
+            }
+            if len(rows) != 1:
+                return None
+            return self.results[rows.pop()]
+
+        def similar_music_available(self) -> bool:
+            try:
+                return (
+                    context.download_providers.is_enabled("youtube")
+                    and context.discovery.is_enabled(YOUTUBE_SEARCH_PROVIDER_ID)
+                    and context.discovery.is_enabled(YOUTUBE_SIMILAR_PROVIDER_ID)
+                )
+            except (AttributeError, KeyError, RuntimeError, ValueError):
+                return False
 
         def handle_selection_changed(self) -> None:
             if self.repopulating_results:
@@ -652,9 +698,11 @@ def create_youtube_workspace(
             self.generation += 1
             generation = self.generation
             self.active_generation = generation
+            self.active_operation = "search"
             self.busy = True
             self.loading_more = append
             if not append:
+                self.result_mode = "search"
                 self.source_results = ()
                 self.results = ()
                 self.selected_result_urls.clear()
@@ -694,6 +742,68 @@ def create_youtube_workspace(
                 daemon=True,
             ).start()
 
+        def find_similar_music(self) -> None:
+            original = self.single_selected_item()
+            if original is None:
+                self.status.setText("請先選擇一筆 YouTube 結果作為相似音樂來源。")
+                return
+            if not self.similar_music_available():
+                self.status.setText(
+                    "請先啟用 YouTube 主 MOD、搜尋 MOD 與相似內容 MOD。"
+                )
+                return
+            if self.busy or self.closing:
+                return
+
+            page_size = min(20, int(self.page_size.currentData() or 20))
+            self.generation += 1
+            generation = self.generation
+            self.active_generation = generation
+            self.active_operation = "similar"
+            self.busy = True
+            self.loading_more = False
+            self.selected_result_urls.update(self.selected_urls())
+            self.thumbnail_loader.cancel_pending()
+            self.preview_controls.stop_all()
+            self.status.setText(
+                f"正在根據「{original.title[:80]}」搜尋相似音樂…"
+            )
+            self.update_action_state()
+
+            def worker() -> None:
+                try:
+                    selections = context.discovery.similar_candidates(
+                        original,
+                        limit=page_size,
+                        content_type="music",
+                        use_preferences=False,
+                    )
+                    items: list[DiscoveryItemV1] = []
+                    seen: set[str] = {original.video_id}
+                    for selection in selections:
+                        item = selection.item
+                        if item.video_id in seen:
+                            continue
+                        seen.add(item.video_id)
+                        items.append(item)
+                    result = FederatedSearchResult(
+                        tuple(items),
+                        (),
+                        tuple(YOUTUBE_SEARCH_PROVIDER_ID for _ in items),
+                    )
+                    error = ""
+                except Exception as caught:
+                    result = None
+                    error = str(caught)[:300] or type(caught).__name__
+                if not self.closing:
+                    self.bridge.finished.emit(generation, result, error)
+
+            threading.Thread(
+                target=worker,
+                name="youtube-similar-music-search",
+                daemon=True,
+            ).start()
+
         def cancel_search(self) -> None:
             if not self.busy:
                 return
@@ -708,48 +818,76 @@ def create_youtube_workspace(
             if self.closing or generation != self.active_generation:
                 return
             append = self.loading_more
+            operation = self.active_operation or "search"
             self.loading_more = False
+            self.active_operation = ""
             self.busy = False
             if generation in self.cancelled_generations:
                 self.cancelled_generations.discard(generation)
-                if not append:
+                if operation == "similar":
+                    self.populate_results()
+                    self.restore_selected_urls(self.selected_result_urls)
+                elif not append:
                     self.source_results = ()
                     self.results = ()
                     self.selected_result_urls.clear()
                     self.table.setRowCount(0)
                     self.next_cursor = ""
-                self.status.setText(
-                    "已取消載入更多；原搜尋結果仍保留。"
-                    if append
-                    else "YouTube 搜尋已取消。"
-                )
+                if operation == "similar":
+                    self.status.setText("相似音樂搜尋已取消。")
+                else:
+                    self.status.setText(
+                        "已取消載入更多；原搜尋結果仍保留。"
+                        if append
+                        else "YouTube 搜尋已取消。"
+                    )
                 self.refresh_availability()
                 return
             if error:
-                if not append:
+                if operation == "similar":
+                    self.populate_results()
+                    self.restore_selected_urls(self.selected_result_urls)
+                elif not append:
                     self.source_results = ()
                     self.results = ()
                     self.selected_result_urls.clear()
                     self.table.setRowCount(0)
                     self.next_cursor = ""
-                prefix = "載入更多失敗" if append else "YouTube 搜尋失敗"
+                prefix = (
+                    "相似音樂搜尋失敗"
+                    if operation == "similar"
+                    else ("載入更多失敗" if append else "YouTube 搜尋失敗")
+                )
                 self.status.setText(f"{prefix}：{error}")
                 self.refresh_availability()
                 return
             if not isinstance(response, FederatedSearchResult):
-                if not append:
+                if operation == "similar":
+                    self.populate_results()
+                    self.restore_selected_urls(self.selected_result_urls)
+                elif not append:
                     self.source_results = ()
                     self.results = ()
                     self.selected_result_urls.clear()
                     self.table.setRowCount(0)
                     self.next_cursor = ""
-                self.status.setText(
-                    "載入更多失敗：搜尋 MOD 回傳格式無效。"
-                    if append
-                    else "YouTube 搜尋失敗：搜尋 MOD 回傳格式無效。"
-                )
+                if operation == "similar":
+                    self.status.setText("相似音樂搜尋失敗：回傳格式無效。")
+                else:
+                    self.status.setText(
+                        "載入更多失敗：搜尋 MOD 回傳格式無效。"
+                        if append
+                        else "YouTube 搜尋失敗：搜尋 MOD 回傳格式無效。"
+                    )
                 self.refresh_availability()
                 return
+
+            if operation == "similar":
+                self.result_mode = "similar"
+                self.last_query = ""
+                self.last_content_type = "music"
+                self.last_corrections = ()
+                self.next_cursor = ""
 
             accepted: list[DiscoveryItemV1] = []
             rejected = 0
@@ -781,6 +919,7 @@ def create_youtube_workspace(
             self.restore_selected_urls(self.selected_result_urls)
             if (
                 not append
+                and operation == "search"
                 and not response.failures
                 and self.history_enabled()
             ):
@@ -801,7 +940,12 @@ def create_youtube_workspace(
             elif self.source_results:
                 suffix = f"；已略過 {rejected} 筆非官方來源" if rejected else ""
                 paging = "；可繼續載入" if self.next_cursor else "；已到結果尾端"
-                if append:
+                if operation == "similar":
+                    self.status.setText(
+                        f"找到 {len(self.results)} 筆相似音樂候選"
+                        f"{suffix}；原始項目已排除。"
+                    )
+                elif append:
                     self.status.setText(
                         f"來源新增 {added_count} 筆，目前顯示 {len(self.results)}／"
                         f"{len(self.source_results)} 筆 YouTube 結果"
@@ -814,7 +958,11 @@ def create_youtube_workspace(
                         "可按 Ctrl／Shift 多選。"
                     )
             else:
-                self.status.setText("找不到 YouTube 結果，請改用較短或不同關鍵字。")
+                self.status.setText(
+                    "找不到相似音樂候選，請改選歌手或曲名較完整的結果。"
+                    if operation == "similar"
+                    else "找不到 YouTube 結果，請改用較短或不同關鍵字。"
+                )
             self.refresh_availability()
 
         def populate_results(self) -> None:
@@ -925,9 +1073,16 @@ def create_youtube_workspace(
                 self.content_type,
                 self.page_size,
                 self.duration_filter,
-                self.sort_mode,
             ):
                 control.setEnabled(not self.busy)
+            self.sort_mode.setEnabled(
+                not self.busy and self.result_mode != "similar"
+            )
+            self.sort_mode.setToolTip(
+                "相似音樂候選保留相似內容 MOD 的評分順序"
+                if self.result_mode == "similar"
+                else ""
+            )
             history_available = self.history_enabled()
             self.history_button.setVisible(history_available)
             self.history_button.setEnabled(history_available and not self.busy)
@@ -939,6 +1094,21 @@ def create_youtube_workspace(
                 and bool(self.next_cursor)
             )
             self.add_button.setEnabled(not self.busy and bool(self.selected_urls()))
+            selected = self.single_selected_item()
+            similar_available = self.similar_music_available()
+            self.similar_button.setEnabled(
+                not self.busy and selected is not None and similar_available
+            )
+            if not similar_available:
+                self.similar_button.setToolTip(
+                    "請先啟用 YouTube 搜尋與相似內容 MOD"
+                )
+            elif selected is None:
+                self.similar_button.setToolTip("請先選擇一筆 YouTube 搜尋結果")
+            else:
+                self.similar_button.setToolTip(
+                    "以目前選取項目為種子，透過公開搜尋建立相似音樂候選"
+                )
             self.preview_controls.setEnabled(not self.busy)
             self.preview_controls.refresh()
 

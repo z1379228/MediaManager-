@@ -21,9 +21,13 @@
 - `tests/`：功能、安全與回歸測試。
 - `docs/`：發行紀錄、架構、安全界線與路線圖。
 - `Version/<major>.<minor>/`：既有 5.0 以前產物；不得為了改目錄破壞歷史雜湊。
-- `Version/Development/<major>.<minor>/`、`Version/Testing/<major>.<minor>/`
-  與 `Version/Stable/<major>.<minor>/`：分軌工具遷移後的新路徑；測試版必須維持
-  `SAFE_MODE`，正式版必須經使用者確認才建立。
+- `Version/Development/<major>.<minor>/`：既有 Development 分軌路徑。
+- `Version/Testing/<major>.<minor>/` 與 `Version/Stable/<major>.<minor>/`：
+  既有公開基線或歷史產物路徑；不得為了改目錄破壞既有雜湊。
+- `Version/Testing/<major>.<minor>.<patch>/` 與
+  `Version/Stable/<major>.<minor>.<patch>/`：基線後的新修正版路徑，例如
+  Testing `1.2.1` 使用 `Version/Testing/1.2.1`，不得覆寫 `Version/Testing/1.2`。
+  測試版必須維持 `SAFE_MODE`，正式版必須經使用者確認才建立。
 
 ## 修改原則
 
@@ -69,6 +73,8 @@
   次版本在同一檔案分節，不再為每個次版本建立獨立文件。
 - 開發版、測試版與正式版使用獨立編號。開發版沿用 `5.0`、`6.0` 世代；
   測試版與正式版各自從 `1.0` 依功能遞增，不可用數字大小跨通道比較新舊。
+- Testing／Stable 基線可保留既有 `X.Y` 目錄；基線後的 material 修正使用完整
+  `X.Y.Z` 目錄、tag 與附件名稱。已存在的 `X.Y` 目錄與公開附件保持不可變。
 - 每個開發版大版本（`X.0`）優先上傳完整附件；開發次版本預設只上傳更新
   簡介。若次版本含緊急修正或必要驗證附件，必須先說明原因。
 - 達到正式版候選門檻時，只產生候選評估並提示使用者；未取得使用者明確

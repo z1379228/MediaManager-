@@ -9,6 +9,7 @@ from unittest.mock import Mock
 import pytest
 
 from contracts.discovery_v1 import DiscoveryItemV1
+from contracts.similar_v1 import SimilarSelectionV1
 from core.discovery.adapters import FederatedSearchResult
 from core.downloads.provider_registry import ProviderStatus
 from trusted_ui.download_panel import create_download_panel
@@ -473,6 +474,260 @@ def test_youtube_workspace_forwards_normalized_query_scope_and_page_size(
             },
         ]
     finally:
+        workspace.shutdown()
+        workspace.close()
+        workspace.deleteLater()
+        app.processEvents()
+
+
+def test_youtube_workspace_searches_similar_music_from_one_selected_result(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtCore import QItemSelectionModel
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    original = _item(
+        "original",
+        "https://www.youtube.com/watch?v=original",
+        "Seed Song (Official Video)",
+        artist="Seed Artist",
+        category="video",
+    )
+    provider_first = _item(
+        "provider-first",
+        "https://music.youtube.com/watch?v=provider-first",
+        "Distant Instrumental",
+        artist="Other Artist",
+        category="music",
+    )
+    provider_second = _item(
+        "provider-second",
+        "https://music.youtube.com/watch?v=provider-second",
+        "Seed Song Music",
+        artist="Seed Artist",
+        category="music",
+    )
+    rejected_host = _item(
+        "rejected-host",
+        "https://example.com/watch?v=rejected-host",
+        "Untrusted Candidate",
+        category="music",
+    )
+    similar_calls: list[tuple[DiscoveryItemV1, dict[str, object]]] = []
+    enabled_discovery_mods = {
+        "youtube-search",
+        "youtube-similar",
+        "youtube-history",
+    }
+    record_history = Mock()
+
+    def similar_candidates(
+        item: DiscoveryItemV1,
+        **options: object,
+    ) -> tuple[SimilarSelectionV1, ...]:
+        similar_calls.append((item, options))
+        return (
+            SimilarSelectionV1(original, 100, ("title",)),
+            SimilarSelectionV1(rejected_host, 95, ("artist",)),
+            SimilarSelectionV1(provider_first, 90, ("category",)),
+            SimilarSelectionV1(provider_second, 80, ("artist", "category")),
+        )
+
+    context = SimpleNamespace(
+        discovery=SimpleNamespace(
+            statuses=lambda: (
+                ProviderStatus("youtube-search", "YouTube Search", True),
+                ProviderStatus("youtube-similar", "YouTube Similar", True),
+                ProviderStatus("youtube-history", "YouTube History", True),
+            ),
+            is_enabled=lambda provider_id: provider_id
+            in enabled_discovery_mods,
+            federated_search=lambda *_args, **_options: FederatedSearchResult(
+                (original,),
+                (),
+                ("youtube-search",),
+            ),
+            similar_candidates=similar_candidates,
+            record_history=record_history,
+        ),
+        download_providers=SimpleNamespace(
+            is_enabled=lambda provider_id: provider_id == "youtube",
+            provider_for=Mock,
+        ),
+        events=None,
+        audit=None,
+    )
+    workspace = create_youtube_workspace(context, lambda _urls: None)
+    try:
+        workspace.query.setText("seed")
+        workspace.search()
+        _wait_until(app, lambda: not workspace.busy)
+        record_history.reset_mock()
+
+        assert not workspace.similar_button.isEnabled()
+        workspace.table.selectRow(0)
+        assert workspace.similar_button.isEnabled()
+        enabled_discovery_mods.remove("youtube-similar")
+        workspace.refresh_availability()
+        assert not workspace.similar_button.isEnabled()
+        enabled_discovery_mods.add("youtube-similar")
+        workspace.refresh_availability()
+        assert workspace.similar_button.isEnabled()
+
+        _select_combo_data(workspace.sort_mode, "relevance")
+        workspace.find_similar_music()
+        _wait_until(app, lambda: not workspace.busy)
+
+        assert similar_calls == [
+            (
+                original,
+                {
+                    "limit": 20,
+                    "content_type": "music",
+                    "use_preferences": False,
+                },
+            )
+        ]
+        assert workspace.table.rowCount() == 2
+        assert tuple(
+            workspace.table.item(row, 1).text()
+            for row in range(workspace.table.rowCount())
+        ) == ("Distant Instrumental", "Seed Song Music")
+        assert "相似音樂" in workspace.status.text()
+        assert "略過 1" in workspace.status.text()
+        assert not workspace.more_button.isEnabled()
+        assert not workspace.sort_mode.isEnabled()
+        record_history.assert_not_called()
+
+        workspace.query.setText("seed")
+        workspace.search()
+        _wait_until(app, lambda: not workspace.busy)
+        selection = workspace.table.selectionModel()
+        flags = (
+            QItemSelectionModel.SelectionFlag.Select
+            | QItemSelectionModel.SelectionFlag.Rows
+        )
+        selection.select(workspace.table.model().index(0, 0), flags)
+        duplicate = _item(
+            "second",
+            "https://www.youtube.com/watch?v=second",
+            "Second Seed",
+        )
+        workspace.source_results = (original, duplicate)
+        workspace.results = workspace.source_results
+        workspace.populate_results()
+        selection = workspace.table.selectionModel()
+        selection.select(workspace.table.model().index(0, 0), flags)
+        selection.select(workspace.table.model().index(1, 0), flags)
+        assert not workspace.similar_button.isEnabled()
+    finally:
+        workspace.shutdown()
+        workspace.close()
+        workspace.deleteLater()
+        app.processEvents()
+
+
+def test_youtube_workspace_preserves_seed_results_when_similar_search_stops(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    started = threading.Event()
+    release = threading.Event()
+    attempts = 0
+    seed = _item(
+        "seed",
+        "https://www.youtube.com/watch?v=seed",
+        "Seed Song",
+        artist="Seed Artist",
+    )
+    existing = _item(
+        "existing",
+        "https://www.youtube.com/watch?v=existing",
+        "Existing Result",
+    )
+    late = _item(
+        "late-similar",
+        "https://www.youtube.com/watch?v=late-similar",
+        "Late Similar Result",
+        category="music",
+    )
+
+    def similar_candidates(
+        _item: DiscoveryItemV1,
+        **_options: object,
+    ) -> tuple[SimilarSelectionV1, ...]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            started.set()
+            release.wait(1.0)
+            return (SimilarSelectionV1(late, 80, ("artist",)),)
+        raise RuntimeError("simulated similar failure")
+
+    context = SimpleNamespace(
+        discovery=SimpleNamespace(
+            statuses=lambda: (
+                ProviderStatus("youtube-search", "YouTube Search", True),
+                ProviderStatus("youtube-similar", "YouTube Similar", True),
+            ),
+            is_enabled=lambda provider_id: provider_id
+            in {"youtube-search", "youtube-similar"},
+            federated_search=lambda *_args, **_options: FederatedSearchResult(
+                (seed, existing),
+                (),
+                ("youtube-search", "youtube-search"),
+                (("youtube-search", "next-token"),),
+            ),
+            similar_candidates=similar_candidates,
+        ),
+        download_providers=SimpleNamespace(
+            is_enabled=lambda provider_id: provider_id == "youtube",
+            provider_for=Mock,
+        ),
+        events=None,
+        audit=None,
+    )
+    workspace = create_youtube_workspace(context, lambda _urls: None)
+    try:
+        workspace.query.setText("seed")
+        workspace.search()
+        _wait_until(app, lambda: not workspace.busy)
+        workspace.table.selectRow(0)
+        assert workspace.selected_urls() == (seed.url,)
+
+        workspace.find_similar_music()
+        assert started.wait(1.0)
+        workspace.cancel_search()
+        release.set()
+        _wait_until(app, lambda: not workspace.busy)
+
+        assert workspace.results == (seed, existing)
+        assert workspace.table.rowCount() == 2
+        assert workspace.selected_urls() == (seed.url,)
+        assert workspace.next_cursor == "next-token"
+        assert workspace.status.text() == "相似音樂搜尋已取消。"
+
+        workspace.find_similar_music()
+        _wait_until(app, lambda: not workspace.busy)
+
+        assert workspace.results == (seed, existing)
+        assert workspace.table.rowCount() == 2
+        assert workspace.selected_urls() == (seed.url,)
+        assert workspace.next_cursor == "next-token"
+        assert workspace.status.text() == (
+            "相似音樂搜尋失敗：simulated similar failure"
+        )
+    finally:
+        release.set()
         workspace.shutdown()
         workspace.close()
         workspace.deleteLater()

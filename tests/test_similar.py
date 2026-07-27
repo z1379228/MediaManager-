@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import pytest
 
@@ -139,6 +140,32 @@ def test_similar_mod_returns_multiple_ranked_results_with_fallbacks() -> None:
     provider.close()
 
 
+def test_similar_mod_plans_and_scores_a_transformed_music_seed() -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    video_seed = replace(item(), category="video")
+    music_seed = replace(video_seed, category="music")
+    zero_preferences = HistoryPreferencesV1(0, 0, {}, {}, {}, {})
+    try:
+        plan = provider.similar_plan(music_seed, zero_preferences)
+        assert plan.queries[0] == "Artist music"
+        assert all("video" not in query.casefold() for query in plan.queries)
+
+        ranked = provider.rank_similar(
+            music_seed,
+            (item("candidate", "Different Song", "Other"),),
+            zero_preferences,
+            limit=12,
+        )
+        assert len(ranked) == 1
+        assert "category" in ranked[0].reasons
+    finally:
+        provider.close()
+
+
 def test_discovery_service_passes_local_preferences_to_similar(
     tmp_path: Path,
 ) -> None:
@@ -219,3 +246,64 @@ def test_discovery_service_returns_bounded_similar_result_list(
         content_type="all",
     )
     service.close()
+
+
+def test_discovery_service_scopes_similar_candidates_to_music(
+    tmp_path: Path,
+) -> None:
+    original = replace(item(), category="video")
+    music_seed = replace(original, category="music")
+    candidate = item("music", "Music Candidate", "Artist")
+    expected = (SimilarSelectionV1(candidate, 70, ("artist", "category")),)
+
+    search = Mock()
+    search.provider_id = "youtube-search"
+    search.display_name = "YouTube Search"
+    search.search.return_value = (original, candidate)
+
+    history = Mock()
+    history.provider_id = "youtube-history"
+    history.display_name = "YouTube History"
+    history.history_preferences.return_value = preferences()
+
+    similar = Mock()
+    similar.provider_id = "youtube-similar"
+    similar.display_name = "YouTube Similar"
+    similar.similar_plan.return_value = SimilarPlanV1(
+        ("Artist Track music", "Artist music")
+    )
+    similar.rank_similar.return_value = expected
+
+    service = DiscoveryService(tmp_path / "state.json")
+    service.register(search, enabled=True)
+    service.register_history(history, enabled=True)
+    service.register_similar(similar, enabled=True)
+    try:
+        assert service.similar_candidates(
+            original,
+            limit=20,
+            content_type="music",
+            use_preferences=False,
+        ) == expected
+        assert search.search.call_args_list == [
+            call("Artist Track music", limit=20, content_type="music"),
+            call("Artist music", limit=20, content_type="music"),
+        ]
+        zero_preferences = HistoryPreferencesV1(0, 0, {}, {}, {}, {})
+        similar.similar_plan.assert_called_once_with(
+            music_seed,
+            zero_preferences,
+        )
+        similar.rank_similar.assert_called_once_with(
+            music_seed,
+            (candidate,),
+            zero_preferences,
+            limit=20,
+        )
+        history.history_preferences.assert_not_called()
+        with pytest.raises(ValueError, match="similar content type"):
+            service.similar_candidates(original, content_type="playlist")
+        with pytest.raises(ValueError, match="preference mode"):
+            service.similar_candidates(original, use_preferences="no")  # type: ignore[arg-type]
+    finally:
+        service.close()

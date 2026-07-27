@@ -7,9 +7,16 @@ Development、Testing 與 Stable 是互相獨立的發行軌，數字不可跨�
 - `Version/Development/<major>.<minor>/`
 - `Version/Testing/<major>.<minor>/`
 - `Version/Stable/<major>.<minor>/`
+- `Version/Testing/<major>.<minor>.<patch>/`
+- `Version/Stable/<major>.<minor>.<patch>/`
 
 5.0 以前的歷史產物可能仍位於 `Version/<major>.<minor>/`。它們是保留證據，
 不得為了統一目錄而搬移或改寫。
+
+既有 Testing／Stable 基線可保留 `X.Y` 目錄；基線後的 material 修正版必須使用
+完整 `X.Y.Z` 目錄。例如 Testing `1.2.0` 保留於 `Version/Testing/1.2`，
+Testing `1.2.1` 則建立於 `Version/Testing/1.2.1`。新候選不得覆寫或重新命名
+既有基線目錄。
 
 每個完整版本資料夾可包含 EXE、wheel、portable tools、內建 MOD、
 `release-info.json`、`SHA256SUMS.txt`、SBOM 與簽章資料。檔案清單與 hash
@@ -20,6 +27,8 @@ Development、Testing 與 Stable 是互相獨立的發行軌，數字不可跨�
 - Development 使用完整核心版本 `X.Y.Z`；material 程式修正增加 `Z`。
 - 純文件、證據或不改變執行行為的更新不增加修正號。
 - Testing 與 Stable 各有自己的公開版本，不從 Development 數字推導。
+- Testing／Stable 的 material 修正增加 patch，並同步使用完整 `X.Y.Z` 目錄、
+  tag、ZIP、sidecar 與 release metadata；純文件修正不增加 patch。
 - UI 產品名稱可使用 `MediaManager v1.0`，但不取代核心版本、channel、
   checksum、簽章與 release metadata。
 
@@ -46,8 +55,8 @@ GitHub 一般使用者附件應由一個已通過版本與 runtime 稽核的 sta
 ```powershell
 $sourceRevision = "<已獨立確認的 40 或 64 位小寫 source revision>"
 .\.venv\Scripts\python.exe -m tools.package_self_contained_zip `
-  --release-root Version\Testing\1.2 `
-  --output-dir .work\release-upload-test-v1.2 `
+  --release-root Version\Testing\1.2.1 `
+  --output-dir .work\release-upload-test-v1.2.1 `
   --expected-source-revision $sourceRevision
 ```
 
@@ -61,8 +70,11 @@ stage、commit、source freeze、build、建立 EXE、Testing／Stable、Authent
 Ed25519 簽署、stage-built、push、發布與上傳都是分開的外部狀態變更，必須逐項
 取得明確授權。授權其中一項不自動授權下一項。
 
-目前沒有 Development 40.0 或 Stable 發布計畫；Testing 1.2 已進入獲授權的
-本機 source-freeze／打包流程，但未獲授權 push、簽署或發布。Testing 1.1 已以
+目前沒有 Development 40.0 或 Stable 發布計畫。Testing `1.2.0` 是保留的本機
+歷史候選；Testing `1.2.1` 已獲授權進行 Development `39.0.12` source freeze、
+未簽署 EXE、自包含 ZIP、tag `test-v1.2.1` 與 GitHub 上傳，但在工具完成並驗證
+遠端附件前仍是 `AUTHORIZED / PENDING / NOT PUBLISHED`，不得預先宣稱已發布。
+Testing 1.1 已以
 未簽署 `SAFE_MODE` 的 `test-v1.1.0-r2` 發布；其 GitHub metadata 目前誤設為
 非 prerelease 並被視為 Latest，需另行授權修正。下列完整 Stable 發布流程仍是
 保留契約，不因 Testing 發布而視為完成：

@@ -5,6 +5,10 @@
 Python；ZIP 內的 EXE、資產、內建 MOD 與必要 portable runtime 必須來自同一個
 已稽核的 staged release。
 
+目前獲授權待完成的候選是 Testing `1.2.1`，來源為 Development `39.0.12`，
+staged 目錄為 `Version/Testing/1.2.1`，預定 tag 為 `test-v1.2.1`。既有
+Testing `1.2.0` 保留於 `Version/Testing/1.2`，不得覆寫或改名。
+
 ## 使用者流程
 
 1. 從指定的 GitHub Release 下載 `.zip` 與同名 `.zip.sha256`。
@@ -39,16 +43,16 @@ ZIP 必須包含且只包含 staged release 的受控檔案；不得只發布單
 ```powershell
 $sourceRevision = "<已獨立確認的 40 或 64 位小寫 source revision>"
 .\.venv\Scripts\python.exe -m tools.package_self_contained_zip `
-  --release-root Version\Testing\1.2 `
-  --output-dir .work\release-upload-test-v1.2 `
+  --release-root Version\Testing\1.2.1 `
+  --output-dir .work\release-upload-test-v1.2.1 `
   --expected-source-revision $sourceRevision
 ```
 
 預設輸出名稱取自 `release-info.json`：
 
 ```text
-MediaManager-Testing-1.2.0.zip
-MediaManager-Testing-1.2.0.zip.sha256
+MediaManager-Testing-1.2.1.zip
+MediaManager-Testing-1.2.1.zip.sha256
 ```
 
 若同一公開版本需要新的不可變 revision，使用安全且唯一的名稱；不可覆寫已公開
@@ -56,8 +60,8 @@ MediaManager-Testing-1.2.0.zip.sha256
 
 ```powershell
 .\.venv\Scripts\python.exe -m tools.package_self_contained_zip `
-  --release-root Version\Testing\1.2 `
-  --output-dir .work\release-upload-test-v1.2-r2 `
+  --release-root Version\Testing\1.2.1 `
+  --output-dir .work\release-upload-test-v1.2.1-r2 `
   --expected-source-revision $sourceRevision `
   --revision r2
 ```
@@ -85,19 +89,19 @@ manifest 與兩次完整快照；檔名掃描只是額外防線。
 $sourceRevision = "<已獨立確認的 40 或 64 位小寫 source revision>"
 .\.venv\Scripts\python.exe -m tools.audit_versions --root Version
 .\.venv\Scripts\python.exe -m tools.audit_staged_runtime `
-  --root Version\Testing\1.2
+  --root Version\Testing\1.2.1
 .\.venv\Scripts\python.exe -m tools.package_self_contained_zip `
-  --release-root Version\Testing\1.2 `
+  --release-root Version\Testing\1.2.1 `
   --output-dir .work\package-check-a `
   --expected-source-revision $sourceRevision
 .\.venv\Scripts\python.exe -m tools.package_self_contained_zip `
-  --release-root Version\Testing\1.2 `
+  --release-root Version\Testing\1.2.1 `
   --output-dir .work\package-check-b `
   --expected-source-revision $sourceRevision
 Get-FileHash -Algorithm SHA256 `
-  .work\package-check-a\MediaManager-Testing-1.2.0.zip
+  .work\package-check-a\MediaManager-Testing-1.2.1.zip
 Get-FileHash -Algorithm SHA256 `
-  .work\package-check-b\MediaManager-Testing-1.2.0.zip
+  .work\package-check-b\MediaManager-Testing-1.2.1.zip
 ```
 
 在相同受控 Python／zlib runtime 下，兩次 ZIP 雜湊必須相同；跨不同壓縮函式庫
@@ -108,3 +112,8 @@ Get-FileHash -Algorithm SHA256 `
 建立 EXE、建立 Testing／Stable staging、簽署、push、建立或修改 GitHub
 Release、上傳與發布均是獨立 Gate，必須各自取得明確授權。未上傳的失敗輸出只
 能移除該輪唯一 `.work` 目錄；已公開附件不得覆寫，修正時建立新 revision tag。
+
+Testing `1.2.1` 的 source freeze、未簽署 EXE、ZIP／sidecar、tag
+`test-v1.2.1`、Release 與上傳已獲授權，但目前仍是待完成工作。只有在本機
+SHA-256 驗證、版本與 runtime 稽核、解壓 smoke，以及 GitHub API 的遠端 tag、
+Release 與全部附件查核均通過後，才能把狀態改為已發布。

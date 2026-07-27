@@ -16,8 +16,11 @@ from tools.audit_versions import audit_version
 def _write_release(
     root: Path, version: str, *, track: str | None = None
 ) -> Path:
-    major, minor, _patch = version.split(".")
-    release = root / f"{major}.{minor}"
+    major, minor, patch = version.split(".")
+    folder = f"{major}.{minor}"
+    if track == "Testing" and patch != "0":
+        folder = version
+    release = root / folder
     release.mkdir(parents=True)
     (release / "MediaManager.exe").write_bytes(f"exe-{version}".encode())
     wheel = release / f"mediamanager-{version}-py3-none-any.whl"
@@ -29,7 +32,7 @@ def _write_release(
     info = {
         "schema_version": 1,
         "core_version": version,
-        "version_folder": f"{major}.{minor}",
+        "version_folder": folder,
         "portable_tools": [],
     }
     if track is not None:
@@ -266,6 +269,12 @@ def test_previous_folder_must_be_strictly_earlier_than_current(
     assert not report.copied_folder_smoke
     assert "strictly earlier" in " ".join(report.errors)
     assert not temp_root.exists()
+
+
+def test_testing_patch_folder_sorts_after_zero_patch_baseline() -> None:
+    assert copied_folder_smoke._version_folder_key(
+        "1.2"
+    ) < copied_folder_smoke._version_folder_key("1.2.1")
 
 
 @pytest.mark.parametrize("failure", ["exit", "timeout"])

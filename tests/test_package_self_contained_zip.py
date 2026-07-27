@@ -47,8 +47,11 @@ def _write_release(
     release_version: str = "1.1.0",
     track: str = "Testing",
 ) -> Path:
-    major, minor, _patch = release_version.split(".")
-    release = root / "Version" / track / f"{major}.{minor}"
+    major, minor, patch = release_version.split(".")
+    folder = f"{major}.{minor}"
+    if track == "Testing" and patch != "0":
+        folder = release_version
+    release = root / "Version" / track / folder
     release.mkdir(parents=True)
     (release / "MediaManager.exe").write_bytes(b"test executable")
     assets = release / "assets"
@@ -74,7 +77,7 @@ def _write_release(
                 "release_version": release_version,
                 "build_channel": track.casefold(),
                 "release_track": track,
-                "version_folder": f"{major}.{minor}",
+                "version_folder": folder,
                 "source_revision": "a" * 40,
                 "source_fingerprint": "b" * 64,
                 "build_id": "c" * 64,
@@ -143,6 +146,28 @@ def test_package_contains_exact_audited_release_under_one_folder(
     assert Path(result.checksum).read_text(encoding="ascii") == (
         f"{result.sha256}  {archive_path.name}\n"
     )
+
+
+def test_testing_correction_package_uses_full_version_in_all_names(
+    tmp_path: Path,
+) -> None:
+    release = _write_release(tmp_path, release_version="1.2.1")
+    result = package_self_contained_zip(release, tmp_path / "upload")
+    archive_path = Path(result.archive)
+    checksum_path = Path(result.checksum)
+
+    assert archive_path.name == "MediaManager-Testing-1.2.1.zip"
+    assert checksum_path.name == "MediaManager-Testing-1.2.1.zip.sha256"
+    assert result.top_level == "MediaManager-Testing-1.2.1"
+    with zipfile.ZipFile(archive_path) as archive:
+        top_levels = {
+            PurePosixPath(name).parts[0] for name in archive.namelist()
+        }
+        assert top_levels == {"MediaManager-Testing-1.2.1"}
+        assert (
+            "MediaManager-Testing-1.2.1/release-info.json"
+            in archive.namelist()
+        )
 
 
 def test_package_is_byte_deterministic_for_the_same_release(

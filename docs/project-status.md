@@ -4,11 +4,15 @@
 
 ## 結論
 
-MediaManager 目前以 Development `39.0.11`／Testing `1.2.0` 作為獲授權的
-source-freeze 與本機打包候選，包含 YouTube 搜尋增強與可重現的自包含 ZIP
-工具。Development 40.0 仍為 `NO PLAN / NO RELEASE`，Repository 也沒有可發布
-Stable 候選。Testing 1.2 未獲授權 push、簽署或發布；目前已存在的未簽署、
-`SAFE_MODE` Testing 1.1 仍是 `test-v1.1.0-r2`。其 GitHub metadata 目前誤設
+MediaManager 目前工作來源為 Development `39.0.12`，新增以單一 YouTube
+搜尋結果建立公開相似音樂候選的入口。已封存的 Testing `1.2.0` 仍以
+Development `39.0.11` 為來源，不包含相似音樂入口；它保留為本機歷史候選且
+未發布。Development `39.0.12` 已被選為 Testing `1.2.1` 候選來源，source
+freeze、未簽署 EXE、自包含 ZIP、tag `test-v1.2.1`、GitHub Release 與上傳均
+已獲授權，但在本機及遠端驗證完成前仍是 `AUTHORIZED / PENDING / NOT
+PUBLISHED`。Development 40.0 仍為 `NO PLAN / NO RELEASE`，Repository 也沒有
+可發布 Stable 候選。目前已存在的未簽署、`SAFE_MODE` Testing 1.1 仍是
+`test-v1.1.0-r2`。其 GitHub metadata 目前誤設
 為非 prerelease 並被視為 Latest，待另行授權修正；這不等於 Stable 發行。
 
 ## 已完成範圍
@@ -22,6 +26,8 @@ Stable 候選。Testing 1.2 未獲授權 push、簽署或發布；目前已存�
   已納入內建 MOD 管理。
 - 可信桌面使用 channel-neutral `MediaManager v1.0` 產品名稱；實際核心與發布
   metadata 仍維持三軌分離。
+- Development 39.0.12 的 YouTube 工作區可由單一選取結果啟動相似音樂搜尋；
+  候選只使用公開搜尋與既有本機排序，不使用 Cookie、私人推薦或觀看紀錄。
 
 ## 已退役或取消
 
@@ -32,12 +38,16 @@ Stable 候選。Testing 1.2 未獲授權 push、簽署或發布；目前已存�
 
 ## 目前 Testing 工作
 
-- Testing 1.2 候選公開身分為 `1.2.0`；預定本機路徑為
-  `Version/Testing/1.2`；實際是否建立以該不可變資料夾及稽核結果為準。
-- 候選核心身分為 Development `39.0.11`；完整驗證、乾淨 commit、
-  source freeze、未簽署 EXE、Testing staging 與 ZIP 已取得本輪明確授權。
-- Testing 1.2 必須由同一 source revision 執行 receipt-bound build、staging、
+- Testing `1.2.0` 本機封存已存在於 `Version/Testing/1.2`，版本稽核確認核心
+  為 Development `39.0.11`。封存來源固定為 revision
+  `fab5cb9333274e54f65a35b2f44a86699f0f349f`；目前 39.0.12 工作樹不會回寫
+  該不可變候選；GitHub 上沒有對應 Testing 1.2.0 Release 或 tag。
+- Testing `1.2.1` 必須建立於 `Version/Testing/1.2.1`，由同一個乾淨的
+  Development `39.0.12` source revision 執行 receipt-bound build、staging、
   runtime audit、copied-folder smoke 與 deterministic ZIP 比對。
+- Testing `1.2.1` 的預定 tag 是 `test-v1.2.1`，主要下載附件是
+  `MediaManager-Testing-1.2.1.zip` 與同名 `.zip.sha256`；目前不得提供假下載
+  URL 或宣稱已發布。
 - Testing 1.0 是不可覆寫的歷史版本，不以目前 39.x 來源重建或冒用。
 - Testing 1.1 使用唯一修訂 tag `test-v1.1.0-r2`，精確指向 source revision
   `09b3a86e00938241d27050088583ebf81d9fb182`；9 個附件已發布且 digest 閉合。

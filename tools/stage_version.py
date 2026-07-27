@@ -1,4 +1,4 @@
-"""Stage a complete MediaManager build under Version/<major>.<minor>."""
+"""Stage a complete MediaManager build under its canonical version folder."""
 
 from __future__ import annotations
 
@@ -22,9 +22,17 @@ RELEASE_INFO_SCHEMA_VERSION = 3
 RELEASE_TOOL_SCHEMA_VERSION = 3
 
 
-def version_folder_name(version: str) -> str:
-    major, minor, _ = release_version(version)
-    return f"{major}.{minor}"
+def version_folder_name(
+    version: str,
+    *,
+    channel: str = BUILD_CHANNEL,
+) -> str:
+    release_track(channel)
+    major, minor, patch = release_version(version)
+    folder = f"{major}.{minor}"
+    if channel == "testing" and patch > 0:
+        return f"{folder}.{patch}"
+    return folder
 
 
 def _sha256(path: Path) -> str:
@@ -90,7 +98,7 @@ def stage_version(
         )
     output_root = (output_root / track).resolve()
     public_version = release_version or version
-    folder = version_folder_name(public_version)
+    folder = version_folder_name(public_version, channel=channel)
     target = output_root / folder
     staging = output_root / f".{folder}.staging"
     backup = output_root / f".{folder}.backup"
@@ -101,8 +109,8 @@ def stage_version(
     _recover_stage_transaction(target, staging, backup)
     if target.exists():
         raise FileExistsError(
-            f"version folder already exists: {target}; increment the development "
-            "minor version instead of replacing a packaged build"
+            f"version folder already exists: {target}; increment the release "
+            "version instead of replacing a packaged build"
         )
 
     executable = (executable or source_root / "dist" / "MediaManager.exe").resolve()
@@ -201,7 +209,7 @@ def stage_version(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Stage the current build in Version/<major>.<minor>."
+        description="Stage the current build in its canonical Version folder."
     )
     parser.add_argument("--source-root", type=Path, default=Path.cwd())
     parser.add_argument("--output-root", type=Path)

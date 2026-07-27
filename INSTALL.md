@@ -4,8 +4,12 @@
 附件與從 Repository 執行來源；不要把自行建置的 Development EXE 標示為正式
 發行版。
 
-Testing 1.2 已進入獲授權的本機 source-freeze／打包流程，但沒有 GitHub 發布。
-下列下載流程仍指向目前既有的 Testing 1.1，不會以 1.2 名稱冒用舊產物。
+Testing `1.2.0` 是 Development `39.0.11` 的本機歷史候選，保留於
+`Version/Testing/1.2`，沒有 GitHub 發布。Testing `1.2.1` 已獲授權由
+Development `39.0.12` 建立 `Version/Testing/1.2.1`、未簽署 EXE、自包含 ZIP
+與 `.zip.sha256`，並使用唯一 tag `test-v1.2.1` 上傳 GitHub。這些工作尚待
+工具完成與遠端驗證；下列下載流程仍指向目前既有的 Testing 1.1，不會使用
+推測的 1.2.1 URL 或以新名稱冒用舊產物。
 
 ## Testing 1.1 預發行版
 
@@ -20,6 +24,11 @@ Testing 1.2 已進入獲授權的本機 source-freeze／打包流程，但沒有
 `Downloads\MediaManager`，不等同於資料完全可攜；發行附件本身不包含
 `UserData`。完整內容與發行者流程見
 [GitHub 免安裝自包含 ZIP](docs/self-contained-zip.md)。
+
+Testing `1.2.1` 發布完成後，下載時必須同時取得
+`MediaManager-Testing-1.2.1.zip` 與
+`MediaManager-Testing-1.2.1.zip.sha256`，先比對 SHA-256 再解壓執行；在 GitHub
+Release 與附件尚未經 API 驗證前，本文件不提前提供下載連結。
 
 ## 從原始碼執行的必要條件
 

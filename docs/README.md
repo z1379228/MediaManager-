@@ -4,12 +4,15 @@
 逐版重複日誌與退役功能說明已從目前樹移除；必要時由 Git 歷史或 GitHub Releases
 追查，不另建第二份歷史索引。
 
-- 目前來源版本為開發版 39.0（核心相容版本 39.0.11）。
+- 目前來源版本為開發版 39.0（核心相容版本 39.0.12）。
 - Development 40.0 仍是 `NO PLAN / NO RELEASE`；未簽署 `SAFE_MODE`
   Testing 1.1 已以 `test-v1.1.0-r2` 發布，但遠端 metadata 目前誤設為非
   prerelease 並被視為 Latest；產物仍不是 Stable 套件。
-- Testing 1.2 已進入獲授權的本機 source-freeze／打包流程，但尚未 push、
-  上傳或發布，也不取代既有 Testing 1.1 產物。
+- Testing `1.2.0` 已由 Development `39.0.11` 建立本機歷史封存，保留於
+  `Version/Testing/1.2`，未建立 GitHub Release。
+- Testing `1.2.1` 將由 Development `39.0.12` 建立於
+  `Version/Testing/1.2.1`；source freeze、未簽署 EXE、自包含 ZIP、tag
+  `test-v1.2.1` 與 GitHub 上傳已獲授權但尚待完成，不得提前宣稱發布。
 - `MediaManager v1.0` 是產品顯示名稱，不改變 Development／Testing／Stable 的
   信任與發布判斷。
 
@@ -41,7 +44,7 @@
 - [版本資料夾與三軌政策](version-layout.md)
 - [GitHub 免安裝自包含 ZIP](self-contained-zip.md)
 - [Development 39.0–40.0 更新紀錄](release-39.0-40.0.md)
-- [Testing 1.2 候選計畫](release-testing-1.2.md)
+- [Testing 1.2.1 候選計畫與 1.2.0 歷史](release-testing-1.2.md)
 - [Testing 1.1 說明](release-testing-1.1.md)
 - [簽章與發行 Gate](release-signing.md)
 - [GitHub 自動檢查與合併](github-auto-merge.md)
