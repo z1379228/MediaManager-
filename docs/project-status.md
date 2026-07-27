@@ -7,13 +7,13 @@
 MediaManager 目前工作來源為 Development `39.0.12`，新增以單一 YouTube
 搜尋結果建立公開相似音樂候選的入口。已封存的 Testing `1.2.0` 仍以
 Development `39.0.11` 為來源，不包含相似音樂入口；它保留為本機歷史候選且
-未發布。Development `39.0.12` 已被選為 Testing `1.2.1` 候選來源，source
-freeze、未簽署 EXE、自包含 ZIP、tag `test-v1.2.1`、GitHub Release 與上傳均
-已獲授權，但在本機及遠端驗證完成前仍是 `AUTHORIZED / PENDING / NOT
-PUBLISHED`。Development 40.0 仍為 `NO PLAN / NO RELEASE`，Repository 也沒有
-可發布 Stable 候選。目前已存在的未簽署、`SAFE_MODE` Testing 1.1 仍是
-`test-v1.1.0-r2`。其 GitHub metadata 目前誤設
-為非 prerelease 並被視為 Latest，待另行授權修正；這不等於 Stable 發行。
+未發布。[Testing `1.2.1`](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)
+已由 Development `39.0.12` source revision
+`05442d7875da5367cd23babc2ce4e2e3e0cb87a2` 建置並發布為 GitHub prerelease。
+遠端共有 9 個附件，自包含 ZIP SHA-256 為
+`c633586d974fb77ba8041533cf7f7fd5378ab651d2b8f86126ccceb6b070f148`。
+它是未簽署 Testing 產物，不是 Stable。Development 40.0 仍為
+`NO PLAN / NO RELEASE`，Repository 也沒有可發布 Stable 候選。
 
 ## 已完成範圍
 
@@ -42,16 +42,16 @@ PUBLISHED`。Development 40.0 仍為 `NO PLAN / NO RELEASE`，Repository 也沒�
   為 Development `39.0.11`。封存來源固定為 revision
   `fab5cb9333274e54f65a35b2f44a86699f0f349f`；目前 39.0.12 工作樹不會回寫
   該不可變候選；GitHub 上沒有對應 Testing 1.2.0 Release 或 tag。
-- Testing `1.2.1` 必須建立於 `Version/Testing/1.2.1`，由同一個乾淨的
-  Development `39.0.12` source revision 執行 receipt-bound build、staging、
-  runtime audit、copied-folder smoke 與 deterministic ZIP 比對。
-- Testing `1.2.1` 的預定 tag 是 `test-v1.2.1`，主要下載附件是
-  `MediaManager-Testing-1.2.1.zip` 與同名 `.zip.sha256`；目前不得提供假下載
-  URL 或宣稱已發布。
+- Testing `1.2.1` 已建立於 `Version/Testing/1.2.1`；tag
+  `test-v1.2.1` 精確指向 source revision
+  `05442d7875da5367cd23babc2ce4e2e3e0cb87a2`。
+- 主要下載附件是 `MediaManager-Testing-1.2.1.zip` 與同名 `.zip.sha256`；
+  [GitHub prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)
+  共有 9 個附件，ZIP digest 已與 sidecar 閉合。
 - Testing 1.0 是不可覆寫的歷史版本，不以目前 39.x 來源重建或冒用。
 - Testing 1.1 使用唯一修訂 tag `test-v1.1.0-r2`，精確指向 source revision
   `09b3a86e00938241d27050088583ebf81d9fb182`；9 個附件已發布且 digest 閉合。
-- 產物維持未簽署 `SAFE_MODE`；實際身分與雜湊以發行頁的
+- Testing 1.2.1 產物維持未簽署 `SAFE_MODE`、非 Stable；實際身分與雜湊以發行頁的
   `release-info.json`、`SHA256SUMS.txt` 與 ZIP sidecar 為準。
 
 ## 尚未成立的發行條件

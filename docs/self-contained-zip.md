@@ -5,9 +5,12 @@
 Python；ZIP 內的 EXE、資產、內建 MOD 與必要 portable runtime 必須來自同一個
 已稽核的 staged release。
 
-目前獲授權待完成的候選是 Testing `1.2.1`，來源為 Development `39.0.12`，
-staged 目錄為 `Version/Testing/1.2.1`，預定 tag 為 `test-v1.2.1`。既有
-Testing `1.2.0` 保留於 `Version/Testing/1.2`，不得覆寫或改名。
+目前已發布的附件是
+[Testing `1.2.1` prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)，
+來源為 Development `39.0.12` revision
+`05442d7875da5367cd23babc2ce4e2e3e0cb87a2`，staged 目錄為
+`Version/Testing/1.2.1`。遠端共有 9 個附件；既有 Testing `1.2.0` 保留於
+`Version/Testing/1.2`，不得覆寫或改名。
 
 ## 使用者流程
 
@@ -17,6 +20,8 @@ Testing `1.2.0` 保留於 `Version/Testing/1.2`，不得覆寫或改名。
 4. 進入唯一的 `MediaManager-<Track>-<X.Y.Z>/` 頂層資料夾。
 5. 雙擊 `MediaManager.exe`。
 
+Testing `1.2.1` ZIP 的已發布 SHA-256 是
+`c633586d974fb77ba8041533cf7f7fd5378ab651d2b8f86126ccceb6b070f148`。
 ZIP 必須包含且只包含 staged release 的受控檔案；不得只發布單獨 EXE，也不得
 混入 `UserData`、快取、Log、下載內容、Cookie、憑證私鑰或其他本機狀態。
 
@@ -41,7 +46,7 @@ ZIP 必須包含且只包含 staged release 的受控檔案；不得只發布單
 或發布：
 
 ```powershell
-$sourceRevision = "<已獨立確認的 40 或 64 位小寫 source revision>"
+$sourceRevision = "05442d7875da5367cd23babc2ce4e2e3e0cb87a2"
 .\.venv\Scripts\python.exe -m tools.package_self_contained_zip `
   --release-root Version\Testing\1.2.1 `
   --output-dir .work\release-upload-test-v1.2.1 `
@@ -86,7 +91,7 @@ manifest 與兩次完整快照；檔名掃描只是額外防線。
 至少執行：
 
 ```powershell
-$sourceRevision = "<已獨立確認的 40 或 64 位小寫 source revision>"
+$sourceRevision = "05442d7875da5367cd23babc2ce4e2e3e0cb87a2"
 .\.venv\Scripts\python.exe -m tools.audit_versions --root Version
 .\.venv\Scripts\python.exe -m tools.audit_staged_runtime `
   --root Version\Testing\1.2.1
@@ -114,6 +119,7 @@ Release、上傳與發布均是獨立 Gate，必須各自取得明確授權。�
 能移除該輪唯一 `.work` 目錄；已公開附件不得覆寫，修正時建立新 revision tag。
 
 Testing `1.2.1` 的 source freeze、未簽署 EXE、ZIP／sidecar、tag
-`test-v1.2.1`、Release 與上傳已獲授權，但目前仍是待完成工作。只有在本機
-SHA-256 驗證、版本與 runtime 稽核、解壓 smoke，以及 GitHub API 的遠端 tag、
-Release 與全部附件查核均通過後，才能把狀態改為已發布。
+`test-v1.2.1` 與 GitHub prerelease 均已完成。遠端查核確認 9 個附件已上傳；
+ZIP digest 與 sidecar 均為
+`c633586d974fb77ba8041533cf7f7fd5378ab651d2b8f86126ccceb6b070f148`。
+此附件維持未簽署 Testing 身分，不是 Stable。

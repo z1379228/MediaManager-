@@ -48,8 +48,8 @@
   提示不等於 YouTube 官方分類，候選內容仍需由使用者確認。
 - 此流程不讀取 Cookie、觀看紀錄或私人推薦 API，不自動下載，也不改變現有
   Testing `1.2.0` 產物。Development `39.0.12` 已被選為 Testing `1.2.1`
-  候選來源；source freeze、未簽署 EXE、自包含 ZIP 與 GitHub 上傳已獲授權，
-  但仍須由實際工具輸出證明完成。
+  來源，並已由 revision `05442d7875da5367cd23babc2ce4e2e3e0cb87a2`
+  完成 source freeze、未簽署 EXE、自包含 ZIP 與 GitHub prerelease。
 - 工作來源驗證：完整 repository runner `1388 passed, 7 skipped`；Ruff／文字污染
   quality audit 覆蓋 `366 / 474` 個檔案，Repository 外 compileall 通過。
 - 稽核證據：版本文件 `4`、MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖
@@ -86,14 +86,15 @@ Development `39.0.11` 已於 revision
 當時未獲授權，且公開 GitHub API 查核顯示沒有 Testing `1.2.0` Release 或 tag。
 此本機候選保留為不可覆寫歷史，Development `39.0.12` 不回寫該目錄。
 
-Testing `1.2.1` 使用新的 patch 目錄 `Version/Testing/1.2.1`，候選來源為
-Development `39.0.12`，預定唯一 tag 為 `test-v1.2.1`，預定主要附件為
-`MediaManager-Testing-1.2.1.zip` 與
-`MediaManager-Testing-1.2.1.zip.sha256`。source freeze、未簽署 EXE、stage、
-ZIP、建立 Release 與上傳已獲授權，但狀態仍是
-`AUTHORIZED / PENDING / NOT PUBLISHED`；source revision、SHA-256、Release URL
-與遠端資產只能在實際完成並驗證後記錄。Testing 維持未簽署 `SAFE_MODE`，
-不得宣稱 Stable，也不得覆寫 Testing `1.2.0` 歷史。
+Testing `1.2.1` 使用新的 patch 目錄 `Version/Testing/1.2.1`，來源為
+Development `39.0.12` revision
+`05442d7875da5367cd23babc2ce4e2e3e0cb87a2`。唯一 tag `test-v1.2.1` 已建立，
+[GitHub Release](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)
+已發布為 prerelease，遠端共有 9 個附件。主要附件
+`MediaManager-Testing-1.2.1.zip` 的 SHA-256 為
+`c633586d974fb77ba8041533cf7f7fd5378ab651d2b8f86126ccceb6b070f148`，
+並與 `MediaManager-Testing-1.2.1.zip.sha256` 閉合。Testing 維持未簽署
+`SAFE_MODE`、不是 Stable，也未覆寫 Testing `1.2.0` 歷史。
 
 ## 40.0
 

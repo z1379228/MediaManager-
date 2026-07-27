@@ -7,12 +7,10 @@
 目前來源版本為開發版 39.0（核心相容版本 39.0.12）。`MediaManager v1.0`
 是產品顯示名稱，不表示 Stable 已發布。Testing `1.2.0` 已由 Development
 `39.0.11` 建立本機歷史封存，但沒有 GitHub 發布，也不包含 39.0.12 相似音樂
-入口。Testing `1.2.1` 已獲授權由 Development `39.0.12` 建立新的
-`Version/Testing/1.2.1`、未簽署 EXE、自包含 ZIP 與 tag `test-v1.2.1` 並上傳
-GitHub；在完整驗證與遠端查核完成前仍是待完成、未發布狀態。目前可下載的仍是
-未簽署、維持 `SAFE_MODE` 的
-[Testing 1.1（39.0.10 重整）](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.1.0-r2)
-已發布供測試；它不是已簽署的 Stable 正式套件。
+入口。[Testing 1.2.1](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)
+已由 Development `39.0.12` 的 source revision
+`05442d7875da5367cd23babc2ce4e2e3e0cb87a2` 建立並發布為 GitHub
+prerelease，共有 9 個附件。它是未簽署 Testing 產物，不是 Stable 正式套件。
 
 ## 主要能力
 
@@ -30,30 +28,26 @@ GitHub；在完整驗證與遠端查核完成前仍是待完成、未發布狀�
 
 ## 安裝
 
-### 方法一：目前已發布的 Testing 1.1 免安裝、自包含 ZIP（一般使用者）
+### 方法一：Testing 1.2.1 免安裝、自包含 ZIP（一般使用者）
 
-Testing `1.2.1` 的預定附件名稱是 `MediaManager-Testing-1.2.1.zip` 與
-`MediaManager-Testing-1.2.1.zip.sha256`，但尚未完成上傳驗證，因此目前不要
-使用推測的 1.2.1 下載網址。發布完成前請使用下列既有 Testing 1.1 附件。
-
-1. 從 [Testing 1.1 Release](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.1.0-r2)
+1. 從 [Testing 1.2.1 prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)
    下載
-   [`MediaManager-Testing-1.1.0-r2.zip`](https://github.com/z1379228/MediaManager-/releases/download/test-v1.1.0-r2/MediaManager-Testing-1.1.0-r2.zip)
+   [`MediaManager-Testing-1.2.1.zip`](https://github.com/z1379228/MediaManager-/releases/download/test-v1.2.1/MediaManager-Testing-1.2.1.zip)
    及
-   [`MediaManager-Testing-1.1.0-r2.zip.sha256`](https://github.com/z1379228/MediaManager-/releases/download/test-v1.1.0-r2/MediaManager-Testing-1.1.0-r2.zip.sha256)。
+   [`MediaManager-Testing-1.2.1.zip.sha256`](https://github.com/z1379228/MediaManager-/releases/download/test-v1.2.1/MediaManager-Testing-1.2.1.zip.sha256)。
 2. 將兩個檔案放在同一資料夾，於該資料夾開啟 PowerShell 並核對雜湊：
 
    ```powershell
-   Get-FileHash -Algorithm SHA256 .\MediaManager-Testing-1.1.0-r2.zip
-   Get-Content .\MediaManager-Testing-1.1.0-r2.zip.sha256
+   Get-FileHash -Algorithm SHA256 .\MediaManager-Testing-1.2.1.zip
+   Get-Content .\MediaManager-Testing-1.2.1.zip.sha256
    ```
 
    兩者的 SHA-256 必須相同；目前發布值為
-   `31a1ab2c61ada07bc07eb8121107e8bbc7a16692347cae54af5fc5edb7dcf912`。
+   `c633586d974fb77ba8041533cf7f7fd5378ab651d2b8f86126ccceb6b070f148`。
 3. 將 ZIP 解壓縮到新的空資料夾，進入含有 `MediaManager.exe` 的資料夾後執行
    `MediaManager.exe`。不需要另外安裝 Python。
 
-Testing 1.1 是未簽署測試版，Windows 可能顯示無法驗證發布者的警告。只應從上述
+Testing 1.2.1 是未簽署測試版，Windows 可能顯示無法驗證發布者的警告。只應從上述
 GitHub Release 下載並在雜湊一致時執行；不要關閉 Windows 安全功能。自包含 ZIP
 已包含目前封裝的執行檔、資產與可攜工具，建議優先使用 ZIP，而不是單獨下載
 `MediaManager.exe`。發行附件不包含 `UserData`；直接雙擊 EXE 時使用標準 Windows

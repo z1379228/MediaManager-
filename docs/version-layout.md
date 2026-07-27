@@ -71,13 +71,15 @@ Ed25519 簽署、stage-built、push、發布與上傳都是分開的外部狀態
 取得明確授權。授權其中一項不自動授權下一項。
 
 目前沒有 Development 40.0 或 Stable 發布計畫。Testing `1.2.0` 是保留的本機
-歷史候選；Testing `1.2.1` 已獲授權進行 Development `39.0.12` source freeze、
-未簽署 EXE、自包含 ZIP、tag `test-v1.2.1` 與 GitHub 上傳，但在工具完成並驗證
-遠端附件前仍是 `AUTHORIZED / PENDING / NOT PUBLISHED`，不得預先宣稱已發布。
-Testing 1.1 已以
-未簽署 `SAFE_MODE` 的 `test-v1.1.0-r2` 發布；其 GitHub metadata 目前誤設為
-非 prerelease 並被視為 Latest，需另行授權修正。下列完整 Stable 發布流程仍是
-保留契約，不因 Testing 發布而視為完成：
+歷史候選，未建立 GitHub Release。
+[Testing `1.2.1`](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)
+已由 Development `39.0.12` source revision
+`05442d7875da5367cd23babc2ce4e2e3e0cb87a2` 建置，並以 tag
+`test-v1.2.1` 發布為未簽署 GitHub prerelease。遠端共有 9 個附件，自包含 ZIP
+SHA-256 為
+`c633586d974fb77ba8041533cf7f7fd5378ab651d2b8f86126ccceb6b070f148`。
+此 Testing 發布不是 Stable；下列完整 Stable 發布流程仍是保留契約，不因
+Testing 發布而視為完成：
 
 1. 建立乾淨、不可變的 source-freeze revision。
 2. 在 Repository 外的唯一工作目錄執行 receipt-bound build-only。
