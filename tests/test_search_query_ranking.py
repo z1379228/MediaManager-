@@ -30,6 +30,26 @@ def test_query_alias_and_typo_correction_is_bounded() -> None:
     )
 
 
+def test_query_aliases_do_not_rewrite_inside_larger_words() -> None:
+    prepared = prepare_search_query("flo-fi beats sound tracker bg musicology")
+
+    assert prepared.query == "flo-fi beats sound tracker bg musicology"
+    assert prepared.corrections == ()
+
+
+def test_query_corrections_do_not_expand_past_contract_limit() -> None:
+    phrase_query = f"{'x' * 191} bg music"
+    typo_query = f"{'x' * 192} offical"
+
+    prepared_phrase = prepare_search_query(phrase_query)
+    prepared_typo = prepare_search_query(typo_query)
+
+    assert prepared_phrase.query == phrase_query
+    assert prepared_phrase.corrections == ()
+    assert prepared_typo.query == typo_query
+    assert prepared_typo.corrections == ()
+
+
 def test_local_ranking_is_stable_and_explainable() -> None:
     items = (
         _item("weak", "Live recording", "Other"),

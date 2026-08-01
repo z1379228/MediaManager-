@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 from contracts._additive_result import (
     AdditiveResultError,
@@ -27,6 +28,29 @@ _DISCOVERY_FIELDS = frozenset(
         "thumbnail_url",
     }
 )
+_MAX_DISCOVERY_URL_LENGTH = 4096
+_MAX_THUMBNAIL_URL_LENGTH = 1000
+
+
+def _is_plain_https_url(value: str, *, maximum: int) -> bool:
+    if (
+        not 1 <= len(value) <= maximum
+        or any(character.isspace() for character in value)
+        or any(character in value for character in ('"', "'", "\\"))
+    ):
+        return False
+    try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+        parsed.port
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        parsed.scheme == "https"
+        and hostname
+        and parsed.username is None
+        and parsed.password is None
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +64,37 @@ class DiscoveryItemV1:
     category: str
     thumbnail_url: str
 
+    def __post_init__(self) -> None:
+        text_values = (
+            self.video_id,
+            self.url,
+            self.title,
+            self.artist,
+            self.language,
+            self.category,
+            self.thumbnail_url,
+        )
+        if not all(isinstance(value, str) for value in text_values):
+            raise DiscoveryContractError("discovery result text fields invalid")
+        if not self.video_id or not _is_plain_https_url(
+            self.url,
+            maximum=_MAX_DISCOVERY_URL_LENGTH,
+        ):
+            raise DiscoveryContractError("discovery result identity invalid")
+        if not 1 <= len(self.title) <= 300 or len(self.artist) > 200:
+            raise DiscoveryContractError("discovery result title is invalid")
+        if self.thumbnail_url and not _is_plain_https_url(
+            self.thumbnail_url,
+            maximum=_MAX_THUMBNAIL_URL_LENGTH,
+        ):
+            raise DiscoveryContractError("discovery result thumbnail is invalid")
+        if self.duration is not None and (
+            not isinstance(self.duration, int)
+            or self.duration < 0
+            or self.duration > 86400
+        ):
+            raise DiscoveryContractError("discovery result duration invalid")
+
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "DiscoveryItemV1":
         try:
@@ -48,23 +103,6 @@ class DiscoveryItemV1:
             raise DiscoveryContractError(
                 "discovery result fields invalid"
             ) from exc
-        text_fields = _DISCOVERY_FIELDS - {"duration"}
-        if not all(isinstance(raw[key], str) for key in text_fields):
-            raise DiscoveryContractError("discovery result text fields invalid")
-        if not raw["video_id"] or not raw["url"].startswith("https://"):
-            raise DiscoveryContractError("discovery result identity invalid")
-        if not 1 <= len(raw["title"]) <= 300 or len(raw["artist"]) > 200:
-            raise DiscoveryContractError("discovery result title is invalid")
-        thumbnail_url = raw["thumbnail_url"]
-        if thumbnail_url and (
-            len(thumbnail_url) > 1000 or not thumbnail_url.startswith("https://")
-        ):
-            raise DiscoveryContractError("discovery result thumbnail is invalid")
-        duration = raw["duration"]
-        if duration is not None and (
-            not isinstance(duration, int) or duration < 0 or duration > 86400
-        ):
-            raise DiscoveryContractError("discovery result duration invalid")
         return cls(
             video_id=raw["video_id"],
             url=raw["url"],

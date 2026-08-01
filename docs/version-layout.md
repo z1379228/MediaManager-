@@ -1,6 +1,6 @@
 # 版本資料夾與三軌政策
 
-Development、Testing 與 Stable 是互相獨立的發行軌，數字不可跨軌比較新舊。
+Development、Testing 與 Stable 是互相獨立的發行軌道，不可用數字大小跨軌比較。
 
 ## 目錄
 
@@ -10,36 +10,34 @@ Development、Testing 與 Stable 是互相獨立的發行軌，數字不可跨�
 - `Version/Testing/<major>.<minor>.<patch>/`
 - `Version/Stable/<major>.<minor>.<patch>/`
 
-5.0 以前的歷史產物可能仍位於 `Version/<major>.<minor>/`。它們是保留證據，
-不得為了統一目錄而搬移或改寫。
+5.0 以前的歷史產物可能位於 `Version/<major>.<minor>/`；它們是保留證據，
+不為統一目錄而搬移或改寫。Testing／Stable 基線可以保留 `X.Y` 目錄，基線後的
+material 修正版必須使用完整 `X.Y.Z`。Testing `1.2.0` 保留於
+`Version/Testing/1.2`；公開的 Testing `1.2.1` 保留於
+`Version/Testing/1.2.1`；本次新候選使用 `Version/Testing/1.2.2`。
 
-既有 Testing／Stable 基線可保留 `X.Y` 目錄；基線後的 material 修正版必須使用
-完整 `X.Y.Z` 目錄。例如 Testing `1.2.0` 保留於 `Version/Testing/1.2`，
-Testing `1.2.1` 則建立於 `Version/Testing/1.2.1`。新候選不得覆寫或重新命名
-既有基線目錄。
-
-每個完整版本資料夾可包含 EXE、wheel、portable tools、內建 MOD、
-`release-info.json`、`SHA256SUMS.txt`、SBOM 與簽章資料。檔案清單與 hash
-必須閉合；未列檔案、缺檔、路徑逃逸或 staging residue 都使稽核失敗。
+每個候選資料夾包含 EXE、wheel、portable tools、內建 MOD、
+`release-info.json`、`SHA256SUMS.txt`、dependency inventory 與 SBOM。
+版本稽核會拒絕缺檔、checksum 不符、路徑逃逸、link-like 內容及 staging residue。
 
 ## 版本身分
 
-- Development 使用完整核心版本 `X.Y.Z`；material 程式修正增加 `Z`。
-- 純文件、證據或不改變執行行為的更新不增加修正號。
-- Testing 與 Stable 各有自己的公開版本，不從 Development 數字推導。
-- Testing／Stable 的 material 修正增加 patch，並同步使用完整 `X.Y.Z` 目錄、
-  tag、ZIP、sidecar 與 release metadata；純文件修正不增加 patch。
-- UI 產品名稱可使用 `MediaManager v1.0`，但不取代核心版本、channel、
-  checksum、簽章與 release metadata。
+- Development 使用完整 `X.Y.Z`；material 程式修正增加 `Z`。
+- 純文件或未改變執行行為的證據更新不增加核心修正號。
+- Testing 與 Stable 各自維護公開身分，不跟隨 Development 數字。
+- Testing／Stable 基線後的 material 修正增加 patch，並同步目錄、tag、ZIP、
+  sidecar 與 release metadata。
+- UI 的產品名稱使用 `MediaManager v1.0`；真正信任狀態以 channel、checksum、
+  簽章與 release metadata 為準。
 
 ## 不可變與保留
 
-- 已存在的版本資料夾不得覆寫；同一候選必須由同一 source revision 產生。
-- 已公開 tag、EXE、`SHA256SUMS.txt` 與 `release-info.json` 不得刪除或替換。
-- 日常本機可只保留 current＋previous，但必須使用受控 dry-run 工具，且不得
-  刪除 UserData、含 link-like 項目的目錄或唯一可用的回復版本。
-- 完整歷史稽核前，先從 GitHub Releases 還原公開附件，再執行
-  `--full-history`；不要以空資料夾或假 manifest 補數。
+- 已公開的版本資料夾、tag、EXE、`SHA256SUMS.txt`、`release-info.json` 與附件
+  不得覆寫、刪除或重新命名。
+- 新候選綁定唯一 source revision；修正公開候選必須增加版本。
+- 日常本機只保留 current＋previous；清理必須使用受控 dry-run，不刪除
+  UserData、link-like 內容或無可驗證 manifest 的未知路徑。
+- 完整歷史稽核先由 GitHub Releases 還原公開附件，再使用 `--full-history`。
 
 ```powershell
 .\.venv\Scripts\python.exe -m tools.audit_versions --root Version
@@ -48,52 +46,33 @@ Testing `1.2.1` 則建立於 `Version/Testing/1.2.1`。新候選不得覆寫或�
 
 ## 免安裝自包含 ZIP
 
-GitHub 一般使用者附件應由一個已通過版本與 runtime 稽核的 staged release
-產生，ZIP 內只有一個頂層資料夾；解壓後可直接雙擊 `MediaManager.exe`，不需
-系統 Python。ZIP 不得混入 UserData、下載內容、快取、Log、秘密或私鑰。
+一般使用者附件從通過版本與 runtime 稽核的 staged release 建立。ZIP 只有一個
+頂層資料夾；解壓後可以直接執行 `MediaManager.exe`，不需要系統 Python，也不包含
+UserData、下載內容、cache、log、Cookie、憑證或私鑰。
 
 ```powershell
-$sourceRevision = "<已獨立確認的 40 或 64 位小寫 source revision>"
+$sourceRevision = "<已獨立確認的 39.0.39 source-freeze revision>"
 .\.venv\Scripts\python.exe -m tools.package_self_contained_zip `
-  --release-root Version\Testing\1.2.1 `
-  --output-dir .work\release-upload-test-v1.2.1 `
+  --release-root Version\Testing\1.2.2 `
+  --output-dir .work\release-upload-test-v1.2.2 `
   --expected-source-revision $sourceRevision
 ```
 
-此命令只封裝既有 staged folder，不授權或執行 build、簽署、stage、commit、
-push、上傳或發布。資料位置、deterministic 驗證與 GitHub revision 規則見
+工具只封裝已 staged folder，不會自行 build、簽署、stage、commit、push 或發布。
+deterministic ZIP 與 GitHub revision gate 詳見
 [GitHub 免安裝自包含 ZIP](self-contained-zip.md)。
 
-## 建置與發布授權
+## 建置與發布 Gate
 
-stage、commit、source freeze、build、建立 EXE、Testing／Stable、Authenticode、
-Ed25519 簽署、stage-built、push、發布與上傳都是分開的外部狀態變更，必須逐項
-取得明確授權。授權其中一項不自動授權下一項。
+stage、commit、source freeze、build、EXE、Testing／Stable、簽署、stage-built、
+push、tag、Release 與附件上傳都是獨立受控操作。授權其中一項不自動授權其他項。
 
-目前沒有 Development 40.0 或 Stable 發布計畫。Testing `1.2.0` 是保留的本機
-歷史候選，未建立 GitHub Release。
-[Testing `1.2.1`](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)
-已由 Development `39.0.12` source revision
-`05442d7875da5367cd23babc2ce4e2e3e0cb87a2` 建置，並以 tag
-`test-v1.2.1` 發布為未簽署 GitHub prerelease。遠端共有 9 個附件，自包含 ZIP
-SHA-256 為
-`c633586d974fb77ba8041533cf7f7fd5378ab651d2b8f86126ccceb6b070f148`。
-此 Testing 發布不是 Stable；下列完整 Stable 發布流程仍是保留契約，不因
-Testing 發布而視為完成：
+Testing `1.2.1` 是不可變的已公開歷史版本。Testing `1.2.2` 已獲授權由
+Development `39.0.39` 的乾淨 source freeze 建立為未簽署 GitHub prerelease；
+它不是 Stable。Stable 仍必須通過正式身分、簽章與人工驗證 Gate。
 
-1. 建立乾淨、不可變的 source-freeze revision。
-2. 在 Repository 外的唯一工作目錄執行 receipt-bound build-only。
-3. 由外部安全環境對同一 EXE 套用 Authenticode，並獨立確認 `Valid`。
-4. `stage-built` 重驗 receipt、revision、wheel 與 EXE 後建立不可覆寫候選。
-5. 產生 final checksum、SBOM 與 release metadata。
-6. 使用 Repository 外的 production Ed25519 私鑰簽署 final staged set。
-7. 執行 preflight、版本稽核、copied-folder smoke 與必要人工驗證。
-8. 只有全部證據指向同一 digest，且另有發布授權時才能上傳。
+## 複製資料夾驗證
 
-詳細秘密管理與順序見 [簽章與發行 Gate](release-signing.md)。
-
-## 測試版本
-
-不要直接在保留版資料夾執行會寫入 `UserData` 的 GUI 或 headless smoke。應複製
-完整資料夾到 Repository 外或 `.work/smoke-<version>`，測試完成後確認沒有程序
-存活，再只移除該 smoke 副本並重新執行版本稽核。
+不要直接在 staged release 執行會寫入 UserData 的 GUI 或 headless smoke。
+`tools.copied_folder_smoke` 會把 current 與 previous 複製到安全的 Repository 外
+暫存根，執行 fail-closed 啟動與 rollback smoke，再只清理本次擁有的複本。

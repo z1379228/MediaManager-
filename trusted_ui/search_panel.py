@@ -6,7 +6,10 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from core.discovery.adapters import FederatedSearchResult
+from core.discovery.adapters import (
+    FEDERATED_CURSOR_PROVIDER_ID,
+    FederatedSearchResult,
+)
 from core.discovery.query_ranking import (
     matching_search_indices,
     prepare_search_query,
@@ -29,12 +32,57 @@ from trusted_ui.builtin_mod_control import (
     set_builtin_mod_enabled,
 )
 from trusted_ui.thumbnail_loader import create_thumbnail_loader
+from trusted_ui.search_paging import (
+    MAX_WORKSPACE_SEARCH_RESULTS,
+    merge_federated_search_pages,
+)
+
+
+_SEARCH_CONTENT_TYPE_LABELS = {
+    "all": "全部",
+    "music": "音樂",
+    "video": "影片",
+    "playlist": "播放清單",
+    "live": "直播",
+}
+_ALL_ENABLED_SEARCH_SOURCES = "__all_enabled__"
+
+
+def shared_search_content_types(
+    capabilities: object,
+    provider_ids: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Return provider-ordered content types supported by every source."""
+
+    if not isinstance(capabilities, (list, tuple)) or len(provider_ids) < 2:
+        return ()
+    content_types: list[tuple[str, ...]] = []
+    for provider_id in provider_ids:
+        capability = next(
+            (
+                item
+                for item in capabilities
+                if getattr(item, "provider_id", None) == provider_id
+            ),
+            None,
+        )
+        declared = getattr(capability, "content_types", ())
+        if not isinstance(declared, tuple) or not declared:
+            return ()
+        content_types.append(declared)
+    return tuple(
+        content_type
+        for content_type in content_types[0]
+        if all(content_type in declared for declared in content_types[1:])
+    )
 
 
 @dataclass(frozen=True, slots=True)
 class _SearchResponse:
     generation: int
     value: object
+    history_query: str = ""
+    append: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,7 +186,7 @@ def history_preference_summary(preferences: object) -> str:
             continue
         value = max(values.items(), key=lambda item: (item[1], item[0]))[0]
         if field == "content_types":
-            value = {"music": "音樂", "video": "影片"}.get(value, value)
+            value = _SEARCH_CONTENT_TYPE_LABELS.get(value, value)
         parts.append(f"{label} {value}")
     return " · ".join(parts)
 
@@ -180,10 +228,13 @@ def create_search_panel(context: object, parent: object = None) -> object:
             super().__init__(parent)
             self.results = ()
             self.result_sources: tuple[str, ...] = ()
+            self.last_federated_result: FederatedSearchResult | None = None
             self.last_query = ""
             self.recovery_meta = {}
             self.search_rank_meta = {}
             self.next_search_cursor = ""
+            self.search_enabled_provider_ids: tuple[str, ...] = ()
+            self.aggregate_content_types: tuple[str, ...] = ()
             self.last_search_failures: tuple[object, ...] = ()
             self.busy_action = ""
             self.generation = 0
@@ -367,9 +418,6 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.limit.setCurrentIndex(1)
             self.search_scope = QComboBox()
             self.search_scope.setAccessibleName("搜尋內容類型")
-            self.search_scope.addItem("全部", "all")
-            self.search_scope.addItem("音樂", "music")
-            self.search_scope.addItem("影片", "video")
             self.search_scope.setToolTip("指定搜尋範圍；只查詢已啟用的搜尋 MOD")
             self.duration_filter = QComboBox()
             self.duration_filter.setAccessibleName("搜尋結果長度篩選")
@@ -387,6 +435,12 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 ("英文", "en"),
             ):
                 self.language_filter.addItem(label, value)
+            self.duration_filter.currentIndexChanged.connect(
+                self.apply_local_result_filters
+            )
+            self.language_filter.currentIndexChanged.connect(
+                self.apply_local_result_filters
+            )
             self.search_source = QComboBox()
             self.search_source.setAccessibleName("搜尋來源")
             self.search_source.setMinimumWidth(220)
@@ -414,6 +468,49 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 for status in source_statuses
             }
 
+            def refresh_search_scopes() -> None:
+                provider_id = str(self.search_source.currentData() or "")
+                selected = self.search_scope.currentData()
+                if provider_id == _ALL_ENABLED_SEARCH_SOURCES:
+                    content_types = self.aggregate_content_types
+                else:
+                    try:
+                        capability = next(
+                            (
+                                item
+                                for item in context.discovery.search_capabilities()
+                                if item.provider_id == provider_id
+                            ),
+                            None,
+                        )
+                    except (AttributeError, RuntimeError, ValueError):
+                        capability = None
+                    content_types = (
+                        capability.content_types
+                        if capability is not None
+                        else ("all",)
+                    )
+                previous_block = self.search_scope.blockSignals(True)
+                try:
+                    self.search_scope.clear()
+                    for content_type in content_types:
+                        self.search_scope.addItem(
+                            _SEARCH_CONTENT_TYPE_LABELS.get(
+                                content_type, content_type
+                            ),
+                            content_type,
+                        )
+                    index = self.search_scope.findData(selected)
+                    if index < 0:
+                        index = self.search_scope.findData("all")
+                    self.search_scope.setCurrentIndex(
+                        index if index >= 0 else 0 if content_types else -1
+                    )
+                finally:
+                    self.search_scope.blockSignals(previous_block)
+
+            self.refresh_search_scopes = refresh_search_scopes
+
             def refresh_search_sources() -> None:
                 selected = self.search_source.currentData()
                 previous_block = self.search_source.blockSignals(True)
@@ -434,13 +531,35 @@ def create_search_panel(context: object, parent: object = None) -> object:
                     self.search_provider_ids = tuple(
                         status.provider_id for status in statuses
                     )
+                    self.search_enabled_provider_ids = tuple(
+                        status.provider_id for status in statuses if status.enabled
+                    )
+                    try:
+                        capabilities = tuple(context.discovery.search_capabilities())
+                    except (AttributeError, RuntimeError, ValueError):
+                        capabilities = ()
+                    self.aggregate_content_types = shared_search_content_types(
+                        capabilities,
+                        self.search_enabled_provider_ids,
+                    )
                     localized_names = localized_site_module_names(
                         getattr(
                             getattr(context, "settings", None),
                             "language",
                             "zh-TW",
                         )
-                    )
+                        )
+                    if self.aggregate_content_types:
+                        self.search_source.addItem(
+                            "所有已啟用來源（聚合）",
+                            _ALL_ENABLED_SEARCH_SOURCES,
+                        )
+                        self.search_source.setItemData(
+                            self.search_source.count() - 1,
+                            "搜尋所有已啟用來源；內容類型只顯示共同能力，"
+                            "下一頁只續查仍有後續結果的來源",
+                            Qt.ItemDataRole.ToolTipRole,
+                        )
                     for status in statuses:
                         display_name = explicit_search_source_name(
                             status.provider_id,
@@ -503,25 +622,30 @@ def create_search_panel(context: object, parent: object = None) -> object:
                             )
                         hidden_hint = "；未列出：" + "、".join(hidden_labels)
                     self.search_source_summary.setText(
-                        "可選搜尋來源（一次查一個網站）："
+                        (
+                            "可選搜尋來源（可單站或聚合搜尋）："
+                            if self.aggregate_content_types
+                            else "可選搜尋來源（一次查一個網站）："
+                        )
                         + ("、".join(source_names) if source_names else "目前沒有可用來源")
                         + hidden_hint
                     )
                     index = self.search_source.findData(selected)
                     if index < 0:
-                        index = self.search_source.findData("youtube-search")
-                    if index < 0:
-                        index = next(
-                            (
-                                item_index
-                                for item_index, status in enumerate(statuses)
-                                if status.enabled
-                            ),
-                            0 if statuses else -1,
+                        preferred_provider_id = (
+                            "youtube-search"
+                            if "youtube-search" in self.search_enabled_provider_ids
+                            else self.search_enabled_provider_ids[0]
+                            if self.search_enabled_provider_ids
+                            else ""
                         )
+                        index = self.search_source.findData(preferred_provider_id)
+                    if index < 0:
+                        index = 0 if self.search_source.count() else -1
                     self.search_source.setCurrentIndex(index)
                 finally:
                     self.search_source.blockSignals(previous_block)
+                self.refresh_search_scopes()
 
             self.refresh_search_sources = refresh_search_sources
             refresh_search_sources()
@@ -532,7 +656,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.history_menu.aboutToShow.connect(self.populate_history_menu)
             self.history_button.setMenu(self.history_menu)
             self.search_button = QPushButton("搜尋")
-            self.search_button.setAccessibleName("執行單一網站搜尋")
+            self.search_button.setAccessibleName("執行網站搜尋")
             self.search_button.setObjectName("primary")
             self.search_button.clicked.connect(self.search)
             self.next_page_button = QPushButton("下一頁")
@@ -643,13 +767,34 @@ def create_search_panel(context: object, parent: object = None) -> object:
 
             def invalidate_search_cursor() -> None:
                 self.next_search_cursor = ""
+                self.last_federated_result = None
+                if self.busy_action == "search":
+                    self.generation += 1
+                    self.results_generation += 1
+                    self.busy_action = ""
+                    self.thumbnail_loader.cancel_pending()
+                    self.status.setText(
+                        "搜尋條件已變更；已忽略先前尚未完成的搜尋結果。"
+                    )
                 self.next_page_button.setToolTip(
                     "搜尋條件已變更；請先重新搜尋第一頁"
                 )
                 self.update_action_state()
 
             self.invalidate_search_cursor = invalidate_search_cursor
-            self.search_source.currentIndexChanged.connect(invalidate_search_cursor)
+            for search_action in (
+                self.enabled,
+                self.bilibili_search_enabled,
+            ):
+                search_action.toggled.connect(self.invalidate_search_cursor)
+
+            def handle_search_source_changed(_index: int = -1) -> None:
+                self.refresh_search_scopes()
+                self.invalidate_search_cursor()
+
+            self.search_source.currentIndexChanged.connect(
+                handle_search_source_changed
+            )
             self.search_scope.currentIndexChanged.connect(invalidate_search_cursor)
             self.limit.currentIndexChanged.connect(invalidate_search_cursor)
             self.query.textEdited.connect(invalidate_search_cursor)
@@ -672,13 +817,18 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 action.setChecked(context.discovery.is_enabled(str(provider_id)))
                 action.blockSignals(False)
             self.refresh_parent_visibility()
-            if provider_id in self.search_provider_ids or provider_id in {
-                "youtube",
-                "bilibili",
-                "youtube-search",
-                "bilibili-search",
-            }:
+            search_configuration_changed = (
+                provider_id in self.search_provider_ids
+                or provider_id in {
+                    "youtube",
+                    "bilibili",
+                    "youtube-search",
+                    "bilibili-search",
+                }
+            )
+            if search_configuration_changed:
                 self.refresh_search_sources()
+                self.invalidate_search_cursor()
             self.refresh_feature_button()
             self.update_action_state()
 
@@ -711,6 +861,26 @@ def create_search_panel(context: object, parent: object = None) -> object:
             selected_item = self.selected_result()
             selected = selected_item is not None
             selected_source = self.selected_result_source()
+            selected_search_source = str(self.search_source.currentData() or "")
+            if selected_search_source == _ALL_ENABLED_SEARCH_SOURCES:
+                search_source_ready = (
+                    len(self.search_enabled_provider_ids) >= 2
+                    and bool(self.aggregate_content_types)
+                )
+            else:
+                try:
+                    search_source_ready = bool(
+                        selected_search_source
+                        and context.discovery.is_enabled(selected_search_source)
+                    )
+                except (AttributeError, KeyError, RuntimeError, ValueError):
+                    search_source_ready = False
+            try:
+                youtube_search_ready = context.discovery.is_enabled(
+                    "youtube-search"
+                )
+            except (AttributeError, KeyError, RuntimeError, ValueError):
+                youtube_search_ready = False
             download_provider = ""
             download_ready = False
             audio_preview_ready = False
@@ -752,9 +922,11 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 and self.history_enabled.isChecked()
                 and self.search_uses_youtube_only()
             )
-            self.search_button.setEnabled(not busy)
+            self.search_button.setEnabled(not busy and search_source_ready)
             self.next_page_button.setEnabled(
-                not busy and bool(self.next_search_cursor)
+                not busy
+                and search_source_ready
+                and bool(self.next_search_cursor)
             )
             self.download_button.setEnabled(selected and download_ready)
             self.download_button.setToolTip(
@@ -778,12 +950,14 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.recovery_button.setEnabled(
                 selected
                 and selected_source == "youtube-search"
+                and youtube_search_ready
                 and self.recovery_enabled.isChecked()
                 and not busy
             )
             self.similar_button.setEnabled(
                 selected
                 and selected_source == "youtube-search"
+                and youtube_search_ready
                 and self.similar_enabled.isChecked()
                 and not busy
             )
@@ -875,16 +1049,30 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.query.setText(query)
             self.search()
 
-        def begin_action(self, action: str) -> int | None:
+        def begin_action(
+            self,
+            action: str,
+            *,
+            preserve_search_results: bool = False,
+        ) -> int | None:
             if self.closing or self.busy_action:
                 return None
             self.generation += 1
             if action in {"search", "recovery", "similar"}:
                 self.results_generation += 1
+                if not preserve_search_results:
+                    self.last_federated_result = None
                 self.thumbnail_loader.cancel_pending()
             self.busy_action = action
             self.update_action_state()
             return self.generation
+
+        def apply_local_result_filters(self, _index: int = -1) -> None:
+            """Reapply presentation-only filters without issuing a provider request."""
+
+            if self.closing or self.busy_action or self.last_federated_result is None:
+                return
+            self.show_results(self.last_federated_result, "")
 
         def search(self) -> None:
             self.next_search_cursor = ""
@@ -907,12 +1095,32 @@ def create_search_panel(context: object, parent: object = None) -> object:
                     self, "搜尋來源", "目前沒有可選擇的網站搜尋 MOD。"
                 )
                 return
-            if not context.discovery.is_enabled(selected_source):
+            if selected_source == _ALL_ENABLED_SEARCH_SOURCES:
+                provider_ids = tuple(
+                    provider_id
+                    for provider_id in self.search_enabled_provider_ids
+                    if context.discovery.is_enabled(provider_id)
+                )
+                if len(provider_ids) < 2:
+                    self.refresh_search_sources()
+                    QMessageBox.information(
+                        self,
+                        "搜尋來源",
+                        "聚合搜尋至少需要兩個已啟用的搜尋 MOD。",
+                    )
+                    return
+            elif not context.discovery.is_enabled(selected_source):
                 QMessageBox.information(
                     self, "搜尋來源", f"請先啟用 {selected_source} MOD。"
                 )
                 return
-            generation = self.begin_action("search")
+            else:
+                provider_ids = (selected_source,)
+            append = bool(cursor)
+            generation = self.begin_action(
+                "search",
+                preserve_search_results=append,
+            )
             if generation is None:
                 return
             self.last_query = query
@@ -921,7 +1129,6 @@ def create_search_panel(context: object, parent: object = None) -> object:
             history_enabled = (
                 self.history_enabled.isChecked() and self.search_uses_youtube_only()
             )
-            provider_ids = (selected_source,)
             correction_label = (
                 f"（已在本機修正：{'、'.join(prepared.corrections)}）"
                 if prepared.corrections
@@ -939,19 +1146,21 @@ def create_search_panel(context: object, parent: object = None) -> object:
                         content_type=content_type,
                         cursor=cursor,
                     )
-                    if history_enabled:
-                        try:
-                            context.discovery.record_history("search", query)
-                        except Exception:
-                            pass
                     if not self.closing:
                         self.bridge.finished.emit(
-                            _SearchResponse(generation, results), ""
+                            _SearchResponse(
+                                generation,
+                                results,
+                                query if history_enabled and not cursor else "",
+                                append,
+                            ),
+                            "",
                         )
                 except Exception as error:
                     if not self.closing:
                         self.bridge.finished.emit(
-                            _SearchResponse(generation, None), str(error)
+                            _SearchResponse(generation, None, append=append),
+                            str(error),
                         )
 
             threading.Thread(target=worker, daemon=True).start()
@@ -987,6 +1196,13 @@ def create_search_panel(context: object, parent: object = None) -> object:
                     self,
                     "尋找替代影片",
                     "此替代搜尋目前只使用 YouTube 搜尋結果，不會跨網站轉送資料。",
+                )
+                return
+            if not context.discovery.is_enabled("youtube-search"):
+                QMessageBox.information(
+                    self,
+                    "尋找替代影片",
+                    "請先啟用 youtube-search MOD。",
                 )
                 return
             limit = int(self.limit.currentData())
@@ -1041,6 +1257,13 @@ def create_search_panel(context: object, parent: object = None) -> object:
                     self,
                     "隨機相似",
                     "相似搜尋目前只屬於 YouTube MOD，不會把其他網站結果轉送到 YouTube。",
+                )
+                return
+            if not context.discovery.is_enabled("youtube-search"):
+                QMessageBox.information(
+                    self,
+                    "隨機相似",
+                    "請先啟用 youtube-search MOD。",
                 )
                 return
             original = self.results[row]
@@ -1117,13 +1340,22 @@ def create_search_panel(context: object, parent: object = None) -> object:
         def show_results(self, results: object, error: str) -> None:
             if self.closing:
                 return
+            history_query = ""
+            append = False
             if isinstance(results, _SearchResponse):
                 if results.generation != self.generation:
                     return
+                history_query = results.history_query
+                append = results.append
                 results = results.value
             self.thumbnail_loader.cancel_pending()
             self.busy_action = ""
             if error:
+                if append and self.last_federated_result is not None:
+                    self.status.setText(f"載入更多失敗：{error}")
+                    self.update_action_state()
+                    return
+                self.last_federated_result = None
                 self.set_search_failures(())
                 self.results = ()
                 self.result_sources = ()
@@ -1138,6 +1370,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.recovery_meta = {}
             self.search_rank_meta = {}
             if isinstance(results, dict):
+                self.last_federated_result = None
                 self.set_search_failures(())
                 items = results.get("items")
                 candidates = results.get("candidates")
@@ -1156,6 +1389,12 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 label = "隨機相似結果" if mode == "similar" else "替代候選"
                 self.status.setText(f"找到 {len(self.results)} 筆{label}")
             elif isinstance(results, FederatedSearchResult):
+                if append and self.last_federated_result is not None:
+                    results = merge_federated_search_pages(
+                        self.last_federated_result,
+                        results,
+                    )
+                self.last_federated_result = results
                 self.set_search_failures(results.failures)
                 minimum_duration, maximum_duration = self.duration_filter.currentData()
                 matched = matching_search_indices(
@@ -1182,8 +1421,28 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 }
                 cursors = dict(results.next_cursors)
                 selected_source = str(self.search_source.currentData() or "")
-                self.next_search_cursor = cursors.get(selected_source, "")
-                if self.next_search_cursor:
+                aggregate_search = selected_source == _ALL_ENABLED_SEARCH_SOURCES
+                at_result_limit = (
+                    len(results.items) >= MAX_WORKSPACE_SEARCH_RESULTS
+                )
+                self.next_search_cursor = (
+                    ""
+                    if at_result_limit
+                    else cursors.get(FEDERATED_CURSOR_PROVIDER_ID, "")
+                    if aggregate_search
+                    else cursors.get(selected_source, "")
+                )
+                if at_result_limit:
+                    self.next_page_button.setToolTip(
+                        f"已達工作區最多 {MAX_WORKSPACE_SEARCH_RESULTS} 筆結果"
+                    )
+                elif aggregate_search:
+                    self.next_page_button.setToolTip(
+                        "載入聚合搜尋中仍有下一頁的來源"
+                        if self.next_search_cursor
+                        else "聚合搜尋的來源目前沒有下一頁"
+                    )
+                elif self.next_search_cursor:
                     self.next_page_button.setToolTip("載入此來源的下一頁")
                 else:
                     try:
@@ -1208,10 +1467,23 @@ def create_search_panel(context: object, parent: object = None) -> object:
                     self.status.setText(
                         f"找到 {len(self.results)} 筆結果；"
                         f"{len(results.failures)} 個來源失敗"
+                        + (
+                            f"；已達 {MAX_WORKSPACE_SEARCH_RESULTS} 筆上限"
+                            if at_result_limit
+                            else ""
+                        )
                     )
                 else:
-                    self.status.setText(f"找到 {len(self.results)} 筆結果")
+                    self.status.setText(
+                        f"找到 {len(self.results)} 筆結果"
+                        + (
+                            f"；已達 {MAX_WORKSPACE_SEARCH_RESULTS} 筆上限"
+                            if at_result_limit
+                            else ""
+                        )
+                    )
             else:
+                self.last_federated_result = None
                 self.set_search_failures(())
                 self.result_sources = ()
                 self.results = tuple(results) if isinstance(results, tuple) else ()
@@ -1289,6 +1561,18 @@ def create_search_panel(context: object, parent: object = None) -> object:
                             self.show_thumbnail(generation, row, item, pixmap)
                         ),
                     )
+            if (
+                history_query
+                and isinstance(results, FederatedSearchResult)
+                and not results.failures
+            ):
+                def record_search_history() -> None:
+                    try:
+                        context.discovery.record_history("search", history_query)
+                    except Exception:
+                        pass
+
+                threading.Thread(target=record_search_history, daemon=True).start()
             self.update_action_state()
 
         def show_thumbnail(

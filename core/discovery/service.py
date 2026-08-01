@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 import hashlib
 import hmac
@@ -19,7 +20,11 @@ from contracts.recovery_v1 import RecoveryCandidateV1, RecoveryPlanV1
 from contracts.similar_v1 import SimilarPlanV1, SimilarSelectionV1
 from contracts.split_plan_v1 import SplitPlanV1
 from contracts.search_v2 import SearchCapabilityV2, SearchPageV2, SearchQueryV2
-from core.discovery.adapters import FederatedSearchResult, SearchAdapterRegistry
+from core.discovery.adapters import (
+    FEDERATED_CURSOR_PROVIDER_ID,
+    FederatedSearchResult,
+    SearchAdapterRegistry,
+)
 from core.downloads.provider_registry import (
     DownloadProviderRegistry,
     ProviderStatus,
@@ -30,6 +35,9 @@ from core.site_routing import YOUTUBE_HOSTS
 _SIMILAR_SEARCH_BINDINGS = {"youtube-similar": "youtube-search"}
 _RECOVERY_SEARCH_BINDINGS = {"youtube-recovery": "youtube-search"}
 _YOUTUBE_RESULT_HOSTS = YOUTUBE_HOSTS
+_MAX_FEDERATED_SEARCH_CURSOR_LENGTH = 16_384
+
+
 def _require_bound_original_source(
     original: DiscoveryItemV1,
     search_provider_id: str,
@@ -211,8 +219,6 @@ class DiscoveryService:
         self._video_preview_providers: dict[str, VideoPreviewProvider] = {}
 
     def register(self, provider: SearchProvider, *, enabled: bool = False) -> None:
-        self._registry.register(provider, enabled=enabled)  # type: ignore[arg-type]
-        self._providers[provider.provider_id] = provider
         declared = getattr(provider, "search_capability", None)
         capability = (
             declared
@@ -229,6 +235,8 @@ class DiscoveryService:
         )
         if capability.provider_id != provider.provider_id:
             raise ValueError("search capability provider mismatch")
+        self._registry.register(provider, enabled=enabled)  # type: ignore[arg-type]
+        self._providers[provider.provider_id] = provider
 
         def adapter(query: SearchQueryV2) -> SearchPageV2:
             search_page = (
@@ -291,22 +299,33 @@ class DiscoveryService:
         self,
         query: str,
         *,
-        provider_ids: tuple[str, ...] | None = None,
+        provider_ids: Iterable[str] | None = None,
         limit: int = 50,
         content_type: str = "all",
         cursor: str = "",
     ) -> FederatedSearchResult:
-        selected = (
-            tuple(
+        bounded_limit = self._search_adapters.normalize_result_limit(limit)
+        validated_query = SearchQueryV2(
+            query,
+            content_type,
+            bounded_limit,
+        ).validated()
+        normalized_query = validated_query.query
+        normalized_content_type = validated_query.content_type
+        if not isinstance(cursor, str):
+            raise ValueError("search cursor invalid")
+        requested_provider_ids = (
+            (
                 capability.provider_id
                 for capability in self.search_capabilities()
                 if self._registry.is_enabled(capability.provider_id)
             )
             if provider_ids is None
-            else tuple(provider_ids)
+            else provider_ids
         )
-        if len(set(selected)) != len(selected):
-            raise ValueError("duplicate search MOD selection")
+        selected = self._search_adapters.normalize_provider_selection(
+            requested_provider_ids
+        )
         available = {
             capability.provider_id for capability in self.search_capabilities()
         }
@@ -322,25 +341,45 @@ class DiscoveryService:
         )
         if disabled:
             raise RuntimeError(f"search MOD is disabled: {disabled[0]}")
-        if cursor and len(selected) != 1:
-            raise ValueError("pagination requires one selected search MOD")
         provider_cursor = ""
+        provider_cursors: dict[str, str] | None = None
         if cursor:
-            provider_cursor = self._decode_search_cursor(
-                cursor,
-                provider_id=selected[0],
-                query=query,
-                content_type=content_type,
-            )
+            if len(selected) == 1:
+                provider_cursor = self._decode_search_cursor(
+                    cursor,
+                    provider_id=selected[0],
+                    query=normalized_query,
+                    content_type=normalized_content_type,
+                )
+            else:
+                provider_cursors = dict(
+                    self._decode_federated_search_cursor(
+                        cursor,
+                        provider_ids=selected,
+                        query=normalized_query,
+                        content_type=normalized_content_type,
+                    )
+                )
         result = self._search_adapters.search(
-            SearchQueryV2(query, content_type, limit, provider_cursor),
+            SearchQueryV2(
+                normalized_query,
+                normalized_content_type,
+                bounded_limit,
+                provider_cursor,
+            ),
             provider_ids=selected,
-            limit=limit,
+            limit=bounded_limit,
+            provider_cursors=provider_cursors,
         )
         failures = {
             failure.provider_id: failure.message for failure in result.failures
         }
-        for provider_id in selected:
+        attempted_provider_ids = (
+            tuple(provider_cursors)
+            if provider_cursors is not None
+            else selected
+        )
+        for provider_id in attempted_provider_ids:
             health = self._search_health.setdefault(provider_id, _SearchHealth())
             if provider_id in failures:
                 health.consecutive_failures = min(
@@ -353,22 +392,52 @@ class DiscoveryService:
                     health.successful_searches + 1, 1_000_000
                 )
                 health.message = ""
-        return FederatedSearchResult(
-            result.items,
-            result.failures,
-            result.sources,
-            tuple(
+        raw_next_cursors = dict(result.next_cursors)
+        if provider_cursors is not None:
+            for failure in result.failures:
+                if failure.provider_id in provider_cursors:
+                    raw_next_cursors.setdefault(
+                        failure.provider_id,
+                        provider_cursors[failure.provider_id],
+                    )
+        ordered_next_cursors = tuple(
+            (provider_id, raw_next_cursors[provider_id])
+            for provider_id in selected
+            if provider_id in raw_next_cursors
+        )
+        if len(selected) > 1:
+            if ordered_next_cursors:
+                next_cursors = (
+                    (
+                        FEDERATED_CURSOR_PROVIDER_ID,
+                        self._encode_federated_search_cursor(
+                            provider_ids=selected,
+                            query=normalized_query,
+                            content_type=normalized_content_type,
+                            provider_cursors=ordered_next_cursors,
+                        ),
+                    ),
+                )
+            else:
+                next_cursors = ()
+        else:
+            next_cursors = tuple(
                 (
                     provider_id,
                     self._encode_search_cursor(
                         provider_id=provider_id,
-                        query=query,
-                        content_type=content_type,
+                        query=normalized_query,
+                        content_type=normalized_content_type,
                         provider_cursor=next_cursor,
                     ),
                 )
-                for provider_id, next_cursor in result.next_cursors
-            ),
+                for provider_id, next_cursor in ordered_next_cursors
+            )
+        return FederatedSearchResult(
+            result.items,
+            result.failures,
+            result.sources,
+            next_cursors,
         )
 
     @staticmethod
@@ -465,6 +534,123 @@ class DiscoveryService:
             raise ValueError("search cursor does not match this search")
         return values[4]
 
+    def _encode_federated_search_cursor(
+        self,
+        *,
+        provider_ids: tuple[str, ...],
+        query: str,
+        content_type: str,
+        provider_cursors: tuple[tuple[str, str], ...],
+    ) -> str:
+        cursor_ids = tuple(provider_id for provider_id, _ in provider_cursors)
+        if (
+            not provider_cursors
+            or len(cursor_ids) != len(set(cursor_ids))
+            or any(provider_id not in provider_ids for provider_id in cursor_ids)
+            or any(
+                not isinstance(cursor, str) or not 1 <= len(cursor) <= 500
+                for _, cursor in provider_cursors
+            )
+        ):
+            raise ValueError("federated search cursor invalid")
+        payload = json.dumps(
+            [
+                1,
+                list(provider_ids),
+                self._normalized_search_text(query),
+                content_type,
+                [list(item) for item in provider_cursors],
+            ],
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        signature = hmac.new(
+            self._search_cursor_key, payload, hashlib.sha256
+        ).digest()[:16]
+        encoded_payload = base64.urlsafe_b64encode(payload).rstrip(b"=")
+        encoded_signature = base64.urlsafe_b64encode(signature).rstrip(b"=")
+        token = b"fsc1." + encoded_payload + b"." + encoded_signature
+        if len(token) > _MAX_FEDERATED_SEARCH_CURSOR_LENGTH:
+            raise ValueError("federated search cursor is too large")
+        return token.decode("ascii")
+
+    def _decode_federated_search_cursor(
+        self,
+        token: str,
+        *,
+        provider_ids: tuple[str, ...],
+        query: str,
+        content_type: str,
+    ) -> tuple[tuple[str, str], ...]:
+        if (
+            not isinstance(token, str)
+            or not 1 <= len(token) <= _MAX_FEDERATED_SEARCH_CURSOR_LENGTH
+        ):
+            raise ValueError("federated search cursor invalid")
+        try:
+            prefix, payload_text, signature_text = token.split(".")
+            if prefix != "fsc1":
+                raise ValueError
+            payload = base64.urlsafe_b64decode(
+                payload_text + "=" * (-len(payload_text) % 4)
+            )
+            signature = base64.urlsafe_b64decode(
+                signature_text + "=" * (-len(signature_text) % 4)
+            )
+            if (
+                base64.urlsafe_b64encode(payload).rstrip(b"=").decode("ascii")
+                != payload_text
+                or base64.urlsafe_b64encode(signature)
+                .rstrip(b"=")
+                .decode("ascii")
+                != signature_text
+            ):
+                raise ValueError
+            expected = hmac.new(
+                self._search_cursor_key, payload, hashlib.sha256
+            ).digest()[:16]
+            if not hmac.compare_digest(signature, expected):
+                raise ValueError
+            values = json.loads(payload.decode("utf-8"))
+        except (
+            binascii.Error,
+            UnicodeDecodeError,
+            ValueError,
+            TypeError,
+            json.JSONDecodeError,
+        ):
+            raise ValueError("federated search cursor invalid") from None
+        if (
+            not isinstance(values, list)
+            or len(values) != 5
+            or values[0] != 1
+            or not isinstance(values[1], list)
+            or tuple(values[1]) != provider_ids
+            or values[2] != self._normalized_search_text(query)
+            or values[3] != content_type
+            or not isinstance(values[4], list)
+            or not 1 <= len(values[4]) <= len(provider_ids)
+        ):
+            raise ValueError("federated search cursor does not match this search")
+        cursors: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for item in values[4]:
+            if (
+                not isinstance(item, list)
+                or len(item) != 2
+                or not isinstance(item[0], str)
+                or item[0] not in provider_ids
+                or item[0] in seen
+                or not isinstance(item[1], str)
+                or not 1 <= len(item[1]) <= 500
+            ):
+                raise ValueError(
+                    "federated search cursor does not match this search"
+                )
+            seen.add(item[0])
+            cursors.append((item[0], item[1]))
+        return tuple(cursors)
+
     def register_video_preview(
         self, provider: VideoPreviewProvider, *, enabled: bool = False
     ) -> None:
@@ -481,8 +667,11 @@ class DiscoveryService:
             raise RuntimeError("video player MOD is unavailable")
         return provider
 
-
-
+    def _require_search_provider_enabled(self, provider_id: str) -> None:
+        if provider_id not in self._providers:
+            raise RuntimeError("bound search MOD is unavailable")
+        if not self._registry.is_enabled(provider_id):
+            raise RuntimeError("bound search MOD is disabled")
 
     def register_similar(
         self, provider: SimilarProvider, *, enabled: bool = False
@@ -585,6 +774,7 @@ class DiscoveryService:
         if search_provider_id is None:
             raise RuntimeError("similar MOD has no bound search source")
         _require_bound_original_source(original, search_provider_id)
+        self._require_search_provider_enabled(search_provider_id)
         preferences = HistoryPreferencesV1(0, 0, {}, {}, {}, {})
         if self._registry.is_enabled("youtube-history"):
             try:
@@ -628,6 +818,7 @@ class DiscoveryService:
         if search_provider_id is None:
             raise RuntimeError("similar MOD has no bound search source")
         _require_bound_original_source(original, search_provider_id)
+        self._require_search_provider_enabled(search_provider_id)
         scoring_original = (
             original
             if content_type == "all"
@@ -680,6 +871,7 @@ class DiscoveryService:
         if search_provider_id is None:
             raise RuntimeError("recovery MOD has no bound search source")
         _require_bound_original_source(original, search_provider_id)
+        self._require_search_provider_enabled(search_provider_id)
         bounded_limit = max(1, min(int(limit), 50))
         plan = provider.recovery_plan(original)
         for query in (plan.primary_query, *plan.fallback_queries):

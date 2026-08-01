@@ -83,7 +83,8 @@ def test_similar_mod_excludes_original_and_selects_relevant_pool() -> None:
     )
     original = item()
     plan = provider.similar_plan(original, preferences())
-    assert plan.queries[0] == "Artist music"
+    assert plan.queries[0] == "Artist Example Song"
+    assert "Artist music" in plan.queries
     assert "Preferred Artist music" in plan.queries
     selection = provider.select_similar(
         original,
@@ -98,6 +99,38 @@ def test_similar_mod_excludes_original_and_selects_relevant_pool() -> None:
     assert selection.item.video_id == "new"
     assert "artist" in selection.reasons
     provider.close()
+
+
+def test_similar_mod_prioritizes_the_selected_artist_and_title_together() -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    original = item(title="Stay", artist="Aimer")
+    try:
+        plan = provider.similar_plan(
+            original,
+            HistoryPreferencesV1(0, 0, {}, {}, {}, {}),
+        )
+
+        assert plan.queries[0] == "Aimer Stay"
+        assert "Aimer music" in plan.queries
+        assert len(plan.queries) <= 3
+
+        titled_plan = provider.similar_plan(
+            item(title="Aimer - Stay", artist="Aimer"),
+            HistoryPreferencesV1(0, 0, {}, {}, {}, {}),
+        )
+        assert titled_plan.queries[0] == "Aimer - Stay"
+
+        short_artist_plan = provider.similar_plan(
+            item(title="Stay", artist="A"),
+            HistoryPreferencesV1(0, 0, {}, {}, {}, {}),
+        )
+        assert short_artist_plan.queries[0] == "A Stay"
+    finally:
+        provider.close()
 
 
 def test_similar_mod_returns_multiple_ranked_results_with_fallbacks() -> None:
@@ -151,7 +184,8 @@ def test_similar_mod_plans_and_scores_a_transformed_music_seed() -> None:
     zero_preferences = HistoryPreferencesV1(0, 0, {}, {}, {}, {})
     try:
         plan = provider.similar_plan(music_seed, zero_preferences)
-        assert plan.queries[0] == "Artist music"
+        assert plan.queries[0] == "Artist Example Song"
+        assert "Artist music" in plan.queries
         assert all("video" not in query.casefold() for query in plan.queries)
 
         ranked = provider.rank_similar(
@@ -246,6 +280,31 @@ def test_discovery_service_returns_bounded_similar_result_list(
         content_type="all",
     )
     service.close()
+
+
+def test_discovery_service_rejects_similar_before_planning_when_search_is_disabled(
+    tmp_path: Path,
+) -> None:
+    original = item()
+    search = Mock()
+    search.provider_id = "youtube-search"
+    search.display_name = "YouTube Search"
+    similar = Mock()
+    similar.provider_id = "youtube-similar"
+    similar.display_name = "YouTube Similar"
+
+    service = DiscoveryService(tmp_path / "state.json")
+    service.register(search, enabled=False)
+    service.register_similar(similar, enabled=True)
+    try:
+        with pytest.raises(RuntimeError, match="bound search MOD is disabled"):
+            service.similar_candidate(original)
+        with pytest.raises(RuntimeError, match="bound search MOD is disabled"):
+            service.similar_candidates(original)
+        similar.similar_plan.assert_not_called()
+        search.search.assert_not_called()
+    finally:
+        service.close()
 
 
 def test_discovery_service_scopes_similar_candidates_to_music(

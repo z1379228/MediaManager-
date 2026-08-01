@@ -123,7 +123,7 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "provider.json": "459f4faf6631165c49e93eb568afb91ab2bba0eb4c47b87dde3dadc467293a9e",
     },
     "youtube-similar": {
-        "provider.py": "f1c01bc181b81fe2accacdd461a8e9ab604f1c16914be00bbcb747f333932fc4",
+        "provider.py": "58132d87a56974956108fe9734a4f6c922c83b57ed3c82c6315f70ef6d0b29d4",
         "provider.json": "3c0d3b5d558562f16700d3508099489ba4249bb183612e56e94003e309ffbd45",
     },
     "youtube-recovery": {

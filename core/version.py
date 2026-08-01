@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-CORE_VERSION = "39.0.12"
+CORE_VERSION = "39.0.39"
 BUILD_CHANNEL = "development"
 DEVELOPMENT_GENERATION = "39.0"
-TESTING_VERSION = "1.2.1"
+TESTING_VERSION = "1.2.2"
 STABLE_VERSION = "1.0.0"
 SUPPORTED_BUILD_CHANNELS = frozenset({"development", "testing", "stable"})
 

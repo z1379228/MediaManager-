@@ -110,25 +110,42 @@ class SearchQueryV2:
     page_size: int = 12
     cursor: str = ""
 
-    def normalized(self, capability: SearchCapabilityV2) -> "SearchQueryV2":
+    def validated(self) -> "SearchQueryV2":
+        """Validate caller-controlled fields before provider dispatch."""
+
         if not isinstance(self.query, str):
             raise SearchContractV2Error("search query invalid")
         query = " ".join(self.query.split())[:200]
         if not query:
             raise SearchContractV2Error("search query is empty")
-        if self.content_type not in capability.content_types:
-            raise SearchContractV2Error("content type is unsupported by this MOD")
+        allowed_types = {"all", "music", "video", "playlist", "live"}
+        if (
+            not isinstance(self.content_type, str)
+            or self.content_type not in allowed_types
+        ):
+            raise SearchContractV2Error("search content type invalid")
         if not isinstance(self.cursor, str) or len(self.cursor) > 500:
             raise SearchContractV2Error("search cursor invalid")
-        if self.cursor and capability.pagination == "none":
-            raise SearchContractV2Error("search MOD does not support pagination")
         if not isinstance(self.page_size, int) or isinstance(self.page_size, bool):
             raise SearchContractV2Error("search page size invalid")
         return SearchQueryV2(
             query,
             self.content_type,
-            max(1, min(self.page_size, capability.max_page_size)),
+            self.page_size,
             self.cursor,
+        )
+
+    def normalized(self, capability: SearchCapabilityV2) -> "SearchQueryV2":
+        validated = self.validated()
+        if validated.content_type not in capability.content_types:
+            raise SearchContractV2Error("content type is unsupported by this MOD")
+        if validated.cursor and capability.pagination == "none":
+            raise SearchContractV2Error("search MOD does not support pagination")
+        return SearchQueryV2(
+            validated.query,
+            validated.content_type,
+            max(1, min(validated.page_size, capability.max_page_size)),
+            validated.cursor,
         )
 
 

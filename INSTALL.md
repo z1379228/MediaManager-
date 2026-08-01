@@ -5,24 +5,20 @@
 發行版。
 
 Testing `1.2.0` 是 Development `39.0.11` 的本機歷史候選，保留於
-`Version/Testing/1.2`，沒有 GitHub 發布。Testing `1.2.1` 已由 Development
-`39.0.12` 的 source revision
-`05442d7875da5367cd23babc2ce4e2e3e0cb87a2` 建立於
-`Version/Testing/1.2.1`，並以 9 個附件發布為 GitHub prerelease。它是未簽署
-Testing 產物，不是 Stable。
+`Version/Testing/1.2`，沒有 GitHub 發布。Testing `1.2.1` 是 Development
+`39.0.12` 的既有公開 prerelease，維持不可變。Testing `1.2.2` 將由 Development
+`39.0.39` 的乾淨 source freeze 建立；它是未簽署 Testing 產物，不是 Stable。
 
-## Testing 1.2.1 預發行版
+## Testing 1.2.2 預發行版
 
 若要使用已打包的未簽署測試版，請由
-[Testing 1.2.1 prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)
+[Testing 1.2.2 prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.2)
 下載
-[`MediaManager-Testing-1.2.1.zip`](https://github.com/z1379228/MediaManager-/releases/download/test-v1.2.1/MediaManager-Testing-1.2.1.zip)
+[`MediaManager-Testing-1.2.2.zip`](https://github.com/z1379228/MediaManager-/releases/download/test-v1.2.2/MediaManager-Testing-1.2.2.zip)
 與
-[`MediaManager-Testing-1.2.1.zip.sha256`](https://github.com/z1379228/MediaManager-/releases/download/test-v1.2.1/MediaManager-Testing-1.2.1.zip.sha256)。
+[`MediaManager-Testing-1.2.2.zip.sha256`](https://github.com/z1379228/MediaManager-/releases/download/test-v1.2.2/MediaManager-Testing-1.2.2.zip.sha256)。
 它維持 `SAFE_MODE`、不是 Stable，Windows 可能顯示未簽署程式警告。下載後先
-比對 `.zip.sha256`；ZIP 的已發布 SHA-256 為
-`c633586d974fb77ba8041533cf7f7fd5378ab651d2b8f86126ccceb6b070f148`。
-也可用同頁的
+比對 `.zip.sha256`；也可用同頁的
 `SHA256SUMS.txt` 與 `release-info.json` 核對內部檔案及來源 revision。解壓後
 直接雙擊 `MediaManager.exe`，不需要另外安裝 Python。
 

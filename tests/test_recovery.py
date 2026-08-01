@@ -156,3 +156,26 @@ def test_youtube_recovery_rejects_non_youtube_original_before_search(
     search.search.assert_not_called()
     recovery.recovery_plan.assert_not_called()
     service.close()
+
+
+def test_youtube_recovery_rejects_before_planning_when_search_is_disabled(
+    tmp_path: Path,
+) -> None:
+    original = item()
+    search = Mock()
+    search.provider_id = "youtube-search"
+    search.display_name = "YouTube Search"
+    recovery = Mock()
+    recovery.provider_id = "youtube-recovery"
+    recovery.display_name = "YouTube Recovery"
+
+    service = DiscoveryService(tmp_path / "state.json")
+    service.register(search, enabled=False)
+    service.register_recovery(recovery, enabled=True)
+    try:
+        with pytest.raises(RuntimeError, match="bound search MOD is disabled"):
+            service.replacement_candidates(original)
+        recovery.recovery_plan.assert_not_called()
+        search.search.assert_not_called()
+    finally:
+        service.close()

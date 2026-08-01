@@ -9,11 +9,14 @@ from unittest.mock import Mock
 import pytest
 
 from contracts.discovery_v1 import DiscoveryItemV1
+from contracts.search_v2 import SearchCapabilityV2
 from core.bootstrap.bootstrap import Bootstrap
 from core.discovery.adapters import FederatedSearchResult, SearchAdapterFailure
+from core.discovery.service import SearchSourceStatus
 from core.downloads.models import DownloadRequest, DownloadState, DownloadTask
 from core.downloads.provider_registry import ProviderStatus
 from core.storage.paths import AppPaths
+from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.download_panel import create_download_panel
 from trusted_ui.main_window import apply_download_prefill, configure_workspace_tabs
 from trusted_ui.mega_workspace import create_mega_workspace
@@ -707,6 +710,192 @@ def test_youtube_workspace_rejects_meta_and_spoofed_urls(
         app.processEvents()
 
 
+def test_disabling_search_mod_invalidates_cursor_and_disables_search_controls(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    panel = create_search_panel(context)
+    result = DiscoveryItemV1.from_dict(
+        {
+            "video_id": "example",
+            "url": "https://www.youtube.com/watch?v=example",
+            "title": "Example",
+            "artist": "Uploader",
+            "duration": 120,
+            "language": "",
+            "category": "video",
+            "thumbnail_url": "",
+        }
+    )
+    try:
+        panel.query.setText("example")
+        panel.show_results(
+            FederatedSearchResult(
+                (result,),
+                (),
+                ("youtube-search",),
+                (("youtube-search", "opaque-next-page"),),
+            ),
+            "",
+        )
+
+        assert panel.next_search_cursor == "opaque-next-page"
+        assert panel.search_button.isEnabled()
+        assert panel.next_page_button.isEnabled()
+
+        panel.enabled.setChecked(False)
+        app.processEvents()
+
+        assert not context.discovery.is_enabled("youtube-search")
+        assert panel.next_search_cursor == ""
+        assert panel.last_federated_result is None
+        assert not panel.search_button.isEnabled()
+        assert not panel.next_page_button.isEnabled()
+    finally:
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
+def test_external_search_mod_event_invalidates_cached_results_and_cursor(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    panel = create_search_panel(context)
+    result = DiscoveryItemV1.from_dict(
+        {
+            "video_id": "external-event",
+            "url": "https://www.youtube.com/watch?v=external-event",
+            "title": "External event",
+            "artist": "Uploader",
+            "duration": 120,
+            "language": "",
+            "category": "video",
+            "thumbnail_url": "",
+        }
+    )
+    try:
+        panel.query.setText("external event")
+        panel.show_results(
+            FederatedSearchResult(
+                (result,),
+                (),
+                ("youtube-search",),
+                (("youtube-search", "stale-next-page"),),
+            ),
+            "",
+        )
+        assert panel.last_federated_result is not None
+        assert panel.next_search_cursor == "stale-next-page"
+
+        set_builtin_mod_enabled(context, "youtube-search", False)
+        app.processEvents()
+
+        assert not context.discovery.is_enabled("youtube-search")
+        assert panel.last_federated_result is None
+        assert panel.next_search_cursor == ""
+        assert not panel.next_page_button.isEnabled()
+    finally:
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
+def test_disabling_youtube_search_disables_bound_similar_and_recovery_actions(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    app = QApplication.instance() or QApplication([])
+    information = Mock(return_value=QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(QMessageBox, "information", information)
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    context.discovery.set_enabled("youtube-recovery", True)
+    context.discovery.set_enabled("youtube-similar", True)
+    replacement_candidates = Mock(return_value=())
+    similar_candidates = Mock(return_value=())
+    monkeypatch.setattr(
+        context.discovery,
+        "replacement_candidates",
+        replacement_candidates,
+    )
+    monkeypatch.setattr(
+        context.discovery,
+        "similar_candidates",
+        similar_candidates,
+    )
+    panel = create_search_panel(context)
+    result = DiscoveryItemV1.from_dict(
+        {
+            "video_id": "example",
+            "url": "https://www.youtube.com/watch?v=example",
+            "title": "Example",
+            "artist": "Uploader",
+            "duration": 120,
+            "language": "",
+            "category": "video",
+            "thumbnail_url": "",
+        }
+    )
+    try:
+        panel.show_results(
+            FederatedSearchResult(
+                (result,),
+                (),
+                ("youtube-search",),
+            ),
+            "",
+        )
+        panel.table.selectRow(0)
+        app.processEvents()
+
+        assert panel.recovery_button.isEnabled()
+        assert panel.similar_button.isEnabled()
+
+        panel.enabled.setChecked(False)
+        app.processEvents()
+
+        assert not context.discovery.is_enabled("youtube-search")
+        assert not panel.recovery_button.isEnabled()
+        assert not panel.similar_button.isEnabled()
+
+        panel.find_replacement()
+        panel.find_similar()
+
+        replacement_candidates.assert_not_called()
+        similar_candidates.assert_not_called()
+        assert information.call_count == 2
+        assert panel.busy_action == ""
+    finally:
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
 def test_bilibili_search_mod_toggles_independently_and_never_uses_youtube_actions(
     tmp_path, monkeypatch
 ) -> None:
@@ -887,6 +1076,693 @@ def test_bilibili_search_mod_toggles_independently_and_never_uses_youtube_action
         if panel is not None:
             panel.close()
             panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
+def test_search_panel_exposes_selected_provider_content_types(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    context.download_providers.set_enabled("bilibili", True)
+    context.discovery.set_enabled("bilibili-search", True)
+    capabilities = tuple(
+        SearchCapabilityV2(
+            capability.provider_id,
+            capability.sites,
+            (
+                ("all", "playlist", "live")
+                if capability.provider_id == "youtube-search"
+                else ("all", "video")
+                if capability.provider_id == "bilibili-search"
+                else capability.content_types
+            ),
+            capability.max_page_size,
+            capability.pagination,
+            capability.audio_preview,
+            capability.video_preview,
+        )
+        for capability in context.discovery.search_capabilities()
+    )
+    monkeypatch.setattr(
+        context.discovery,
+        "search_capabilities",
+        lambda: capabilities,
+    )
+    panel = create_search_panel(context)
+    try:
+        assert panel.search_source.currentData() == "youtube-search"
+        assert [
+            panel.search_scope.itemData(index)
+            for index in range(panel.search_scope.count())
+        ] == ["all", "playlist", "live"]
+
+        panel.search_scope.setCurrentIndex(panel.search_scope.findData("playlist"))
+        panel.search_source.setCurrentIndex(
+            panel.search_source.findData("bilibili-search")
+        )
+        app.processEvents()
+        assert [
+            panel.search_scope.itemData(index)
+            for index in range(panel.search_scope.count())
+        ] == ["all", "video"]
+        assert panel.search_scope.currentData() == "all"
+
+        panel.search_source.setCurrentIndex(
+            panel.search_source.findData("youtube-search")
+        )
+        app.processEvents()
+        assert [
+            panel.search_scope.itemData(index)
+            for index in range(panel.search_scope.count())
+        ] == ["all", "playlist", "live"]
+    finally:
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
+def test_search_panel_falls_back_to_an_enabled_source_when_selection_disappears(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    context.download_providers.set_enabled("bilibili", True)
+    context.discovery.set_enabled("bilibili-search", True)
+    state = {
+        "statuses": (
+            SearchSourceStatus("youtube-search", "YouTube", True, "ready"),
+            SearchSourceStatus("bilibili-search", "Bilibili", True, "ready"),
+            SearchSourceStatus("external-search", "External", True, "ready"),
+        ),
+        "capabilities": (
+            SearchCapabilityV2(
+                "youtube-search", ("youtube",), ("all",), 50, "cursor", True, True
+            ),
+            SearchCapabilityV2(
+                "bilibili-search", ("bilibili",), ("all",), 50, "cursor", False, False
+            ),
+            SearchCapabilityV2(
+                "external-search", ("external",), ("all",), 20, "cursor", False, False
+            ),
+        ),
+    }
+    monkeypatch.setattr(
+        context.discovery,
+        "search_source_statuses",
+        lambda: state["statuses"],
+    )
+    monkeypatch.setattr(
+        context.discovery,
+        "search_capabilities",
+        lambda: state["capabilities"],
+    )
+    panel = create_search_panel(context)
+    try:
+        panel.search_source.setCurrentIndex(
+            panel.search_source.findData("external-search")
+        )
+        app.processEvents()
+        assert panel.search_source.currentData() == "external-search"
+
+        state["statuses"] = (
+            SearchSourceStatus("youtube-search", "YouTube", False, "disabled"),
+            SearchSourceStatus("bilibili-search", "Bilibili", True, "ready"),
+            SearchSourceStatus("alternate-search", "Alternate", True, "ready"),
+        )
+        state["capabilities"] = (
+            state["capabilities"][0],
+            state["capabilities"][1],
+            SearchCapabilityV2(
+                "alternate-search",
+                ("alternate",),
+                ("all",),
+                20,
+                "cursor",
+                False,
+                False,
+            ),
+        )
+        context.discovery.set_enabled("youtube-search", False)
+        panel.handle_builtin_mod_changed({"provider_id": "youtube-search"})
+        app.processEvents()
+
+        assert panel.search_source.currentData() == "bilibili-search"
+        assert panel.search_button.isEnabled()
+    finally:
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
+def test_search_panel_reapplies_local_duration_and_language_filters(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    federated_search = Mock()
+    monkeypatch.setattr(context.discovery, "federated_search", federated_search)
+    panel = create_search_panel(context)
+
+    def result(
+        video_id: str,
+        *,
+        duration: int,
+        language: str,
+    ) -> DiscoveryItemV1:
+        return DiscoveryItemV1.from_dict(
+            {
+                "video_id": video_id,
+                "url": f"https://www.youtube.com/watch?v={video_id}",
+                "title": f"Result {video_id}",
+                "artist": "Artist",
+                "duration": duration,
+                "language": language,
+                "category": "music",
+                "thumbnail_url": "",
+            }
+        )
+
+    try:
+        panel.show_results(
+            FederatedSearchResult(
+                (
+                    result("short-zh", duration=180, language="zh-TW"),
+                    result("long-zh", duration=1500, language="zh-TW"),
+                    result("short-en", duration=180, language="en"),
+                ),
+                (),
+                ("youtube-search", "youtube-search", "youtube-search"),
+            ),
+            "",
+        )
+        assert panel.table.rowCount() == 3
+
+        panel.duration_filter.setCurrentIndex(1)
+        app.processEvents()
+        assert panel.table.rowCount() == 2
+
+        panel.language_filter.setCurrentIndex(
+            panel.language_filter.findData("zh-TW")
+        )
+        app.processEvents()
+        assert panel.table.rowCount() == 1
+        assert panel.table.item(0, 1).text() == "Result short-zh"
+
+        panel.limit.setCurrentIndex(2)
+        panel.duration_filter.setCurrentIndex(0)
+        app.processEvents()
+        assert panel.table.rowCount() == 1
+        federated_search.assert_not_called()
+    finally:
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
+def test_search_panel_appends_next_page_and_preserves_results_on_failure(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    panel = create_search_panel(context)
+
+    def result(video_id: str, *, tracking: str = "") -> DiscoveryItemV1:
+        return DiscoveryItemV1.from_dict(
+            {
+                "video_id": video_id,
+                "url": f"https://www.youtube.com/watch?v={video_id}{tracking}",
+                "title": f"Result {video_id}",
+                "artist": "Artist",
+                "duration": 180,
+                "language": "en",
+                "category": "music",
+                "thumbnail_url": "",
+            }
+        )
+
+    first_page = FederatedSearchResult(
+        (result("one"), result("two")),
+        (),
+        ("youtube-search", "youtube-search"),
+        (("youtube-search", "cursor-one"),),
+    )
+    calls: list[str] = []
+
+    def federated_search(
+        _query, *, provider_ids, limit, content_type, cursor
+    ) -> FederatedSearchResult:
+        assert provider_ids == ("youtube-search",)
+        assert limit == 20
+        assert content_type == "all"
+        calls.append(cursor)
+        if cursor == "cursor-one":
+            return FederatedSearchResult(
+                (result("two", tracking="&utm_source=page2"), result("three")),
+                (),
+                ("youtube-search", "youtube-search"),
+                (("youtube-search", "cursor-two"),),
+            )
+        raise RuntimeError("temporary next-page failure")
+
+    class ImmediateThread:
+        def __init__(self, *, target, daemon):
+            assert daemon
+            self.target = target
+
+        def start(self) -> None:
+            self.target()
+
+    monkeypatch.setattr(context.discovery, "federated_search", federated_search)
+    monkeypatch.setattr(threading, "Thread", ImmediateThread)
+    try:
+        panel.query.setText("paged search")
+        panel.last_query = "paged search"
+        panel.show_results(first_page, "")
+        assert panel.table.rowCount() == 2
+
+        panel.search_next_page()
+        app.processEvents()
+        assert calls == ["cursor-one"]
+        assert tuple(item.video_id for item in panel.results) == (
+            "one",
+            "two",
+            "three",
+        )
+        assert panel.table.rowCount() == 3
+        assert panel.next_search_cursor == "cursor-two"
+
+        panel.search_next_page()
+        app.processEvents()
+        assert calls == ["cursor-one", "cursor-two"]
+        assert tuple(item.video_id for item in panel.results) == (
+            "one",
+            "two",
+            "three",
+        )
+        assert panel.table.rowCount() == 3
+        assert "載入更多失敗" in panel.status.text()
+    finally:
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
+def test_search_panel_stops_paging_at_workspace_result_limit(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    panel = create_search_panel(context)
+
+    def result(video_id: str) -> DiscoveryItemV1:
+        return DiscoveryItemV1.from_dict(
+            {
+                "video_id": video_id,
+                "url": f"https://www.youtube.com/watch?v={video_id}",
+                "title": f"Result {video_id}",
+                "artist": "Artist",
+                "duration": 180,
+                "language": "en",
+                "category": "music",
+                "thumbnail_url": "",
+            }
+        )
+
+    first_items = tuple(result(f"existing-{index}") for index in range(199))
+    first_page = FederatedSearchResult(
+        first_items,
+        (),
+        tuple("youtube-search" for _ in first_items),
+        (("youtube-search", "cursor-one"),),
+    )
+    calls: list[str] = []
+
+    def federated_search(
+        _query, *, provider_ids, limit, content_type, cursor
+    ) -> FederatedSearchResult:
+        calls.append(cursor)
+        return FederatedSearchResult(
+            (result("new-200"), result("overflow-201")),
+            (),
+            ("youtube-search", "youtube-search"),
+            (("youtube-search", "cursor-two"),),
+        )
+
+    class ImmediateThread:
+        def __init__(self, *, target, daemon):
+            assert daemon
+            self.target = target
+
+        def start(self) -> None:
+            self.target()
+
+    monkeypatch.setattr(context.discovery, "federated_search", federated_search)
+    monkeypatch.setattr(threading, "Thread", ImmediateThread)
+    try:
+        panel.query.setText("bounded search")
+        panel.last_query = "bounded search"
+        panel.show_results(first_page, "")
+
+        panel.search_next_page()
+        app.processEvents()
+
+        assert calls == ["cursor-one"]
+        assert len(panel.results) == 200
+        assert panel.results[-1].video_id == "new-200"
+        assert panel.next_search_cursor == ""
+        assert not panel.next_page_button.isEnabled()
+        assert "最多 200 筆" in panel.next_page_button.toolTip()
+
+        panel.search_next_page()
+        assert calls == ["cursor-one"]
+    finally:
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
+def test_search_panel_routes_all_enabled_sources_with_shared_content_types(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    context.download_providers.set_enabled("bilibili", True)
+    context.discovery.set_enabled("bilibili-search", True)
+    capabilities = tuple(
+        SearchCapabilityV2(
+            capability.provider_id,
+            capability.sites,
+            (
+                ("all", "music", "playlist")
+                if capability.provider_id == "youtube-search"
+                else ("all", "music", "video")
+                if capability.provider_id == "bilibili-search"
+                else capability.content_types
+            ),
+            capability.max_page_size,
+            capability.pagination,
+            capability.audio_preview,
+            capability.video_preview,
+        )
+        for capability in context.discovery.search_capabilities()
+    )
+    monkeypatch.setattr(
+        context.discovery,
+        "search_capabilities",
+        lambda: capabilities,
+    )
+    panel = create_search_panel(context)
+    try:
+        aggregate_index = panel.search_source.findData("__all_enabled__")
+        assert aggregate_index >= 0
+        panel.search_source.setCurrentIndex(aggregate_index)
+        app.processEvents()
+        assert [
+            panel.search_scope.itemData(index)
+            for index in range(panel.search_scope.count())
+        ] == ["all", "music"]
+
+        routed: list[tuple[tuple[str, ...], str, str]] = []
+
+        def federated_search(
+            _query, *, provider_ids, limit, content_type, cursor
+        ) -> FederatedSearchResult:
+            assert limit == 20
+            routed.append((provider_ids, content_type, cursor))
+            if cursor:
+                assert cursor == "aggregate-next"
+                return FederatedSearchResult((), (), ())
+            return FederatedSearchResult(
+                (),
+                (),
+                (),
+                (("__federated__", "aggregate-next"),),
+            )
+
+        class ImmediateThread:
+            def __init__(self, *, target, daemon):
+                assert daemon
+                self.target = target
+
+            def start(self) -> None:
+                self.target()
+
+        monkeypatch.setattr(context.discovery, "federated_search", federated_search)
+        monkeypatch.setattr(threading, "Thread", ImmediateThread)
+        panel.query.setText("shared search")
+        panel.search()
+        app.processEvents()
+
+        assert len(routed) == 1
+        assert set(routed[0][0]) == {"youtube-search", "bilibili-search"}
+        assert routed[0][1:] == ("all", "")
+        assert panel.next_search_cursor == "aggregate-next"
+        assert panel.next_page_button.isEnabled()
+        assert "仍有下一頁" in panel.next_page_button.toolTip()
+
+        panel.search_next_page()
+        app.processEvents()
+
+        assert len(routed) == 2
+        assert set(routed[1][0]) == {"youtube-search", "bilibili-search"}
+        assert routed[1][1:] == ("all", "aggregate-next")
+        assert panel.next_search_cursor == ""
+        assert not panel.next_page_button.isEnabled()
+    finally:
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
+def test_search_panel_records_only_current_successful_initial_searches(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    panel = create_search_panel(context)
+    record_history = Mock()
+    monkeypatch.setattr(context.discovery, "record_history", record_history)
+    item = DiscoveryItemV1.from_dict(
+        {
+            "video_id": "example",
+            "url": "https://www.youtube.com/watch?v=example",
+            "title": "Example",
+            "artist": "Artist",
+            "duration": 120,
+            "language": "",
+            "category": "music",
+            "thumbnail_url": "",
+        }
+    )
+
+    def federated_search(
+        query: str, *, provider_ids, limit, content_type, cursor
+    ) -> FederatedSearchResult:
+        assert provider_ids == ("youtube-search",)
+        if query == "partial":
+            return FederatedSearchResult(
+                (item,),
+                (
+                    SearchAdapterFailure(
+                        "youtube-search", "temporary failure", "unavailable"
+                    ),
+                ),
+                ("youtube-search",),
+            )
+        return FederatedSearchResult(
+            (item,),
+            (),
+            ("youtube-search",),
+            (("youtube-search", "next-page"),) if not cursor else (),
+        )
+
+    deferred_history_targets: list[object] = []
+
+    class ImmediateThread:
+        def __init__(self, *, target, daemon):
+            assert daemon
+            self.target = target
+
+        def start(self) -> None:
+            if getattr(self.target, "__name__", "") == "record_search_history":
+                deferred_history_targets.append(self.target)
+                return
+            self.target()
+
+    monkeypatch.setattr(context.discovery, "federated_search", federated_search)
+    monkeypatch.setattr(threading, "Thread", ImmediateThread)
+    try:
+        panel.history_enabled.setChecked(True)
+        panel.query.setText("success")
+        panel.search()
+        record_history.assert_not_called()
+        assert len(deferred_history_targets) == 1
+        deferred_history_targets.pop()()
+        record_history.assert_called_once_with("search", "success")
+
+        panel.search_next_page()
+        record_history.assert_called_once_with("search", "success")
+
+        panel.query.setText("partial")
+        panel.search()
+        record_history.assert_called_once_with("search", "success")
+
+        deferred_targets: list[object] = []
+
+        class DeferredThread:
+            def __init__(self, *, target, daemon):
+                assert daemon
+                deferred_targets.append(target)
+
+            def start(self) -> None:
+                return None
+
+        monkeypatch.setattr(threading, "Thread", DeferredThread)
+        panel.query.setText("stale")
+        panel.search()
+        assert len(deferred_targets) == 1
+        panel.generation += 1
+        deferred_targets[0]()
+        record_history.assert_called_once_with("search", "success")
+    finally:
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
+def test_search_panel_ignores_inflight_results_after_search_source_changes(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    panel = create_search_panel(context)
+    stale_item = DiscoveryItemV1.from_dict(
+        {
+            "video_id": "stale-result",
+            "url": "https://www.youtube.com/watch?v=stale-result",
+            "title": "Stale result",
+            "artist": "Artist",
+            "duration": 120,
+            "language": "",
+            "category": "music",
+            "thumbnail_url": "",
+        }
+    )
+    deferred_targets: list[object] = []
+
+    def federated_search(
+        _query: str, *, provider_ids, limit, content_type, cursor
+    ) -> FederatedSearchResult:
+        assert provider_ids == ("youtube-search",)
+        assert limit == 20
+        assert content_type == "all"
+        assert cursor == ""
+        return FederatedSearchResult(
+            (stale_item,),
+            (),
+            ("youtube-search",),
+            (("youtube-search", "stale-cursor"),),
+        )
+
+    class DeferredThread:
+        def __init__(self, *, target, daemon):
+            assert daemon
+            deferred_targets.append(target)
+
+        def start(self) -> None:
+            return None
+
+    monkeypatch.setattr(context.discovery, "federated_search", federated_search)
+    monkeypatch.setattr(threading, "Thread", DeferredThread)
+    try:
+        panel.query.setText("inflight")
+        panel.search()
+        active_generation = panel.generation
+        assert panel.busy_action == "search"
+        assert len(deferred_targets) == 1
+
+        panel.enabled.setChecked(False)
+        app.processEvents()
+
+        assert panel.generation > active_generation
+        assert panel.busy_action == ""
+        assert panel.last_federated_result is None
+        assert panel.next_search_cursor == ""
+
+        deferred_targets[0]()
+        app.processEvents()
+
+        assert panel.results == ()
+        assert panel.last_federated_result is None
+        assert panel.next_search_cursor == ""
+    finally:
+        panel.close()
+        panel.deleteLater()
         app.processEvents()
         context.lifecycle.shutdown()
 

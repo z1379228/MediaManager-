@@ -48,7 +48,7 @@ def test_builtin_mod_ipc_round_trips_utf8_on_windows_codepages(
         chinese_item(),
         HistoryPreferencesV1(0, 0, {}, {}, {}, {}),
     )
-    assert plan.queries[0] == "範例歌手 music"
+    assert plan.queries[0] == "範例歌手 範例歌曲"
 
     history.close()
     recovery.close()

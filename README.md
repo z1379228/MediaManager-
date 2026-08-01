@@ -4,13 +4,46 @@
 佇列、媒體庫與可信 UI；網站解析、轉換、轉錄及自動化等重功能由可個別停用的
 內建或第三方 MOD 提供。
 
-目前來源版本為開發版 39.0（核心相容版本 39.0.12）。`MediaManager v1.0`
-是產品顯示名稱，不表示 Stable 已發布。Testing `1.2.0` 已由 Development
-`39.0.11` 建立本機歷史封存，但沒有 GitHub 發布，也不包含 39.0.12 相似音樂
-入口。[Testing 1.2.1](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)
-已由 Development `39.0.12` 的 source revision
-`05442d7875da5367cd23babc2ce4e2e3e0cb87a2` 建立並發布為 GitHub
-prerelease，共有 9 個附件。它是未簽署 Testing 產物，不是 Stable 正式套件。
+目前來源版本為開發版 39.0（核心相容版本 39.0.39）。`MediaManager v1.0`
+是產品顯示名稱，不表示 Stable 已發布。Development `39.0.13` 修正搜尋結果
+去重與歷史污染；`39.0.14` 讓通用搜尋依目前 provider 宣告顯示內容類型，第三方
+Search v2 MOD 可使用 `playlist`／`live` 能力；`39.0.15` 讓 YouTube 相似音樂優先
+以所選結果的歌手與曲名共同搜尋，降低常見曲名造成的過寬候選；`39.0.16`
+限制搜尋詞組別名只能匹配完整詞組，不再誤改較長單字；`39.0.17` 確保本機
+別名與拼字修正後仍符合 Search v2 的 200 字元上限；`39.0.18` 將服務層既有的
+多來源合併接入通用 UI，可搜尋所有已啟用且具有共同內容類型的來源；`39.0.19`
+讓片長與語言條件在結果載入後立即以本機快取重新篩選，不必再次查詢網站；
+`39.0.20` 讓通用搜尋以 canonical 去重追加下一頁，並在載入更多失敗時保留既有結果；
+`39.0.21` 將同一媒體 ID 的 YouTube 官方網域別名視為同一搜尋結果，同時保留
+跨網站及大小寫不同 ID 的身分界線；`39.0.22` 讓搜尋 MOD 可用性變更立即失效
+舊游標與結果快取，並依實際來源狀態停用搜尋／下一頁控制項；`39.0.23` 讓依賴
+YouTube 搜尋來源的相似音樂與替代搜尋同步反映 MOD 狀態；`39.0.24` 讓多來源聚合
+搜尋以查詢與來源集合綁定的安全游標繼續載入，且只續查仍有下一頁的來源；
+`39.0.25` 在工作區達 200 筆結果時終止分頁，避免無法顯示的新頁仍被重複請求；
+`39.0.26` 在所選搜尋來源消失時改選實際啟用來源，不再退回停用或錯位項目；
+`39.0.27` 讓搜尋條件或來源變更立即使進行中的舊請求失效，避免晚到結果回寫；
+`39.0.28` 讓 MOD 管理介面的外部狀態事件也失效舊搜尋快取與分頁游標；
+`39.0.29` 按來源分配聚合頁面配額，避免總量截斷後跳過尚未顯示的來源結果；
+`39.0.30` 只讓通過 exact-host 路由的 URL 共用官方 YouTube 搜尋身分；
+`39.0.31` 在共用 Discovery 契約拒絕無主機、畸形、內嵌帳密、過長或帶控制字元
+的 HTTPS 結果，避免單一外部搜尋 MOD 中斷其他正常來源；`39.0.32` 在共用
+Search registry 拒絕重複、空白或非字串的來源選擇，避免同一 MOD 被重複派送。
+`39.0.33` 讓 provider iterable 最多只讀取 17 項，並明確拒絕字串及不可迭代
+輸入，避免無限 generator 或過長來源清單造成無界耗用與錯誤派送；`39.0.34`
+讓公開 Discovery service 與 registry 共用相同有界來源選擇契約，不再由服務層
+先完整展開輸入而繞過底層防護；`39.0.35` 拒絕布林、字串及小數型搜尋結果
+上限，不再以隱式整數轉換改變請求，同時保留合法整數的 1～50 有界相容行為。
+`39.0.36` 在 federated 分頁派送前有界驗證 provider cursor mapping，拒絕契約外
+容器及空白、超長或非字串游標，避免完整消耗過長 Mapping 或把輸入錯誤降級成
+單一來源失敗；`39.0.37` 將 Search v2 查詢欄位驗證提前至服務與 registry 入口，
+無來源時不再把非法輸入當成空結果，有來源時也不再誤列為 provider failure；
+`39.0.38` 拒絕非字串的外層分頁游標，避免 `None`、`False`、`0` 或空容器被
+誤當成沒有游標而重新查詢第一頁；`39.0.39` 在寫入任何 registry 前驗證搜尋
+capability 身分，錯誤的第三方 MOD 不再留下阻止同 ID 修正版註冊的部分狀態。
+Testing `1.2.2` 將由本次 Development `39.0.39` source freeze 建立，納入
+39.0.13～39.0.39 的搜尋強化與失敗隔離修正；它維持未簽署 Testing 身分，
+不是 Stable 正式套件，也不會覆寫既有
+[Testing 1.2.1](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)。
 
 ## 主要能力
 
@@ -28,26 +61,26 @@ prerelease，共有 9 個附件。它是未簽署 Testing 產物，不是 Stable
 
 ## 安裝
 
-### 方法一：Testing 1.2.1 免安裝、自包含 ZIP（一般使用者）
+### 方法一：Testing 1.2.2 免安裝、自包含 ZIP（一般使用者）
 
-1. 從 [Testing 1.2.1 prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)
+1. 從 [Testing 1.2.2 prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.2)
    下載
-   [`MediaManager-Testing-1.2.1.zip`](https://github.com/z1379228/MediaManager-/releases/download/test-v1.2.1/MediaManager-Testing-1.2.1.zip)
+   [`MediaManager-Testing-1.2.2.zip`](https://github.com/z1379228/MediaManager-/releases/download/test-v1.2.2/MediaManager-Testing-1.2.2.zip)
    及
-   [`MediaManager-Testing-1.2.1.zip.sha256`](https://github.com/z1379228/MediaManager-/releases/download/test-v1.2.1/MediaManager-Testing-1.2.1.zip.sha256)。
+   [`MediaManager-Testing-1.2.2.zip.sha256`](https://github.com/z1379228/MediaManager-/releases/download/test-v1.2.2/MediaManager-Testing-1.2.2.zip.sha256)。
 2. 將兩個檔案放在同一資料夾，於該資料夾開啟 PowerShell 並核對雜湊：
 
    ```powershell
-   Get-FileHash -Algorithm SHA256 .\MediaManager-Testing-1.2.1.zip
-   Get-Content .\MediaManager-Testing-1.2.1.zip.sha256
+   Get-FileHash -Algorithm SHA256 .\MediaManager-Testing-1.2.2.zip
+   Get-Content .\MediaManager-Testing-1.2.2.zip.sha256
    ```
 
-   兩者的 SHA-256 必須相同；目前發布值為
-   `c633586d974fb77ba8041533cf7f7fd5378ab651d2b8f86126ccceb6b070f148`。
+   兩者的 SHA-256 必須相同；另以同一發行頁的 `SHA256SUMS.txt` 與
+   `release-info.json` 核對內容及來源 revision。
 3. 將 ZIP 解壓縮到新的空資料夾，進入含有 `MediaManager.exe` 的資料夾後執行
    `MediaManager.exe`。不需要另外安裝 Python。
 
-Testing 1.2.1 是未簽署測試版，Windows 可能顯示無法驗證發布者的警告。只應從上述
+Testing 1.2.2 是未簽署測試版，Windows 可能顯示無法驗證發布者的警告。只應從上述
 GitHub Release 下載並在雜湊一致時執行；不要關閉 Windows 安全功能。自包含 ZIP
 已包含目前封裝的執行檔、資產與可攜工具，建議優先使用 ZIP，而不是單獨下載
 `MediaManager.exe`。發行附件不包含 `UserData`；直接雙擊 EXE 時使用標準 Windows

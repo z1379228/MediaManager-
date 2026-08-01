@@ -37,14 +37,25 @@ def plan(item: dict[str, Any], preferences: dict[str, Any]) -> dict[str, Any]:
     if isinstance(preferred_artists, dict) and preferred_artists:
         preferred_artist = text(next(iter(preferred_artists)), 100)
 
+    combined_title = ""
+    if artist and title:
+        artist_tokens = tokens(artist)
+        title_tokens = tokens(title)
+        combined_title = (
+            title
+            if artist_tokens and artist_tokens <= title_tokens
+            else f"{artist} {title}"
+        )
+
     for query in (
+        combined_title,
         f"{artist} {category}" if artist else "",
-        f"{title} related" if title else "",
         (
             f"{preferred_artist} {category}"
             if preferred_artist and preferred_artist.casefold() != artist.casefold()
             else ""
         ),
+        f"{title} related" if title else "",
         f"{language} {category}" if language else "",
     ):
         query = text(query, 200)

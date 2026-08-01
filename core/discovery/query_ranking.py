@@ -22,6 +22,7 @@ _TOKEN_TYPOS = {
     "karoake": "karaoke",
 }
 _TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
+_MAX_QUERY_LENGTH = 200
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,19 +41,27 @@ class SearchRanking:
 def prepare_search_query(raw: str) -> PreparedSearchQuery:
     """Normalize explicit text and fix only a small known local vocabulary."""
 
-    query = " ".join(unicodedata.normalize("NFKC", raw).split())[:200]
+    query = " ".join(unicodedata.normalize("NFKC", raw).split())[
+        :_MAX_QUERY_LENGTH
+    ]
     corrections: list[str] = []
-    folded = query.casefold()
     for source, target in _PHRASE_ALIASES.items():
-        if source in folded:
-            pattern = re.compile(re.escape(source), re.IGNORECASE)
-            query = pattern.sub(target, query)
-            folded = query.casefold()
+        pattern = re.compile(
+            rf"(?<!\w){re.escape(source)}(?!\w)",
+            re.IGNORECASE,
+        )
+        candidate, replacements = pattern.subn(target, query)
+        if replacements and len(candidate) <= _MAX_QUERY_LENGTH:
+            query = candidate
             corrections.append(f"{source} → {target}")
     words = query.split()
     for index, word in enumerate(words):
         replacement = _TOKEN_TYPOS.get(word.casefold())
         if replacement is not None:
+            candidate = words.copy()
+            candidate[index] = replacement
+            if len(" ".join(candidate)) > _MAX_QUERY_LENGTH:
+                continue
             corrections.append(f"{word} → {replacement}")
             words[index] = replacement
     return PreparedSearchQuery(" ".join(words), tuple(corrections[:8]))

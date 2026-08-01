@@ -43,3 +43,43 @@ def merge_search_results(
         if len(merged) >= bounded_limit:
             break
     return tuple(merged)
+
+
+def merge_federated_search_pages(
+    existing: FederatedSearchResult,
+    incoming: FederatedSearchResult,
+    *,
+    limit: int = MAX_WORKSPACE_SEARCH_RESULTS,
+) -> FederatedSearchResult:
+    """Append one federated page while retaining source identity and retry state."""
+
+    bounded_limit = max(1, min(int(limit), MAX_WORKSPACE_SEARCH_RESULTS))
+    merged_items: list[DiscoveryItemV1] = []
+    merged_sources: list[str] = []
+    seen: set[str] = set()
+    for response in (existing, incoming):
+        for index, item in enumerate(response.items):
+            key = canonical_result_key(item)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged_items.append(item)
+            merged_sources.append(
+                response.sources[index] if index < len(response.sources) else ""
+            )
+            if len(merged_items) >= bounded_limit:
+                break
+        if len(merged_items) >= bounded_limit:
+            break
+    if len(merged_items) >= bounded_limit:
+        next_cursors = ()
+    else:
+        next_cursors = incoming.next_cursors
+        if not incoming.items and incoming.failures and not next_cursors:
+            next_cursors = existing.next_cursors
+    return FederatedSearchResult(
+        tuple(merged_items),
+        incoming.failures,
+        tuple(merged_sources),
+        next_cursors,
+    )
