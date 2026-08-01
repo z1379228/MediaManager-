@@ -634,11 +634,17 @@ Development `39.0.12` revision
 並與 `MediaManager-Testing-1.2.1.zip.sha256` 閉合。Testing 維持未簽署
 `SAFE_MODE`、不是 Stable，也未覆寫 Testing `1.2.0` 歷史。
 
-Testing `1.2.2` 已獲授權由 Development `39.0.39` 的乾淨 source freeze 建立。
-它必須使用新的 `Version/Testing/1.2.2`、`test-v1.2.2`、
-`MediaManager-Testing-1.2.2.zip` 與 sidecar；build receipt、source revision、
-runtime audit、copied-folder smoke、deterministic ZIP、tag、prerelease 與附件 digest
-全部閉合後才可記錄為已完成。Testing 1.2.1 的目錄、tag 與公開附件不可變。
+Testing `1.2.2` 已由 Development `39.0.39` 的乾淨 source freeze
+`f7c65ee1a8e92828ede299bcbdff5e66d16f6810` 建立於新的
+`Version/Testing/1.2.2`。tag `test-v1.2.2` 與
+[GitHub prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.2)
+已發布；遠端共有 9 個 `uploaded` 附件。`MediaManager-Testing-1.2.2.zip`
+為 196,925,239 bytes，SHA-256
+`2dd688ceb6a3af9c3e100dca1c61a326ac8be2a19237b217bd2f8a21b6a7e2c4`，
+已與 sidecar 及 GitHub asset digest 閉合。build receipt、source revision、runtime
+audit、copied-folder current／previous／current smoke、deterministic ZIP、tag、
+prerelease 與全部附件 digest 均已驗證；Testing 1.2.1 的目錄、tag 與公開附件
+維持不可變。
 
 ## 40.0
 

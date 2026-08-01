@@ -10,8 +10,12 @@
 - 主要附件：`MediaManager-Testing-1.2.2.zip` 與
   `MediaManager-Testing-1.2.2.zip.sha256`
 - 信任狀態：未簽署、`SAFE_MODE`、非 Stable
-- 發布狀態：已取得 build、stage、tag、GitHub prerelease 與附件上傳授權；
-  最終 revision、附件數與 SHA-256 由完成後的遠端回讀證據記錄。
+- 發布狀態：已於 2026-08-01 發布為
+  [GitHub prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.2)
+- 最終來源 revision：`f7c65ee1a8e92828ede299bcbdff5e66d16f6810`
+- 遠端附件：9 個，全部為 `uploaded` 且 GitHub asset digest 與本機一致
+- ZIP SHA-256：
+  `2dd688ceb6a3af9c3e100dca1c61a326ac8be2a19237b217bd2f8a21b6a7e2c4`
 
 Testing `1.2.0` 是 Development `39.0.11` 的本機歷史候選，保留於
 `Version/Testing/1.2`，沒有 GitHub Release。Testing `1.2.1` 由 Development
@@ -84,6 +88,12 @@ MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件
 本機不可變 Testing `1.2` 與 `1.2.1` 共 2 個版本稽核通過。Repository 外
 compileall、source-only `--verify-only` 與 `git diff --check` 通過，`Version/`
 內 `.pyc` 為 `0`。
+
+建置後，`Version/Testing/1.2.2` 與攜帶 runtime 稽核通過；copied-folder
+current／previous／current 三階段的 9 個命令全數通過，來源未改變且 rollback
+有效。兩個獨立輸出目錄產生的 ZIP 均為 106 個檔案、196,925,239 bytes，
+SHA-256 完全相同。遠端 tag、來源 revision、prerelease 狀態及 9 個 asset 的
+名稱、大小、`uploaded` 狀態與 digest 已於發布後回讀閉合。
 
 建置後：
 

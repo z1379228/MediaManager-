@@ -8,8 +8,10 @@
 - Development 40.0 仍是 `NO PLAN / NO RELEASE`。
 - Testing `1.2.0` 已由 Development `39.0.11` 建立本機歷史封存，保留於
   `Version/Testing/1.2`，未建立 GitHub Release。
-- Testing `1.2.2` 將由 Development `39.0.39` 的乾淨 source freeze 建立，
-  納入 `39.0.13`～`39.0.39` 的搜尋修正並維持未簽署 Testing 身分；既有
+- [Testing `1.2.2`](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.2)
+  已由 Development `39.0.39` 的乾淨 source freeze
+  `f7c65ee1a8e92828ede299bcbdff5e66d16f6810` 建立並發布，納入
+  `39.0.13`～`39.0.39` 的搜尋修正並維持未簽署 Testing 身分；既有
   [Testing `1.2.1`](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)
   目錄、tag 與附件保持不可變。
 - `MediaManager v1.0` 是產品顯示名稱，不改變 Development／Testing／Stable 的

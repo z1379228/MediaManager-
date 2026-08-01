@@ -40,9 +40,11 @@ Search registry 拒絕重複、空白或非字串的來源選擇，避免同一 
 `39.0.38` 拒絕非字串的外層分頁游標，避免 `None`、`False`、`0` 或空容器被
 誤當成沒有游標而重新查詢第一頁；`39.0.39` 在寫入任何 registry 前驗證搜尋
 capability 身分，錯誤的第三方 MOD 不再留下阻止同 ID 修正版註冊的部分狀態。
-Testing `1.2.2` 將由本次 Development `39.0.39` source freeze 建立，納入
-39.0.13～39.0.39 的搜尋強化與失敗隔離修正；它維持未簽署 Testing 身分，
-不是 Stable 正式套件，也不會覆寫既有
+Testing `1.2.2` 已由 Development `39.0.39` source freeze
+`f7c65ee1a8e92828ede299bcbdff5e66d16f6810` 建立並發布為
+[GitHub prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.2)，
+納入 39.0.13～39.0.39 的搜尋強化與失敗隔離修正；它維持未簽署 Testing
+身分，不是 Stable 正式套件，也不會覆寫既有
 [Testing 1.2.1](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)。
 
 ## 主要能力

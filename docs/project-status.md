@@ -140,10 +140,13 @@ Development `39.0.39` 的乾淨 source freeze 建置、建立新目錄與 prerel
 - 主要下載附件是 `MediaManager-Testing-1.2.1.zip` 與同名 `.zip.sha256`；
   [GitHub prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)
   共有 9 個附件，ZIP digest 已與 sidecar 閉合。
-- Testing `1.2.2` 使用新的 `Version/Testing/1.2.2`、`test-v1.2.2` 與
-  `MediaManager-Testing-1.2.2.zip`；只接受 Development `39.0.39` 的乾淨
-  source freeze，不覆寫 1.2.1。建置、tag、prerelease 與附件證據完成後，
-  以 `release-info.json`、`SHA256SUMS.txt` 及 ZIP sidecar 回填最終 revision 與雜湊。
+- [Testing `1.2.2`](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.2)
+  已由 Development `39.0.39` 的乾淨 source freeze
+  `f7c65ee1a8e92828ede299bcbdff5e66d16f6810` 建立於
+  `Version/Testing/1.2.2`，並以 `test-v1.2.2` 發布為具有 9 個附件的
+  prerelease；`MediaManager-Testing-1.2.2.zip` SHA-256 為
+  `2dd688ceb6a3af9c3e100dca1c61a326ac8be2a19237b217bd2f8a21b6a7e2c4`，
+  已與 ZIP sidecar 及 GitHub asset digest 閉合，且未覆寫 1.2.1。
 - Testing 1.0 是不可覆寫的歷史版本，不以目前 39.x 來源重建或冒用。
 - Testing 1.1 使用唯一修訂 tag `test-v1.1.0-r2`，精確指向 source revision
   `09b3a86e00938241d27050088583ebf81d9fb182`；9 個附件已發布且 digest 閉合。

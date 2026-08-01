@@ -6,8 +6,10 @@
 
 Testing `1.2.0` 是 Development `39.0.11` 的本機歷史候選，保留於
 `Version/Testing/1.2`，沒有 GitHub 發布。Testing `1.2.1` 是 Development
-`39.0.12` 的既有公開 prerelease，維持不可變。Testing `1.2.2` 將由 Development
-`39.0.39` 的乾淨 source freeze 建立；它是未簽署 Testing 產物，不是 Stable。
+`39.0.12` 的既有公開 prerelease，維持不可變。Testing `1.2.2` 已由 Development
+`39.0.39` 的乾淨 source freeze
+`f7c65ee1a8e92828ede299bcbdff5e66d16f6810` 建立並發布；它是未簽署 Testing
+產物，不是 Stable。
 
 ## Testing 1.2.2 預發行版
 
