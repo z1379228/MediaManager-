@@ -32,6 +32,53 @@
       "estimate_ratio": 0.45,
       "args": ["-map", "0:v:0", "-map", "0:a?", "-c:v", "libx265", "-preset", "medium", "-crf", "28", "-c:a", "aac", "-b:a", "160k"]
     },
+    "hevc10-nvenc-opus-copy": {
+      "strategy": "H.265 Main10 NVENC p7／VBR 300 kbps／Opus Passthru／MKV（保留來源 FPS 與解析度、無濾鏡）",
+      "extensions": [".mkv"],
+      "estimate_ratio": 0.25,
+      "required_encoder": "hevc_nvenc",
+      "required_input_audio_codec": "opus",
+      "output_contract": {
+        "format_names": ["matroska"],
+        "video_codec": "hevc",
+        "video_profiles": ["Main 10"],
+        "video_pixel_formats": ["yuv420p10le", "p010le"],
+        "audio_codec": "opus",
+        "preserve_dimensions": true,
+        "preserve_frame_rate": true,
+        "preserve_audio_packets": true
+      },
+      "args": [
+        "-map", "0:v:0", "-map", "0:a:0",
+        "-c:v", "hevc_nvenc",
+        "-profile:v", "main10",
+        "-pix_fmt", "p010le",
+        "-highbitdepth", "1",
+        "-preset", "p7",
+        "-tune", "hq",
+        "-rc", "vbr",
+        "-b:v", "300k",
+        "-multipass", "fullres",
+        "-rc-lookahead", "32",
+        "-spatial-aq", "1",
+        "-temporal-aq", "1",
+        "-aq-strength", "8",
+        "-fps_mode", "passthrough",
+        "-c:a", "copy"
+      ]
+    },
+    "watermark-h264": {
+      "strategy": "本機影像浮水印（H.264/AAC 新檔）",
+      "extensions": [".mp4", ".mkv"],
+      "estimate_ratio": 0.7,
+      "args": [
+        "-filter_complex",
+        "[1:v]format=rgba,scale=min(320\\,iw):-1[wm];[0:v][wm]overlay=W-w-24:H-h-24:format=auto[v]",
+        "-map", "[v]", "-map", "0:a?",
+        "-c:v", "libx264", "-preset", "medium", "-crf", "23",
+        "-c:a", "aac", "-b:a", "192k"
+      ]
+    },
     "video-vp9-webm": {
       "strategy": "VP9 / Opus WebM 轉檔",
       "extensions": [".webm"],

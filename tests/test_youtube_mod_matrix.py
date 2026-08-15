@@ -6,9 +6,11 @@ from pathlib import Path
 import runpy
 import sys
 from types import ModuleType
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
+from contracts.discovery_v1 import DiscoveryItemV1
 from core.downloads.builtin_integrity import BUILTIN_PROVIDER_HASHES
 from core.downloads.capabilities import builtin_download_capability
 from core.downloads.subprocess_provider import SubprocessDownloadProvider
@@ -267,6 +269,100 @@ def test_youtube_search_contract_returns_unicode_results_and_cursor(
     assert [item["video_id"] for item in result["items"]] == ["one", "two"]
     assert result["items"][0]["thumbnail_url"].endswith("/one/mqdefault.jpg")
     assert result["next_cursor"] == "2"
+
+
+def test_youtube_music_scope_uses_the_bounded_songs_extractor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    package = ModuleType("yt_dlp")
+
+    class YoutubeDL:
+        def __init__(self, options: dict[str, object]) -> None:
+            captured["options"] = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        @staticmethod
+        def extract_info(url: str, download: bool):
+            captured["url"] = url
+            assert download is False
+            return {
+                "entries": [
+                    {"id": "song-one", "title": "Song One"},
+                    {"id": "song-two", "title": "Song Two"},
+                ]
+            }
+
+    package.YoutubeDL = YoutubeDL
+    monkeypatch.setitem(sys.modules, "yt_dlp", package)
+    namespace = _namespace("youtube-search")
+
+    result = namespace["search"](
+        {"query": "Aimer / 残響散歌", "limit": 2, "content_type": "music"}
+    )
+
+    target = urlsplit(str(captured["url"]))
+    assert (target.scheme, target.hostname, target.path, target.fragment) == (
+        "https",
+        "music.youtube.com",
+        "/search",
+        "songs",
+    )
+    assert parse_qs(target.query) == {"q": ["Aimer / 残響散歌"]}
+    assert captured["options"]["playlistend"] == 3
+    assert [item["category"] for item in result["items"]] == ["music", "music"]
+
+
+def test_youtube_search_normalizes_untrusted_flat_durations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package = ModuleType("yt_dlp")
+
+    class YoutubeDL:
+        def __init__(self, _options: dict[str, object]) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        @staticmethod
+        def extract_info(_url: str, download: bool):
+            assert download is False
+            return {
+                "entries": [
+                    {"id": "valid", "title": "Valid", "duration": 120.8},
+                    {"id": "nan", "title": "NaN", "duration": float("nan")},
+                    {"id": "bool", "title": "Boolean", "duration": True},
+                    {"id": "negative", "title": "Negative", "duration": -1},
+                    {"id": "large", "title": "Too long", "duration": 86401},
+                ]
+            }
+
+    package.YoutubeDL = YoutubeDL
+    monkeypatch.setitem(sys.modules, "yt_dlp", package)
+    namespace = _namespace("youtube-search")
+
+    result = namespace["search"](
+        {"query": "contract boundary", "limit": 5, "content_type": "all"}
+    )
+
+    assert [item["duration"] for item in result["items"]] == [
+        120,
+        None,
+        None,
+        None,
+        None,
+    ]
+    for item in result["items"]:
+        DiscoveryItemV1.from_dict(item)
 
 
 def test_all_youtube_mods_are_pinned_and_included_by_frozen_build() -> None:

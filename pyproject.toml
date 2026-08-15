@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mediamanager"
-version = "39.0.39"
+version = "39.0.94"
 description = "Platform-independent desktop media manager core"
 requires-python = ">=3.14"
 license = "MIT"

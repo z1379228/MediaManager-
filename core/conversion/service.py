@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from fractions import Fraction
 import json
 import math
 import os
@@ -26,14 +27,19 @@ from core.storage.atomic import commit_file_without_overwrite
 
 MAX_SOURCES = 100
 MAX_SOURCE_BYTES = 4 * 1024**4
+WATERMARK_IMAGE_EXTENSIONS = frozenset(
+    {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
+)
 MAX_REMOVAL_RANGES = 50
 MAX_MEDIA_SECONDS = 604_800.0
 MAX_FFMPEG_DIAGNOSTIC_BYTES = 64 * 1024
 MAX_CAPABILITY_OUTPUT_BYTES = 512 * 1024
 MAX_FFPROBE_OUTPUT_BYTES = 256 * 1024
+MAX_STREAM_HASH_OUTPUT_BYTES = 256
 STDERR_READER_JOIN_SECONDS = 2.0
 TOOL_PROBE_TIMEOUT_SECONDS = 8.0
 FFPROBE_TIMEOUT_SECONDS = 20.0
+STREAM_HASH_TIMEOUT_SECONDS = 300.0
 DEFAULT_CONVERSION_FREE_SPACE_RESERVE = 256 * 1024 * 1024
 LOCAL_PROTOCOL_WHITELIST = "file,pipe"
 SUBPROCESS_CREATION_FLAGS = (
@@ -160,7 +166,7 @@ class ConversionService:
         return tuple(self._presets)
 
     def preview(self, request: ConversionRequest) -> ConversionPlan:
-        sources, output, preset, remove_ranges = self._validate(request)
+        sources, output, preset, remove_ranges, watermark = self._validate(request)
         definition = self._presets[preset]
         ratio = float(definition["estimate_ratio"])
         estimated = max(1, int(sum(path.stat().st_size for path in sources) * ratio))
@@ -181,6 +187,8 @@ class ConversionService:
             if request.start_time is not None:
                 command.extend(("-ss", self._time_value(request.start_time)))
             command.extend(("-i", str(sources[0])))
+            if watermark is not None:
+                command.extend(("-i", str(watermark)))
             if request.end_time is not None:
                 command.extend(("-to", self._time_value(request.end_time)))
         replacements: dict[str, str] = {}
@@ -214,6 +222,7 @@ class ConversionService:
                 output=output,
                 preset=preset,
                 remove_ranges=remove_ranges,
+                watermark=watermark,
             ),
             strategy,
             estimated,
@@ -225,6 +234,7 @@ class ConversionService:
         if not self.is_enabled:
             raise RuntimeError("Media Convert MOD is disabled")
         plan = self.preview(request)
+        self._validate_runtime_requirements(plan)
         self._preflight_output(plan)
         task_id = uuid.uuid4().hex
         task = ConversionTask(task_id, plan.request)
@@ -334,7 +344,11 @@ class ConversionService:
                 if diagnostic:
                     message = f"{message}: {diagnostic}"
                 raise RuntimeError(message)
-            self._verify_output(part)
+            self._verify_output(
+                part,
+                plan=plan,
+                cancel_event=task.cancel_event,
+            )
             if output.exists():
                 raise FileExistsError(output)
             commit_file_without_overwrite(part, output)
@@ -439,6 +453,58 @@ class ConversionService:
                 f"available {free // (1024 * 1024)} MiB"
             )
 
+    def _validate_runtime_requirements(self, plan: ConversionPlan) -> None:
+        """Validate local encoder and input-codec requirements before queuing."""
+
+        definition = self._presets[plan.request.preset]
+        required_encoder = definition.get("required_encoder")
+        if isinstance(required_encoder, str):
+            capabilities = self.capabilities()
+            if required_encoder not in capabilities.encoders:
+                raise RuntimeError(
+                    f"required FFmpeg encoder is unavailable: {required_encoder}"
+                )
+
+        required_audio_codec = definition.get("required_input_audio_codec")
+        if not isinstance(required_audio_codec, str):
+            return
+        required_audio_codec = required_audio_codec.casefold()
+        return_code, raw_document, diagnostic = self._run_ffprobe(
+            plan.request.sources[0]
+        )
+        if return_code != 0:
+            message = "ffprobe source validation failed"
+            if diagnostic:
+                message = f"{message}: {diagnostic}"
+            raise RuntimeError(message)
+        try:
+            document = json.loads(raw_document.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise RuntimeError(
+                "ffprobe source validation failed: invalid JSON"
+            ) from error
+        if not isinstance(document, dict):
+            raise RuntimeError("ffprobe source validation failed: invalid document")
+        streams = document.get("streams")
+        if not isinstance(streams, list):
+            raise RuntimeError("ffprobe source validation failed: streams are missing")
+        audio_codecs = tuple(
+            str(stream.get("codec_name", "")).casefold()
+            for stream in streams
+            if isinstance(stream, dict)
+            and str(stream.get("codec_type", "")).casefold() == "audio"
+            and isinstance(stream.get("codec_name"), str)
+        )
+        if not audio_codecs or audio_codecs[0] != required_audio_codec:
+            detected = audio_codecs[0] if audio_codecs else "none"
+            display_codec = (
+                "Opus" if required_audio_codec == "opus" else required_audio_codec
+            )
+            raise RuntimeError(
+                f"this preset requires {display_codec} source audio for passthrough; "
+                f"detected: {detected}"
+            )
+
     def _probe_text(self, flag: str) -> tuple[str, str]:
         if self.ffmpeg is None or not self.ffmpeg.is_file():
             return "", "FFmpeg is unavailable"
@@ -490,7 +556,12 @@ class ConversionService:
             )
         return frozenset(names)
 
-    def _run_ffprobe(self, output: Path) -> tuple[int, bytes, str]:
+    def _run_ffprobe(
+        self,
+        output: Path,
+        *,
+        cancel_event: object | None = None,
+    ) -> tuple[int, bytes, str]:
         if self.ffprobe is None or not self.ffprobe.is_file():
             return 1, b"", "ffprobe is unavailable"
         command = [
@@ -500,7 +571,10 @@ class ConversionService:
             "-protocol_whitelist",
             LOCAL_PROTOCOL_WHITELIST,
             "-show_entries",
-            "stream=index,codec_type,codec_name,width,height:format=format_name,duration,size",
+            (
+                "stream=index,codec_type,codec_name,profile,pix_fmt,width,height,"
+                "r_frame_rate,avg_frame_rate:format=format_name,duration,size"
+            ),
             "-of",
             "json",
             str(output),
@@ -511,6 +585,7 @@ class ConversionService:
                 timeout=FFPROBE_TIMEOUT_SECONDS,
                 stdout_limit=MAX_FFPROBE_OUTPUT_BYTES,
                 stderr_limit=MAX_FFMPEG_DIAGNOSTIC_BYTES,
+                cancel_event=cancel_event,
             )
         )
         if return_code == -1:
@@ -543,6 +618,7 @@ class ConversionService:
         stdout_limit: int,
         stderr_limit: int,
         combine_stderr: bool = False,
+        cancel_event: object | None = None,
     ) -> tuple[int, bytes, bytes, bool, bool]:
         """Drain child output while retaining no more than the stated limits."""
 
@@ -582,14 +658,31 @@ class ConversionService:
             )
         for reader in readers:
             reader.start()
-        try:
-            process.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
-            return_code = -1
-        else:
-            return_code = int(process.returncode or 0)
+        deadline = time.monotonic() + timeout
+        while True:
+            observed_return_code = process.poll()
+            if observed_return_code is not None:
+                return_code = int(observed_return_code)
+                break
+            if cancel_event is not None and cancel_event.is_set():
+                process.terminate()
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                return_code = -3
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                process.kill()
+                process.wait()
+                return_code = -1
+                break
+            try:
+                process.wait(timeout=min(0.05, remaining))
+            except subprocess.TimeoutExpired:
+                continue
         for reader in readers:
             reader.join(timeout=STDERR_READER_JOIN_SECONDS)
         return (
@@ -600,28 +693,289 @@ class ConversionService:
             truncated[1],
         )
 
-    def _verify_output(self, output: Path) -> None:
+    def _verify_output(
+        self,
+        output: Path,
+        *,
+        plan: ConversionPlan | None = None,
+        cancel_event: object | None = None,
+    ) -> None:
         if not output.is_file() or output.stat().st_size <= 0:
             raise RuntimeError("ffprobe validation failed: output is empty")
-        return_code, raw_document, diagnostic = self._run_ffprobe(output)
+        document = self._probe_document(
+            output,
+            "ffprobe validation failed",
+            cancel_event=cancel_event,
+        )
+        if plan is not None:
+            self._verify_output_contract(
+                plan,
+                document,
+                output,
+                cancel_event=cancel_event,
+            )
+
+    def _probe_document(
+        self,
+        path: Path,
+        failure_prefix: str,
+        *,
+        cancel_event: object | None = None,
+    ) -> dict[str, object]:
+        return_code, raw_document, diagnostic = self._run_ffprobe(
+            path,
+            cancel_event=cancel_event,
+        )
+        if return_code == -3:
+            raise RuntimeError("conversion cancelled")
         if return_code != 0:
-            message = "ffprobe validation failed"
+            message = failure_prefix
             if diagnostic:
                 message = f"{message}: {diagnostic}"
             raise RuntimeError(message)
         try:
             document = json.loads(raw_document.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise RuntimeError("ffprobe validation failed: invalid JSON") from error
+            raise RuntimeError(f"{failure_prefix}: invalid JSON") from error
         if not isinstance(document, dict):
-            raise RuntimeError("ffprobe validation failed: invalid document")
+            raise RuntimeError(f"{failure_prefix}: invalid document")
         streams = document.get("streams")
         if (
             not isinstance(streams, list)
             or not streams
             or any(not isinstance(stream, dict) for stream in streams)
         ):
-            raise RuntimeError("ffprobe validation failed: no readable media stream")
+            raise RuntimeError(f"{failure_prefix}: no readable media stream")
+        return document
+
+    def _verify_output_contract(
+        self,
+        plan: ConversionPlan,
+        output_document: dict[str, object],
+        output: Path,
+        *,
+        cancel_event: object | None = None,
+    ) -> None:
+        definition = self._presets[plan.request.preset]
+        contract = definition.get("output_contract")
+        if not isinstance(contract, dict):
+            return
+
+        output_video = self._first_stream(output_document, "video")
+        output_audio = self._first_stream(output_document, "audio")
+        format_document = output_document.get("format")
+        if not isinstance(format_document, dict):
+            format_document = {}
+
+        allowed_formats = self._normalized_values(contract.get("format_names"))
+        if allowed_formats:
+            detected_formats = {
+                value.strip().casefold()
+                for value in str(format_document.get("format_name", "")).split(",")
+                if value.strip()
+            }
+            if detected_formats.isdisjoint(allowed_formats):
+                self._raise_output_contract("container format does not match preset")
+
+        expected_video_codec = self._normalized_text(contract.get("video_codec"))
+        if expected_video_codec and (
+            output_video is None
+            or self._normalized_text(output_video.get("codec_name"))
+            != expected_video_codec
+        ):
+            self._raise_output_contract("video codec does not match preset")
+
+        allowed_profiles = self._normalized_values(contract.get("video_profiles"))
+        if allowed_profiles and (
+            output_video is None
+            or self._normalized_text(output_video.get("profile"))
+            not in allowed_profiles
+        ):
+            self._raise_output_contract("video profile does not match preset")
+
+        allowed_pixel_formats = self._normalized_values(
+            contract.get("video_pixel_formats")
+        )
+        if allowed_pixel_formats and (
+            output_video is None
+            or self._normalized_text(output_video.get("pix_fmt"))
+            not in allowed_pixel_formats
+        ):
+            self._raise_output_contract("video pixel format is not 10-bit")
+
+        expected_audio_codec = self._normalized_text(contract.get("audio_codec"))
+        if expected_audio_codec and (
+            output_audio is None
+            or self._normalized_text(output_audio.get("codec_name"))
+            != expected_audio_codec
+        ):
+            self._raise_output_contract("audio codec does not match passthrough source")
+
+        preserve_dimensions = contract.get("preserve_dimensions") is True
+        preserve_frame_rate = contract.get("preserve_frame_rate") is True
+        if preserve_dimensions or preserve_frame_rate:
+            source_document = self._probe_document(
+                plan.request.sources[0],
+                "output contract failed: source probe",
+                cancel_event=cancel_event,
+            )
+            source_video = self._first_stream(source_document, "video")
+            if source_video is None or output_video is None:
+                self._raise_output_contract("source or output video stream is missing")
+
+            if preserve_dimensions:
+                source_dimensions = (
+                    self._positive_integer(source_video.get("width")),
+                    self._positive_integer(source_video.get("height")),
+                )
+                output_dimensions = (
+                    self._positive_integer(output_video.get("width")),
+                    self._positive_integer(output_video.get("height")),
+                )
+                if (
+                    None in source_dimensions
+                    or None in output_dimensions
+                    or output_dimensions != source_dimensions
+                ):
+                    self._raise_output_contract("video dimensions changed")
+
+            if preserve_frame_rate:
+                source_rates = self._frame_rates(source_video)
+                output_rates = self._frame_rates(output_video)
+                if None in source_rates or None in output_rates:
+                    self._raise_output_contract("frame rate metadata is missing")
+                if source_rates[0] == source_rates[1] and any(
+                    rate != source_rates[0] for rate in output_rates
+                ):
+                    self._raise_output_contract("constant frame rate changed")
+
+        if contract.get("preserve_audio_packets") is True:
+            source_digest = self._stream_digest(
+                plan.request.sources[0],
+                cancel_event=cancel_event,
+            )
+            output_digest = self._stream_digest(
+                output,
+                cancel_event=cancel_event,
+            )
+            if source_digest != output_digest:
+                self._raise_output_contract("audio packet digest changed")
+
+    @staticmethod
+    def _first_stream(
+        document: dict[str, object],
+        codec_type: str,
+    ) -> dict[str, object] | None:
+        streams = document.get("streams")
+        if not isinstance(streams, list):
+            return None
+        expected = codec_type.casefold()
+        return next(
+            (
+                stream
+                for stream in streams
+                if isinstance(stream, dict)
+                and str(stream.get("codec_type", "")).casefold() == expected
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _normalized_text(value: object) -> str:
+        return value.strip().casefold() if isinstance(value, str) else ""
+
+    @classmethod
+    def _normalized_values(cls, value: object) -> frozenset[str]:
+        if not isinstance(value, list):
+            return frozenset()
+        return frozenset(
+            normalized
+            for item in value
+            if (normalized := cls._normalized_text(item))
+        )
+
+    @staticmethod
+    def _positive_integer(value: object) -> int | None:
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            return value
+        return None
+
+    @staticmethod
+    def _frame_rate(value: object) -> Fraction | None:
+        if not isinstance(value, str):
+            return None
+        try:
+            rate = Fraction(value)
+        except (ValueError, ZeroDivisionError):
+            return None
+        return rate if rate > 0 else None
+
+    @classmethod
+    def _frame_rates(
+        cls,
+        stream: dict[str, object],
+    ) -> tuple[Fraction | None, Fraction | None]:
+        return (
+            cls._frame_rate(stream.get("r_frame_rate")),
+            cls._frame_rate(stream.get("avg_frame_rate")),
+        )
+
+    def _stream_digest(
+        self,
+        path: Path,
+        *,
+        cancel_event: object | None = None,
+    ) -> str:
+        if self.ffmpeg is None or not self.ffmpeg.is_file():
+            self._raise_output_contract("FFmpeg is unavailable for audio validation")
+        command = [
+            str(self.ffmpeg),
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-protocol_whitelist",
+            LOCAL_PROTOCOL_WHITELIST,
+            "-i",
+            str(path),
+            "-map",
+            "0:a:0",
+            "-c",
+            "copy",
+            "-f",
+            "hash",
+            "-hash",
+            "sha256",
+            "pipe:1",
+        ]
+        return_code, stdout, stderr, stdout_truncated, stderr_truncated = (
+            self._run_bounded_capture(
+                command,
+                timeout=STREAM_HASH_TIMEOUT_SECONDS,
+                stdout_limit=MAX_STREAM_HASH_OUTPUT_BYTES,
+                stderr_limit=MAX_FFMPEG_DIAGNOSTIC_BYTES,
+                cancel_event=cancel_event,
+            )
+        )
+        if return_code == -3:
+            raise RuntimeError("conversion cancelled")
+        if return_code != 0 or stdout_truncated or stderr_truncated:
+            diagnostic = bounded_redacted_text(
+                stderr.decode("utf-8", errors="replace"),
+                max_utf8_bytes=MAX_FFMPEG_DIAGNOSTIC_BYTES,
+            ).strip()
+            detail = "audio packet hash could not be calculated"
+            if diagnostic:
+                detail = f"{detail}: {diagnostic}"
+            self._raise_output_contract(detail)
+        match = re.fullmatch(rb"SHA256=([0-9a-fA-F]{64})\r?\n?", stdout)
+        if match is None:
+            self._raise_output_contract("audio packet hash response is invalid")
+        return match.group(1).decode("ascii").casefold()
+
+    @staticmethod
+    def _raise_output_contract(detail: str) -> None:
+        raise RuntimeError(f"output contract failed: {detail}")
 
     def _materialize(
         self,
@@ -648,6 +1002,7 @@ class ConversionService:
         Path,
         str,
         tuple[tuple[float, float], ...],
+        Path | None,
     ]:
         if not isinstance(request, ConversionRequest):
             raise TypeError("invalid conversion request")
@@ -665,6 +1020,17 @@ class ConversionService:
             if not source.is_file():
                 raise ValueError("conversion source must be a regular file")
             total += source.stat().st_size
+        watermark: Path | None = None
+        if request.watermark is not None:
+            if not isinstance(request.watermark, Path):
+                raise ValueError("watermark must be a local image file")
+            expanded_watermark = request.watermark.expanduser()
+            if _is_linklike(expanded_watermark):
+                raise ValueError("watermark must be a regular local image file")
+            watermark = expanded_watermark.resolve()
+            if not watermark.is_file():
+                raise ValueError("watermark must be a regular local image file")
+            total += watermark.stat().st_size
         if total > MAX_SOURCE_BYTES:
             raise ValueError("conversion sources exceed the size limit")
         expanded_output = request.output.expanduser()
@@ -675,7 +1041,7 @@ class ConversionService:
             raise ValueError("conversion output folder is invalid")
         if output.exists():
             raise FileExistsError(output)
-        if output in sources:
+        if output in sources or output == watermark:
             raise ValueError("conversion output cannot replace a source")
         definition = self._presets[preset]
         source_extensions = {
@@ -694,6 +1060,13 @@ class ConversionService:
                 raise ValueError("join-copy output must keep the source extension")
         elif len(sources) != 1:
             raise ValueError("the selected preset accepts one source")
+        if preset == "watermark-h264":
+            if watermark is None:
+                raise ValueError("watermark-h264 needs one watermark image")
+            if watermark.suffix.casefold() not in WATERMARK_IMAGE_EXTENSIONS:
+                raise ValueError("watermark image extension is unsupported")
+        elif watermark is not None:
+            raise ValueError("watermark image requires the watermark-h264 preset")
         for name, value in (("start", request.start_time), ("end", request.end_time)):
             if value is not None and (
                 not isinstance(value, (int, float))
@@ -714,7 +1087,7 @@ class ConversionService:
                 raise ValueError("ad trim needs at least one removal range")
         elif remove_ranges:
             raise ValueError("removal ranges require the ad-trim-h264 preset")
-        return sources, output, preset, remove_ranges
+        return sources, output, preset, remove_ranges, watermark
 
     def _load_presets(self) -> dict[str, dict[str, object]]:
         document = json.loads(self.preset_path.read_text(encoding="utf-8"))
@@ -730,6 +1103,9 @@ class ConversionService:
             "estimate_ratio",
             "args",
             "gpu_args",
+            "required_encoder",
+            "required_input_audio_codec",
+            "output_contract",
         }
         presets: dict[str, dict[str, object]] = {}
         for preset_id, definition in raw.items():
@@ -745,10 +1121,77 @@ class ConversionService:
                     "source_extensions" in definition
                     and not isinstance(definition["source_extensions"], list)
                 )
+                or any(
+                    requirement in definition
+                    and (
+                        not isinstance(definition[requirement], str)
+                        or not re.fullmatch(
+                            r"[a-z0-9_]+",
+                            str(definition[requirement]).casefold(),
+                        )
+                    )
+                    for requirement in (
+                        "required_encoder",
+                        "required_input_audio_codec",
+                    )
+                )
+                or (
+                    "output_contract" in definition
+                    and not self._valid_output_contract(
+                        definition["output_contract"]
+                    )
+                )
             ):
                 raise ValueError("media-convert preset is invalid")
             presets[preset_id] = definition
         return presets
+
+    @classmethod
+    def _valid_output_contract(cls, value: object) -> bool:
+        if not isinstance(value, dict) or not value:
+            return False
+        allowed = {
+            "format_names",
+            "video_codec",
+            "video_profiles",
+            "video_pixel_formats",
+            "audio_codec",
+            "preserve_dimensions",
+            "preserve_frame_rate",
+            "preserve_audio_packets",
+        }
+        if not set(value).issubset(allowed):
+            return False
+        for key in ("video_codec", "audio_codec"):
+            if key in value and (
+                not isinstance(value[key], str)
+                or not re.fullmatch(r"[A-Za-z0-9_]+", value[key])
+            ):
+                return False
+        for key in ("format_names", "video_profiles", "video_pixel_formats"):
+            if key not in value:
+                continue
+            items = value[key]
+            if (
+                not isinstance(items, list)
+                or not 1 <= len(items) <= 16
+                or any(
+                    not isinstance(item, str)
+                    or not item.strip()
+                    or len(item) > 64
+                    or not item.isprintable()
+                    for item in items
+                )
+            ):
+                return False
+        for key in (
+            "preserve_dimensions",
+            "preserve_frame_rate",
+            "preserve_audio_packets",
+        ):
+            if key in value and not isinstance(value[key], bool):
+                return False
+        return True
 
     @staticmethod
     def _time_value(value: float) -> str:

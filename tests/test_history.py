@@ -58,6 +58,31 @@ def test_history_contracts_validate_events_and_preferences() -> None:
     assert preferences.content_types == {"music": 1}
 
 
+@pytest.mark.parametrize(
+    ("field", "invalid_value"),
+    (
+        ("total_searches", True),
+        ("artists", {"Artist": True}),
+    ),
+)
+def test_history_preferences_reject_boolean_counters(
+    field: str,
+    invalid_value: object,
+) -> None:
+    raw: dict[str, object] = {
+        "total_searches": 1,
+        "total_selections": 1,
+        "content_types": {"music": 1},
+        "languages": {"zh-TW": 1},
+        "artists": {"Artist": 1},
+        "categories": {"music": 1},
+    }
+    raw[field] = invalid_value
+
+    with pytest.raises(HistoryContractError):
+        HistoryPreferencesV1.from_dict(raw)
+
+
 def test_history_contract_rejects_search_with_item() -> None:
     with pytest.raises(HistoryContractError):
         HistoryEventV1.from_dict(
@@ -94,9 +119,15 @@ def test_search_history_ui_helpers_deduplicate_and_summarize() -> None:
             discovery_item(),
         ),
         HistoryEventV1(
+            "selection",
+            "不是搜尋紀錄",
+            "2026-07-14T00:00:01+00:00",
+            discovery_item(),
+        ),
+        HistoryEventV1(
             "search",
             "作業用 BGM",
-            "2026-07-14T00:00:01+00:00",
+            "2026-07-14T00:00:00+00:00",
             None,
         ),
     )
@@ -112,6 +143,53 @@ def test_search_history_ui_helpers_deduplicate_and_summarize() -> None:
     )
     assert history_preference_summary(preferences) == (
         "3 次搜尋 · 2 次選取 · 常選 音樂 · 語言 zh-TW"
+    )
+
+
+def test_recent_history_queries_deduplicate_unicode_equivalents() -> None:
+    events = (
+        HistoryEventV1(
+            "search",
+            "Cafe\u0301 session",
+            "2026-07-14T00:00:01+00:00",
+            None,
+        ),
+        HistoryEventV1(
+            "search",
+            "café session",
+            "2026-07-14T00:00:00+00:00",
+            None,
+        ),
+    )
+
+    assert recent_history_queries(events) == ("Cafe\u0301 session",)
+
+
+def test_recent_history_queries_deduplicate_field_separator_spacing() -> None:
+    events = (
+        HistoryEventV1(
+            "search",
+            "Nora Vale / Midnight Echo",
+            "2026-07-14T00:00:02+00:00",
+            None,
+        ),
+        HistoryEventV1(
+            "search",
+            "Nora Vale/Midnight Echo",
+            "2026-07-14T00:00:01+00:00",
+            None,
+        ),
+        HistoryEventV1(
+            "search",
+            "Nora Vale Midnight Echo",
+            "2026-07-14T00:00:00+00:00",
+            None,
+        ),
+    )
+
+    assert recent_history_queries(events) == (
+        "Nora Vale / Midnight Echo",
+        "Nora Vale Midnight Echo",
     )
 
 

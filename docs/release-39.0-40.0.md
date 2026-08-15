@@ -593,6 +593,865 @@
   source freeze 建立未簽署 Testing `1.2.2` 新目錄、tag、ZIP 與 GitHub prerelease；
   不簽署、不發布 Stable，也不覆寫 1.2.1。
 
+## 39.0.40（Unicode 搜尋排序一致性）
+
+- 修正搜尋查詢已做 NFKC 正規化，但 provider 回傳的標題與作者只做
+  `casefold` 的不對稱路徑；同一內容若使用全形拉丁字元或 Unicode 組合／
+  分解重音形式，原本會失去標題完整命中並退回 provider 原始順序。
+- 查詢、標題與作者現在共用 NFKC、`casefold` 與空白收斂的比較形式；只影響
+  本機排序與解釋，不改寫 provider 資料，也不增加任何網路請求。
+- Regression-first 證據：全形標題與組合／分解重音標題兩條案例在修正前為
+  `2 failed, 5 passed`；修正後搜尋排序套件為 `7 passed`。
+- 搜尋、版本與入口點相關套件為 `28 passed`；完整 repository runner 為
+  `1469 passed, 7 skipped`。Quality audit 通過 Ruff `366` 個 Python 檔與文字污染
+  `474` 個受控檔案。MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、
+  版本文件 `4`、本機 Testing `1.2.1`／`1.2.2` 共 `2` 個保留版本、Repository 外
+  compileall 均通過。
+- 此修正不增加 provider、網站權限、Cookie、下載、DRM／登入／廣告規避或
+  網路 fallback。Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、
+  stage、commit、push 或發布。
+
+## 39.0.41（搜尋建議有界讀取與事件分類）
+
+- 修正 `preference_search_queries()` 先以 `list.extend()` 完整消耗所有歷史事件，
+  最後才套用 2～12 筆輸出上限的不對稱路徑；偏好建議現在填滿上限後就
+  停止讀取 iterable，不會為未顯示項目繼續消耗資料。
+- 「最近搜尋」原本只讀取事件的 `query` 欄位，因此 query 不同的
+  selection 事件也會被誤列為搜尋；現在只列出 `event_type == "search"` 的紀錄。
+- Regression-first 證據：有界 generator 消耗與 selection 事件分類兩條案例在
+  修正前為 `2 failed, 7 passed`；修正後搜尋建議與歷史套件為 `9 passed`。
+- 搜尋、歷史、版本與入口點相關套件為 `30 passed`；完整 repository runner 為
+  `1470 passed, 7 skipped`。Quality audit 通過 Ruff `366` 個 Python 檔與文字污染
+  `474` 個受控檔案。MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、
+  版本文件 `4` 與 Testing `1.2.1`／`1.2.2` 版本稽核均通過。
+- 參考專案 `BoringMan314/aniGamerPlus`、`miyouzi/aniGamerPlus` 與 Gopeed 的任務狀態、
+  重試與清單邊界；這些專案為 GPL-3.0，本修正只使用可泛化設計原則，沒有複製
+  其程式碼、網站專屬解析、Cookie 或任何存取限制規避邏輯。
+- Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、
+  push 或發布。
+
+## 39.0.42（Unicode 搜尋建議去重）
+
+- 修正 39.0.40 已將搜尋結果排序統一為 NFKC，但歷史與偏好建議仍只用
+  `casefold` 當去重身分的不一致路徑；全形／半形拉丁詞或組合／預組重音詞原本
+  會同時出現在建議選單。
+- 兩個建議入口現在共用 NFKC 加 `casefold` 身分鍵；只用正規形判斷重複，
+  回傳值仍保留最新歷史或優先偏好的原始文字。
+- Regression-first 證據：全形偏好與半形歷史、組合與預組重音歷史兩條
+  案例在修正前為 `2 failed, 9 passed`；修正後搜尋建議與歷史套件為
+  `11 passed`。
+- 建議、歷史、版本文件、版本通道與入口點的針對性套件為 `32 passed`；完整
+  repository runner 為 `1472 passed, 7 skipped`。Quality audit 通過 Ruff
+  `366` 個 Python 檔與文字污染 `474` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣
+  `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4` 與 Testing `1.2.1`／`1.2.2`
+  版本稽核均通過。隔離的 `compileall` 亦通過。
+- 此修正是純本機文字身分處理，不增加 provider、網站權限、網路請求、Cookie、
+  下載或任何存取限制規避能力。Testing `1.2.1` 與 `1.2.2` 保持不可變；
+  本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.43（作者與標題跨欄位精確排序）
+
+- 修正常見的「作者＋曲名」查詢跨在 `artist` 與 `title` 欄位時，只取得零散
+  關鍵字分數，反而可能被將整串查詢放入標題的較弱結果超前。
+- 本機排序現在檢查正規化後的 `artist + title` 與 `title + artist` 是否精確等於
+  查詢；兩個欄位皆非空且整串相等時給予 75 分及「作者與標題完整符合」原因。
+  其他結果仍沿用既有標題與作者規則，不新增模糊跨欄位匹配。
+- Regression-first 證據：精確跨欄位結果原先排在標題全文命中之後，修正前為
+  `1 failed, 7 passed`，修正後搜尋排序套件為 `8 passed`。
+- 搜尋排序、版本文件、版本通道與入口點的針對性套件為 `29 passed`；完整
+  repository runner 為 `1473 passed, 7 skipped`。Quality audit 通過 Ruff `366`
+  個 Python 檔與文字污染 `474` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣
+  `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、Testing `1.2.1`／`1.2.2`
+  版本稽核與隔離 `compileall` 均通過。
+- 此修正只調整已載入結果的本機排序，不修改 provider、網路請求、下載、Cookie
+  或網站存取邊界。Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、
+  stage、commit、push 或發布。
+
+## 39.0.44（偏好建議事件分類一致性）
+
+- 修正「最近搜尋」已排除 selection，但偏好建議從原始歷史事件補位時仍直接採用
+  所有 event.query 的不一致路徑；不同的 selection.query 原本會被顯示為使用者
+  主動搜尋詞。
+- `preference_search_queries()` 現在只從 `event_type == "search"` 的事件取得原始
+  查詢；selection 仍保留給 History MOD 的作者、語言、內容類型與分類偏好統計。
+- Regression-first 證據：空偏好搭配不同 selection/search 查詢的案例修正前為
+  `1 failed, 4 passed`，修正後搜尋建議套件為 `5 passed`。
+- 建議、歷史、版本文件、版本通道與入口點針對性套件為 `33 passed`；完整
+  repository runner 為 `1474 passed, 7 skipped`。Quality audit 通過 Ruff `366`
+  個 Python 檔與文字污染 `474` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣
+  `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、Testing `1.2.1`／`1.2.2`
+  版本稽核與隔離 `compileall` 均通過。
+- 此修正不刪除歷史、不更動 History contract，也不新增 provider、網路、下載、
+  Cookie 或網站存取能力。Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行
+  build、stage、commit、push 或發布。
+
+## 39.0.45（作者與標題常見分隔符）
+
+- 修正 39.0.43 只辨識單一空白連接作者與標題的限制；使用者輸入常見的
+  `Artist - Title`、長短破折號、直線、冒號或間隔點時，精確跨欄位結果原本仍
+  退回較低的零散關鍵字分數。
+- 精確組合使用固定白名單：空白、`-`、`–`、`—`、`|`、`:`、`·`。兩個欄位必須
+  非空，查詢亦須等於正向或反向完整組合；不剝除任意標點，不新增模糊匹配。
+- Regression-first 證據：六種額外分隔符的同一案例修正前為 `1 failed, 8 passed`，
+  修正後搜尋排序套件為 `9 passed`。
+- 搜尋排序、版本文件、版本通道與入口點針對性套件為 `30 passed`；完整 repository
+  runner 為 `1475 passed, 7 skipped`。Quality audit 通過 Ruff `366` 個 Python
+  檔與文字污染 `474` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、
+  依賴鎖 `10`、版本文件 `4`、Testing `1.2.1`／`1.2.2` 版本稽核與隔離
+  `compileall` 均通過。
+- 此修正只影響已載入結果的本機排序，不改寫查詢、provider 回應、網路或下載
+  行為。Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、
+  push 或發布。
+
+## 39.0.46（標點包圍錯字修正）
+
+- 修正已知 token typo 只能在空白切分後整詞相等時生效的限制；括號、逗號或
+  句尾標點包圍的 `offical`、`lyrcis` 等完整錯字原本不會被修正。
+- 改用固定錯字表產生的大小寫不敏感詞邊界規則，依查詢原始順序逐一取代；
+  僅替換命中的單字內容，不重建空白或標點，也不在較長單字內匹配。
+- 每次取代仍於寫回前驗證 Search v2 的 200 字元上限，避免 UI、歷史與 provider
+  實際查詢分歧。
+- Regression-first 證據：`song (OFFICAL), lyrcis!` 修正前為
+  `1 failed, 9 passed`，修正後搜尋排序套件為 `10 passed`。搜尋排序、版本文件、
+  版本通道與入口點針對性套件為 `31 passed`；完整 repository runner 為
+  `1476 passed, 7 skipped`。Quality audit 通過 Ruff `366` 個 Python 檔與文字污染
+  `474` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、
+  版本文件 `4`、Testing `1.2.1`／`1.2.2` 版本稽核與隔離 `compileall` 均通過。
+- 此修正不新增 provider、網路、下載、Cookie 或網站存取能力。Testing `1.2.1`
+  與 `1.2.2` 的目錄、tag、附件及 source freeze 保持不可變；本輪不執行 build、
+  stage、commit、push 或發布。
+
+## 39.0.47（精確跨欄位排序優先級）
+
+- 修正 39.0.43 的精確「作者＋標題」結果只有 75 分，仍可能被「標題包含完整查詢」
+  60 分加「作者關鍵字」20 分的較弱候選以 80 分反向超越。
+- 僅將既有嚴格 `combined_exact` 分支調整為 100 分；作者與標題仍須同時非空，
+  查詢仍須精確等於正向或反向完整組合，且只接受 39.0.45 的有限分隔符白名單。
+  不新增模糊匹配，也不改動其他分數、穩定排序或原因文字。
+- Regression-first 證據：包含完整查詢的標題搭配部分作者關鍵字原本排在真正的
+  跨欄位精確結果之前，修正前為 `1 failed, 10 passed`，修正後搜尋排序套件為
+  `11 passed`。搜尋排序、版本文件、版本通道與入口點針對性套件為 `32 passed`；
+  完整 repository runner 為 `1477 passed, 7 skipped`。Quality audit 通過 Ruff
+  `366` 個 Python 檔與文字污染 `474` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣
+  `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、Testing `1.2.1`／`1.2.2` 版本
+  稽核與隔離 `compileall` 均通過。
+- 此修正只影響已載入結果的本機排序，不改寫查詢、provider 回應、網路或下載
+  行為。Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、
+  push 或發布。
+
+## 39.0.48（Unicode 語言篩選一致性）
+
+- 修正搜尋排序與建議已統一使用 Unicode NFKC，但本機語言篩選仍只對兩側做
+  `strip()` 與 `casefold()` 的規則落差；全形語言代碼或組合形式不同的語言名稱
+  原本會被錯誤排除。
+- 語言篩選值與每筆結果的 `language` 欄位現在共用既有比較文字正規化：NFKC、
+  `casefold` 與空白收斂。篩選仍要求正規化後整欄相等，不新增子字串、模糊匹配
+  或 provider 請求。
+- Regression-first 證據：全形 `ＪＡ` 對 `ja`、分解 `Café` 對預組 `café` 的
+  兩個案例修正前為 `2 failed, 11 passed`，修正後搜尋排序與篩選套件為
+  `13 passed`。搜尋排序、版本文件、版本通道與入口點針對性套件為 `34 passed`；
+  完整 repository runner 為 `1479 passed, 7 skipped`。Quality audit 通過 Ruff
+  `366` 個 Python 檔與文字污染 `474` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣
+  `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、Testing `1.2.1`／`1.2.2` 版本
+  稽核與隔離 `compileall` 均通過。
+- 此修正只影響已載入結果的本機篩選，不改寫 provider 回應、歷史、網路或下載
+  行為。Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、
+  push 或發布。
+
+## 39.0.49（拉丁搜尋片語單字邊界）
+
+- 修正本機排序以任意子字串判斷「完整符合」的相關度缺口；例如查詢 `art` 時，
+  `Cartoon archive` 原本會取得與 `Art documentary` 相同的 60 分，並因 provider
+  順序排在真正的單字命中之前。
+- 拉丁字與其他慣用單字邊界的文字現在只在片語前後不是其他單字字元時視為完整
+  命中。中日韓、泰文、寮文、高棉文與緬甸文等慣用無空格文字仍沿用子字串搜尋，
+  不降低既有中文與日文查詢召回。
+- Regression-first 證據：`art`／`cartoon` 案例修正前為 `1 failed`；修正後新增
+  無空格文字相容案例的搜尋排序套件為 `15 passed`。搜尋排序、版本文件、版本
+  通道與入口點針對性套件為 `36 passed`；完整 repository runner 為
+  `1481 passed, 7 skipped`。Quality audit 通過 Ruff `366` 個 Python 檔與文字
+  污染 `474` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖
+  `10`、版本文件 `4`、Testing `1.2.1`／`1.2.2` 版本稽核與隔離 `compileall`
+  均通過。
+- 此修正只影響已載入結果的本機排序，不改寫查詢或 provider 回應，也不新增網路、
+  下載、Cookie 或網站存取能力。Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪
+  不執行 build、stage、commit、push 或發布。
+
+## 39.0.50（完整標題優先級）
+
+- 修正正規化後與查詢完全相等的標題，原本和只包含相同片語的延伸標題同為
+  60 分；若 `live cover` 等延伸結果先由 provider 回傳，真正的完整標題便會排在
+  後方。
+- 完整標題現在取得 85 分及獨立的「標題完全相等」原因；一般標題片語維持 60 分，
+  片語加作者關鍵字最多 80 分，而嚴格作者＋標題跨欄位精確結果仍維持 100 分。
+- Regression-first 證據：延伸標題先於完整標題的案例修正前為 `1 failed`；更新
+  兩個 Unicode 等價標題的預期後，搜尋排序套件為 `16 passed`。搜尋排序、版本
+  文件、版本通道與入口點針對性套件為 `37 passed`；完整 repository runner 為
+  `1482 passed, 7 skipped`。Quality audit 通過 Ruff `366` 個 Python 檔與文字
+  污染 `474` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖
+  `10`、版本文件 `4`、Testing `1.2.1`／`1.2.2` 版本稽核與隔離 `compileall`
+  均通過。
+- 此修正只影響已載入結果的本機排序與原因文字，不改寫查詢、provider 回應或
+  網路行為。Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、
+  commit、push 或發布。
+
+## 39.0.51（完整作者優先級）
+
+- 修正以作者名稱搜尋時，標題只提及作者的內容取得 60 分，但作者欄位完全相等
+  的作品只有 30 分，導致真正的作者作品排在訪談、紀錄片或其他提及內容之後。
+- 作者欄位正規化後完全等於查詢時，現在取得 70 分及獨立的「作者完全相等」原因；
+  一般作者片語維持 30 分、標題片語維持 60 分、完整標題與嚴格作者＋標題精確
+  結果仍分別維持 85 與 100 分。
+- Regression-first 證據：作者作品落後於標題提及內容的案例修正前為 `1 failed`；
+  修正後搜尋排序套件為 `17 passed`。搜尋排序、版本文件、版本通道與入口點
+  針對性套件為 `38 passed`；完整 repository runner 為
+  `1483 passed, 7 skipped`。Quality audit 通過 Ruff `366` 個 Python 檔與文字
+  污染 `474` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖
+  `10`、版本文件 `4`、Testing `1.2.1`／`1.2.2` 版本稽核與隔離 `compileall`
+  均通過。
+- 此修正只影響已載入結果的本機排序與原因文字，不改寫查詢、provider 回應或
+  網路行為。Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、
+  commit、push 或發布。
+
+## 39.0.52（混合文字片語邊界）
+
+- 修正 39.0.49 只要查詢含任一中日韓或其他無空格文字，就整段停用單字邊界的
+  混合語言缺口；`art 音樂` 原本仍會把 `cart 音樂` 誤列為標題完整符合。
+- 片語首尾現在各自依字元文字系統決定邊界：拉丁字端要求完整詞界，中文、日文、
+  韓文、泰文、寮文、高棉文與緬甸文端保留無空格子字串能力。純拉丁及純中文
+  查詢的 39.0.49 行為維持不變。
+- Regression-first 證據：中英混合片語案例修正前為 `1 failed`；修正後搜尋排序
+  套件為 `18 passed`。搜尋排序、版本文件、版本通道與入口點針對性套件為
+  `39 passed`；完整 repository runner 為 `1484 passed, 7 skipped`。Quality audit
+  通過 Ruff `366` 個 Python 檔與文字污染 `474` 個受控檔案；MOD 群組 `7 / 4`、
+  網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、Testing `1.2.1`／
+  `1.2.2` 版本稽核與隔離 `compileall` 均通過。
+- 此修正只影響已載入結果的本機排序，不改寫查詢、provider 回應或網路行為。
+  Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、
+  push 或發布。
+
+## 39.0.53（偏好作者等價身分）
+
+- 修正偏好統計把同一作者的全形／半形、大小寫或 Unicode 相容形式分開計數時，
+  本機建議可能錯選次要作者，且相似音樂結果無法取得偏好加權的缺口。
+- 搜尋建議與 `youtube-similar` 現在都以 NFKC＋casefold 身分有界合併最多 100 個
+  偏好鍵；顯示仍保留第一個代表字串，不改寫歷史檔或 provider 回傳資料。
+- Regression-first 證據：建議錯選與相似結果漏掉 `preference` 的兩個案例修正前為
+  `2 failed`；修正後搜尋建議與相似音樂套件為 `17 passed`。搜尋、相似音樂、
+  版本文件、版本通道與入口點針對性套件為 `38 passed`；完整 repository runner
+  為 `1486 passed, 7 skipped`。Quality audit 通過 Ruff `366` 個 Python 檔與文字
+  污染 `474` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖
+  `10`、版本文件 `4`、Testing `1.2.1`／`1.2.2` 版本稽核均通過。
+- 此修正只影響本機偏好建議與相似音樂的查詢規劃／結果加權，不增加背景網路
+  行為，也不改寫使用者歷史。Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行
+  build、stage、commit、push 或發布。
+
+## 39.0.54（相似音樂 Unicode token 身分）
+
+- 修正相似音樂偏好加權已支援 Unicode 等價作者，但標題／作者 token overlap 與
+  「目前作者是否等於偏好作者」仍只做 casefold 的不一致；全形作者與半形作者
+  因此不會取得 artist overlap，並浪費一個重複的偏好作者查詢槽位。
+- `youtube-similar` 現在用同一個 NFKC＋casefold 身分處理 token、偏好鍵與種子
+  作者比較；查詢仍維持最多 3 個、偏好鍵最多 100 個，不增加外部請求上限。
+- Regression-first 證據：Unicode 等價作者案例修正前為 `1 failed`；修正後相似
+  音樂套件為 `12 passed`；相似音樂、版本同步與內建雜湊針對性組合為
+  `51 passed, 1 skipped`，完整 repository runner 為 `1487 passed, 7 skipped`。
+  Quality audit 通過 Ruff `366` 個 Python 檔與文字污染 `474` 個受控檔案。
+- 此修正不改寫歷史、provider 回應或 Testing 產物；本輪不執行 build、stage、
+  commit、push 或發布。
+
+## 39.0.55（拉丁重音搜尋 fallback）
+
+- 修正使用者未輸入拉丁重音時，`cafe` 無法對已載入的 `Café` 標題／作者取得
+  本機排序分數，精確作品反而排在 `Cafe live cover` 等較弱結果之後的缺口。
+- 排序現在先保留原始 NFKC＋casefold 精確比對，再以只移除拉丁基底組合符號的
+  次級身分計算標題、作者與跨欄位 fallback；次級分數固定低於原始精確分數，
+  非拉丁文字與語言篩選維持既有規則。
+- Regression-first 證據：無重音查詢案例修正前為 `1 failed`；修正後搜尋排序
+  套件為 `20 passed`，並覆蓋標題、作者、作者＋標題及原始重音優先順序；搜尋
+  排序與版本同步針對性套件為 `41 passed`，完整 repository runner 為
+  `1489 passed, 7 skipped`。Quality audit 通過 Ruff `366` 個 Python 檔與文字
+  污染 `474` 個受控檔案。
+- 此修正只重排已載入結果，不改寫或擴張送往 provider 的查詢，也不增加網路
+  行為。Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、
+  push 或發布。
+
+## 39.0.56（相似音樂 metadata 等價身分）
+
+- 修正相似音樂已正規化標題、作者與偏好身分，但語言與分類仍以原始字串直接
+  比較的缺口；不同搜尋來源回傳 `zh-TW`／全形等價語言或 `music`／全形等價分類
+  時，實際相同的候選原本會失去 10／15 分並降為低信心 fallback。
+- `youtube-similar` 現在用既有的有界 NFKC＋casefold 文字身分比較候選語言與
+  分類；空白值仍不計分，分數上限、候選上限、查詢數與外部請求行為均不變。
+- Regression-first 證據：隔離語言／分類案例修正前為 `1 failed`，且只得到
+  `search-query` 5 分；修正後取得 `language`＋`category` 25 分。相似音樂、內建
+  完整性與 YouTube MOD 矩陣針對性套件為 `25 passed, 1 skipped`；完整 repository
+  runner 為 `1490 passed, 7 skipped`。Quality audit 通過 Ruff `366` 個 Python 檔
+  與文字污染 `474` 個受控檔案；MOD 群組、網站矩陣、依賴鎖、版本文件、Testing
+  版本稽核與 Repository 外隔離 `compileall` 均通過。
+- 此修正只影響已取得候選的本機相似度排序，不改寫 provider 資料或歷史。
+  Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、
+  push 或發布。
+
+## 39.0.57（缺少作者時的精確曲名 fallback）
+
+- 修正相似音樂種子有曲名、但 provider 未提供作者 metadata 時，查詢規劃會略過
+  精確曲名並直接產生 `title related` 的缺口；較弱的擴展詞可能降低正式作品候選
+  的召回與排序品質。
+- 查詢規劃現在把曲名本身作為無作者種子的第一個查詢，再保留 related 與語言／
+  分類 fallback；有作者時仍沿用作者＋曲名規則，查詢上限維持 3 個。
+- Regression-first 證據：`Instrumental Track` 無作者案例修正前為 `1 failed`，
+  第一個查詢錯為 `Instrumental Track related`；修正後相似音樂、內建完整性與
+  YouTube MOD 矩陣針對性套件為 `26 passed, 1 skipped`；完整 repository runner
+  為 `1491 passed, 7 skipped`。Quality audit 通過 Ruff `366` 個 Python 檔與文字
+  污染 `474` 個受控檔案；MOD、網站、依賴、版本與隔離編譯稽核均通過。
+- 此修正不增加網路請求上限、不改寫 provider 回應或歷史。Testing `1.2.1` 與
+  `1.2.2` 保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.58（無空格作者／曲名分隔符）
+
+- 修正跨欄位精確排序只接受分隔符兩側有空白的輸入；使用者貼上常見的
+  `Artist-Title`、`Artist|Title` 或 `Artist:Title` 時，分離的作者＋標題結果原本
+  不會取得最高優先級，反而可能落後於把整串文字放在標題中的弱候選。
+- 精確身分現在同時接受連字號、短／長破折號、直線、冒號及間隔點的有空格與
+  無空格形式；比對仍要求完整作者與完整標題組合，不放寬一般子字串規則。
+- Regression-first 證據：六種無空格分隔符案例修正前為 `1 failed`；修正後
+  搜尋排序套件為 `21 passed`，精確分離欄位結果取得 100 分；完整 repository
+  runner 為 `1492 passed, 7 skipped`。Quality audit 通過 Ruff `366` 個 Python 檔
+  與文字污染 `474` 個受控檔案；MOD、網站、依賴、版本與隔離編譯稽核均通過。
+- 此修正只影響已載入結果的本機排序，不改寫 provider 查詢或回應，也不增加網路
+  行為。Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、
+  push 或發布。
+
+## 39.0.59（偏好建議空白等價身分）
+
+- 修正搜尋建議已合併 Unicode／大小寫等價偏好作者，但尚未折疊前後與重複空白
+  的缺口；同一作者若被不同 provider 寫成 `Aimer` 與 `  Aimer  `，計數會分離並
+  可能讓次要作者成為第一個建議。
+- 偏好與歷史查詢身分鍵現在先套用 NFKC、折疊所有空白，再做 casefold；顯示仍
+  保留第一個代表文字，建議數量與 200 字元上限不變。
+- Regression-first 證據：空白等價作者合併案例修正前為 `1 failed`，錯選
+  `Other Artist`；修正後搜尋建議與歷史套件為 `14 passed`，完整 repository
+  runner 為 `1493 passed, 7 skipped`。Quality audit 通過 Ruff `366` 個 Python 檔
+  與文字污染 `474` 個受控檔案；MOD、網站、依賴、版本與隔離編譯稽核均通過。
+- 此修正只影響本機歷史衍生的建議，不改寫歷史檔、不送出額外查詢。Testing
+  `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.60（相似搜尋等價查詢去重）
+
+- 修正相似音樂計畫只用原始字串去重的缺口；同一查詢若因分類 metadata 使用
+  全形／半形或大小寫差異而產生等價字串，原本會重複占用最多三個查詢槽位，
+  並把語言＋分類備援查詢擠出計畫。
+- 查詢計畫現在以既有 NFKC＋casefold 文字身分去重，同時保留第一個原始顯示
+  字串及三個查詢上限；不增加 provider 請求數，也不改寫使用者輸入或歷史。
+- Regression-first 證據：`Artist music` 與 `Artist ＭＵＳＩＣ` 的等價查詢案例
+  修正前為 `1 failed`，第二個槽位被重複查詢占用；修正後針對性案例為
+  `1 passed`，相似搜尋、內建完整性與 YouTube MOD 矩陣為
+  `27 passed, 1 skipped`；完整 repository runner 為 `1494 passed, 7 skipped`。
+  Quality audit 通過 Ruff `366` 個 Python 檔與文字污染 `474` 個受控檔案；
+  MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件、
+  Testing 版本與 Repository 外隔離 `compileall` 均通過。
+- Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、
+  push 或發布。
+
+## 39.0.61（YouTube 音樂訊號詞界）
+
+- 修正 YouTube 搜尋 MOD 對所有音樂訊號採任意子字串判斷的缺口；拉丁訊號
+  `mix` 原本會誤命中 `mixed media tutorial` 或 `concrete mixing tutorial`，
+  導致 music 範圍漏加限定詞，或把一般教學影片分類成音樂。
+- 拉丁訊號現在經 NFKC＋casefold 後以 ASCII 字母／數字詞界判斷；中文、日文
+  等慣用無空格訊號仍保留子字串比對，因此不縮減既有 CJK 搜尋能力。
+- Regression-first 證據：查詢限定與結果分類的雙重案例修正前為 `1 failed`，
+  修正後針對性案例為 `1 passed`，YouTube scope、內建完整性與 MOD 矩陣為
+  `16 passed, 1 skipped`；完整 repository runner 為 `1495 passed, 7 skipped`。
+  Quality audit 通過 Ruff `366` 個 Python 檔與文字污染 `474` 個受控檔案；
+  MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件、
+  Testing 版本與 Repository 外隔離 `compileall` 均通過。
+- 此修正不繞過網站限制、不增加搜尋頁面大小或重試次數。Testing `1.2.1` 與
+  `1.2.2` 保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.62（常見音樂詞形召回）
+
+- 修正拉丁音樂訊號改用完整詞界後，原本依靠 `song`、`album`、`playlist` 與
+  `mix` 子字串命中的合法複數及 `remix` 詞形也一起失去辨識的召回缺口。
+- 訊號詞表顯式加入 `songs`、`albums`、`playlists`、`mixes`、`remix` 與
+  `remixes`，所有詞形仍使用 39.0.61 的嚴格詞界；`mixed`／`mixing` 不會重新
+  被視為音樂訊號。
+- Regression-first 證據：五種常見詞形修正前為 `5 failed`；修正後連同一般
+  單字誤判防護為 `6 passed`，YouTube scope、內建完整性與 MOD 矩陣為
+  `21 passed, 1 skipped`；完整 repository runner 為 `1500 passed, 7 skipped`。
+  Quality audit 通過 Ruff `366` 個 Python 檔與文字污染 `474` 個受控檔案；
+  MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件、
+  Testing 版本與 Repository 外隔離 `compileall` 均通過。
+- 此修正只調整 YouTube 搜尋查詢限定與本機結果分類，不增加外部請求或放寬
+  網站限制。Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、
+  commit、push 或發布。
+
+## 39.0.63（History 偏好計數型別）
+
+- 修正 `HistoryPreferencesV1.from_dict()` 以 `isinstance(value, int)` 驗證計數，
+  因 Python 的 `bool` 是 `int` 子類而把 `True`／`False` 當成合法總數或 counter
+  接受的共用契約缺口。
+- 偏好總數與四組 counter 現在都在唯一契約入口明確排除布林值；既有合法整數
+  範圍、100 組 counter 上限與下游建議／相似音樂行為保持不變。
+- Regression-first 證據：布林總數與布林作者 counter 修正前為 `2 failed`，
+  修正後為 `2 passed`；History、搜尋建議與相似音樂套件為 `31 passed`，完整
+  repository runner 為 `1502 passed, 7 skipped`。Quality audit 通過 Ruff
+  `366` 個 Python 檔與文字污染 `474` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣
+  `12 / 34 / 49`、依賴鎖 `10`、版本文件、Testing 版本與 Repository 外隔離
+  `compileall` 均通過。
+- 此修正只隔離外部 MOD 的畸形偏好回應，不改寫既有歷史檔。Testing `1.2.1`
+  與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.64（拉丁重音搜尋身分一致性）
+
+- 修正搜尋排序自 39.0.55 起會折疊拉丁重音，但最近搜尋、偏好建議與
+  `youtube-similar` 查詢計畫仍只用 NFKC＋casefold 去重的規則落差；
+  `Beyoncé`／`Beyonce` 可能被拆分計數、重複顯示，或占用三個查詢槽之一。
+- 核心排序與建議現在共用同一個 Unicode 搜尋文字身分；相似音樂 subprocess
+  保留等價的有界本機實作。只移除拉丁基底後的組合符號，其他文字系統的組合
+  符號仍保留，不縮減原有 CJK 與其他無空格文字能力。
+- Regression-first 證據：偏好計數合併、歷史建議去重及相似查詢槽三個案例在
+  修正前為 `3 failed`，修正後相關搜尋建議、排序與相似計畫套件為 `32 passed`；
+  定向搜尋、History、相似 MOD、內建雜湊與版本套件為 `85 passed`，完整
+  repository runner 為 `1505 passed, 7 skipped`。Quality audit 通過 Ruff
+  `367` 個 Python 檔與文字污染 `475` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣
+  `12 / 34 / 49`、依賴鎖 `10`、版本文件、Testing 版本與 Repository 外隔離
+  `compileall` 均通過。
+- 此修正不增加外部請求、頁面上限、Cookie 或下載能力。Testing `1.2.1` 與
+  `1.2.2` 保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.65（相似候選拉丁重音 token）
+
+- 修正 39.0.64 已統一查詢、偏好與計畫的拉丁重音身分，但相似候選的標題／
+  作者 token 仍只做 NFKC＋casefold 的最後一處規則落差；未輸入重音的公開搜尋
+  候選即使文字等價，也可能失去最多 35 分 title 或 30 分 artist 相關性。
+- `youtube-similar` token 現在使用相同的拉丁重音折疊後再切詞；語言、分類、
+  preference、去重、結果上限與穩定排序規則保持不變，其他文字系統的組合符號
+  仍保留。
+- Regression-first 證據：重音等價標題與作者案例修正前均只得語言＋分類
+  `25` 分並形成 `2 failed`；修正後完整相似音樂套件為 `18 passed`。定向相似、
+  搜尋身分、內建雜湊與版本套件為 `78 passed`，完整 repository runner 為
+  `1507 passed, 7 skipped`。Quality audit 通過 Ruff `367` 個 Python 檔與文字
+  污染 `475` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖
+  `10`、版本文件、Testing 版本與 Repository 外隔離 `compileall` 均通過。
+- 此修正只改善本機相似候選排序，不增加搜尋查詢、Cookie、下載或網站存取能力。
+  Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、
+  push 或發布。
+
+## 39.0.66（相似 token 欄位上限一致性）
+
+- 修正 39.0.65 讓 `tokens()` 改用預設 200 字元的文字身分 helper，卻沒有保留
+  DiscoveryItem 標題可達 300 字元的契約差異；第 201～300 字元內的標題 token
+  因而不再參與相似度計算。
+- 標題與作者相似度現在分別以契約上限 300／200 字元正規化與切詞；計畫查詢
+  既有 160／100 字元邊界、拉丁重音折疊、分數權重與結果上限保持不變。
+- Regression-first 證據：兩個 257 字元合法標題只在尾端共享 token，修正前候選
+  只得語言＋分類 `25` 分並形成 `1 failed`；修正後完整相似音樂套件為
+  `19 passed`。定向相似、搜尋身分、內建雜湊與版本套件為 `79 passed`，完整
+  repository runner 為 `1508 passed, 7 skipped`。Quality audit 通過 Ruff
+  `367` 個 Python 檔與文字污染 `475` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣
+  `12 / 34 / 49`、依賴鎖 `10`、版本文件、Testing 版本與 Repository 外隔離
+  `compileall` 均通過。
+- 此修正復原本機相似排序的契約覆蓋，不增加外部請求或網站能力。Testing
+  `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.67（YouTube 音樂詞形補充）
+
+- 修正本機查詢清理已把 `sound track` 正規化為 `soundtrack`，但 YouTube
+  搜尋 scope 尚未辨識 `soundtrack`／`OST`／`karaoke` 的跨模組詞彙落差；
+  明確音樂查詢會被重複附加 `music`，all scope 結果也可能誤標為 video。
+- 音樂訊號加入 `soundtrack`、`soundtracks`、`ost` 與 `karaoke`，沿用 39.0.61
+  的拉丁完整詞界；`post production` 與 `cloud cost` 不會因內含 `ost` 而誤判。
+- Regression-first 證據：四個明確詞形修正前為 `4 failed`，兩個內含字負例
+  保持通過；修正後完整 YouTube scope 套件為 `13 passed`。定向 YouTube scope、
+  內建雜湊、搜尋排序與版本套件為 `64 passed`，完整 repository runner 為
+  `1512 passed, 7 skipped`。Quality audit 通過 Ruff `367` 個 Python 檔與文字
+  污染 `475` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖
+  `10`、版本文件、Testing 版本與 Repository 外隔離 `compileall` 均通過。
+- 此修正只改善查詢限定與本機分類，不增加結果上限、重試、Cookie、下載或網站
+  權限。Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、
+  commit、push 或發布。
+
+## 39.0.68（YouTube music scope 查詢上限）
+
+- 修正顯式 music scope 在查詢未含音樂詞形時無條件附加 ` music`，使原本合法的
+  195–200 字元查詢超過 Search v2 既有 200 字元上限的契約落差。
+- 只有補上提示後仍不超過上限的查詢才會附加；194 字元查詢可補至剛好 200
+  字元，195 與 200 字元查詢保持原文，不截斷或靜默改寫使用者輸入。
+- Regression-first 證據：新增邊界案例修正前為 `1 failed`；修正後完整 YouTube
+  scope 套件為 `14 passed`。定向 scope、內建雜湊、YouTube MOD 矩陣、搜尋排序
+  與版本套件為 `65 passed`，完整 repository runner 為 `1513 passed, 7 skipped`。
+  Quality audit 通過 Ruff `367` 個 Python 檔與文字污染 `475` 個受控檔案；MOD
+  群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、Testing
+  版本與 Repository 外隔離 `compileall` 均通過，`Version/` 中有 `0` 個 `.pyc`。
+- 此修正不增加外部請求、Cookie、下載、重試或網站權限。Testing `1.2.1` 與
+  `1.2.2` 保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.69（搜尋智慧撇號身分）
+
+- 修正 YouTube metadata 常見的直撇號與 U+2018／U+2019 智慧撇號未使用同一
+  本機搜尋身分，造成同名作品排序落後、歷史建議重複及相似音樂有限查詢槽
+  被同一作者的標點變體占用。
+- 共用搜尋身分只在本機比較時正規化撇號；UI 顯示、歷史代表值與送往 provider
+  的查詢仍保留原始文字。隔離的 `youtube-similar` MOD 同步相同規則。
+- Regression-first 證據：排序、建議與相似計畫三條案例修正前為 `3 failed`，
+  修正後為 `3 passed`；搜尋排序、建議、歷史與相似音樂相關套件為 `61 passed`。
+  定向搜尋、歷史、相似、內建雜湊、YouTube MOD 矩陣與版本套件為 `91 passed`，
+  完整 repository runner 為 `1516 passed, 7 skipped`。Quality audit 通過 Ruff
+  `367` 個 Python 檔與文字污染 `475` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣
+  `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、Testing 版本與 Repository 外隔離
+  `compileall` 均通過，`Version/` 中有 `0` 個 `.pyc`。
+- 此修正不增加外部請求、Cookie、下載、重試或網站權限。Testing `1.2.1` 與
+  `1.2.2` 保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.70（搜尋排版破折號身分）
+
+- 修正 ASCII `-` 與常見排版連字號／破折號未使用同一本機搜尋身分，造成
+  同名作品排序落後、歷史建議重複及相似音樂有限查詢槽被同一作者占用。
+- 共用搜尋身分將 U+2010～U+2015 折疊為 ASCII `-`；UI 顯示、歷史代表值與
+  送往 provider 的查詢仍保留原始文字。隔離的 `youtube-similar` MOD 同步規則。
+- Regression-first 證據：排序、建議與相似計畫三條案例修正前為 `3 failed`，
+  修正後為 `3 passed`。定向搜尋、歷史、相似、內建雜湊、YouTube MOD 矩陣
+  與版本套件為 `94 passed`，完整 repository runner 為 `1519 passed, 7 skipped`。
+  Quality audit 通過 Ruff `367` 個 Python 檔與文字污染 `475` 個受控檔案；MOD
+  群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、Testing
+  版本與 Repository 外隔離 `compileall` 均通過，`Version/` 中有 `0` 個 `.pyc`。
+- 此修正不增加外部請求、Cookie、下載、重試或網站權限。Testing `1.2.1` 與
+  `1.2.2` 保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.71（YouTube Topic 頻道音樂分類）
+
+- 修正 all scope 只檢查查詢、標題、曲目、專輯、類型與分類，忽略 yt-dlp 已
+  回傳的 channel／uploader，導致一般標題的 YouTube 自動音樂頻道被誤標為
+  video，削弱後續相似音樂分類。
+- 新增嚴格的 `Artist - Topic` 頻道後綴訊號，同時支援 U+2010～U+2015 排版
+  連字號／破折號；只有前方具空白分隔且以 `Topic` 結尾才成立，`Topic World`、
+  `off-topic` 與空白頻道不會誤判。
+- Regression-first 證據：ASCII 與 en dash 正例修正前為 `2 failed`，同檔正負
+  案例修正後為 `19 passed`。定向搜尋、歷史、相似、內建雜湊、YouTube MOD
+  矩陣與版本套件為 `113 passed`，完整 repository runner 為
+  `1524 passed, 7 skipped`。Quality audit 通過 Ruff `367` 個 Python 檔與文字
+  污染 `475` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖
+  `10`、版本文件 `4`、Testing 版本與 Repository 外隔離 `compileall` 均通過，
+  `Version/` 中有 `0` 個 `.pyc`。
+- 此變更只使用搜尋結果既有 metadata，不增加網路請求、Cookie、登入、下載、
+  重試或網站權限。
+- Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、
+  push 或發布。
+
+## 39.0.72（搜尋連字號空格身分）
+
+- 修正 39.0.70 雖已統一 ASCII 與排版破折號，仍保留破折號兩側空格差異，導致
+  `Artist-Title` 與 `Artist - Title` 被視為不同搜尋身分。
+- 共用搜尋比較層會先折疊破折號字元，再移除其兩側空白；隔離的
+  `youtube-similar` MOD 同步相同規則。UI 顯示、歷史代表值及送往 provider 的
+  原始查詢均保持不變。
+- Regression-first 證據：同名排序、歷史建議與相似音樂計畫三條案例修正前為
+  `3 failed`，修正後為 `3 passed`。定向搜尋、歷史、相似、內建雜湊、YouTube
+  MOD 矩陣與版本套件為 `116 passed`，完整 repository runner 為
+  `1527 passed, 7 skipped`。Quality audit 通過 Ruff `367` 個 Python 檔與文字
+  污染 `475` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖
+  `10`、版本文件 `4`、Testing 版本與 Repository 外隔離 `compileall` 均通過，
+  `Version/` 中有 `0` 個 `.pyc`。
+- 此修正不增加外部請求、Cookie、下載、重試或網站權限。Testing `1.2.1` 與
+  `1.2.2` 保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.73（搜尋智慧雙引號身分）
+
+- 修正直雙引號與 U+201C／U+201D 左右智慧雙引號被視為不同搜尋身分，導致
+  同名結果排序失真、歷史建議重複及相似音樂浪費有限查詢槽的問題。
+- 共用搜尋比較層與隔離的 `youtube-similar` MOD 只在本機比較時將智慧雙引號
+  折疊為直雙引號；UI 顯示、歷史代表值及送往 provider 的原始查詢均保持不變。
+- Regression-first 證據：同名排序、歷史建議與相似音樂計畫三條案例修正前為
+  `3 failed`，修正後為 `3 passed`。定向搜尋、歷史、相似、內建雜湊、YouTube
+  MOD 矩陣與版本套件為 `119 passed`，完整 repository runner 為
+  `1530 passed, 7 skipped`。Quality audit 通過 Ruff `367` 個 Python 檔與文字
+  污染 `475` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖
+  `10`、版本文件 `4`、Testing 版本與 Repository 外隔離 `compileall` 均通過，
+  `Version/` 中有 `0` 個 `.pyc`。
+- 此修正不增加外部請求、Cookie、下載、重試或網站權限。Testing `1.2.1` 與
+  `1.2.2` 保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.74（相似音樂底線詞界）
+
+- 修正共用搜尋排序將底線視為詞界、但 `youtube-similar` 將其包含在單一 token
+  的規則落差。provider 回傳 `Hello_World` 類標題時，現在可與 `Hello World`
+  使用相同的兩個本機 token 計算相似度。
+- 變更只套用標題與作者的本機 token 化，不改寫媒體 ID、UI 顯示、provider
+  查詢或外部資料。
+- Regression-first 證據：底線標題案例修正前為 `1 failed`，只得到語言與分類
+  25 分；修正後為 `1 passed`，正確得到標題、語言與分類共 60 分。定向搜尋、
+  歷史、相似、內建雜湊、YouTube MOD 矩陣與版本套件為 `120 passed`，完整
+  repository runner 為 `1531 passed, 7 skipped`。Quality audit 通過 Ruff `367`
+  個 Python 檔與文字污染 `475` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣
+  `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、Testing 版本與 Repository 外隔離
+  `compileall` 均通過，`Version/` 中有 `0` 個 `.pyc`。
+- 此修正不增加外部請求、Cookie、下載、重試或網站權限。Testing `1.2.1` 與
+  `1.2.2` 保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.75（搜尋顯示選擇符身分）
+
+- 修正 U+FE0E／U+FE0F 文字／Emoji 顯示選擇符被納入本機搜尋身分，導致只差
+  呈現形式的文字被誤判為不同標題或作者。
+- 共用搜尋比較層與隔離的 `youtube-similar` MOD 只在比較時忽略顯示選擇符；
+  UI 顯示、歷史代表值及送往 provider 的原始查詢均保持不變。
+- Regression-first 證據：同名排序、歷史建議與相似音樂計畫三條案例修正前為
+  `3 failed`，修正後為 `3 passed`。定向搜尋、歷史、相似、內建雜湊、YouTube
+  MOD 矩陣與版本套件為 `123 passed`，完整 repository runner 為
+  `1534 passed, 7 skipped`。Quality audit 通過 Ruff `367` 個 Python 檔與文字
+  污染 `475` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖
+  `10`、版本文件 `4`、Testing 版本與 Repository 外隔離 `compileall` 均通過，
+  `Version/` 中有 `0` 個 `.pyc`。
+- 此修正不增加外部請求、Cookie、下載、重試或網站權限。Testing `1.2.1` 與
+  `1.2.2` 保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.76（lo-fi 排版連字號別名）
+
+- 修正查詢比較已統一排版破折號，但已知 `lo-fi → lofi` phrase alias 仍只接受
+  ASCII `-` 的規則落差。從網頁複製的 `lo‑fi`、`lo–fi` 與 `lo―fi` 現在會套用
+  相同的既有修正。
+- alias pattern 只將已知別名內的 `-` 擴充為 U+2010～U+2015，其他查詢中的
+  破折號不改寫，且保留前後完整詞界，因此 `flo–fi` 仍維持原文。
+- Regression-first 證據：排版正例修正前失敗、較長單字負例通過；修正後兩條
+  測試均通過。定向搜尋、歷史、相似、內建雜湊、YouTube MOD 矩陣與版本套件
+  為 `125 passed`，完整 repository runner 為 `1536 passed, 7 skipped`。Quality
+  audit 通過 Ruff `367` 個 Python 檔與文字污染 `475` 個受控檔案；MOD 群組
+  `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、Testing 版本與
+  Repository 外隔離 `compileall` 均通過，`Version/` 中有 `0` 個 `.pyc`。
+- 此修正不增加外部請求、Cookie、下載、重試或網站權限。Testing `1.2.1` 與
+  `1.2.2` 保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.77（搜尋 Unicode 負號身分）
+
+- 修正常見 U+2212 Unicode 負號 `−` 未納入既有連字號身分的規則落差；從網頁
+  或 metadata 複製的 `Artist − Title` 原本會失去精確排序、重複出現在搜尋建議，
+  並占用相似音樂有限查詢槽。
+- 共用搜尋比較層、`lo-fi` phrase alias 與隔離的 `youtube-similar` MOD 現在將
+  U+2212 折疊為 ASCII `-`。YouTube 搜尋也只在嚴格的 `Artist − Topic` 頻道
+  後綴接受此字元；一般負號文字不會因此被判定為 Topic 頻道。
+- Regression-first 證據：排序、建議、相似查詢與 `lo−fi` 別名四條案例修正前
+  為 `4 failed`；Topic 頻道參數化案例為 `1 failed, 2 passed`。修正後相同案例
+  為 `7 passed`。顯示、歷史代表值及送往 provider 的原始查詢保持不變。定向
+  套件為 `130 passed`，完整 repository runner 為 `1540 passed, 7 skipped`。
+  Quality audit 通過 Ruff `367` 個 Python 檔與文字污染 `475` 個受控檔案；MOD
+  群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、Testing
+  版本與 Repository 外隔離 `compileall` 均通過，`Version/` 中有 `0` 個 `.pyc`。
+- 此修正不增加外部請求、Cookie、下載、重試或網站權限。Testing `1.2.1` 與
+  `1.2.2` 保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.78（Bilibili 查詢準備一致性）
+
+- 修正 Bilibili 專用搜尋工作區未套用共用 `prepare_search_query` 的入口落差；
+  同一個 `LO-FI offical` 查詢原本在通用／YouTube 工作區會修正為
+  `lofi official`，但在 Bilibili 工作區仍以原字串派送。
+- Bilibili 文字搜尋現在會回填並派送準備後的查詢，也保留修正摘要供搜尋中
+  狀態顯示。官方 Bilibili URL 仍優先由既有 exact-site 路由辨識，不會被改寫。
+- Regression-first 證據：新增案例修正前為 `1 failed`，修正後為 `1 passed`；
+  五個相關套件為 `55 passed`，完整 repository runner 為
+  `1541 passed, 7 skipped`。Quality audit 通過 Ruff `367` 個 Python 檔與文字
+  污染 `475` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖
+  `10`、版本文件 `4`、Testing 版本與 Repository 外隔離 `compileall` 均通過，
+  `Version/` 中有 `0` 個 `.pyc`。
+- 不新增 provider、外部 fallback、Cookie、下載、重試或網站權限。
+- Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、
+  push 或發布。
+
+## 39.0.79（Bilibili 精確標題排序）
+
+- 修正 Bilibili 專用工作區合併結果後未套用共用本機相關性排序的入口落差；
+  provider 若先回傳 `Exact Match Remix`、再回傳完全同名的 `Exact Match`，
+  原本 UI 仍讓延伸標題排在前面。
+- 合併與官方來源過濾後，結果現在使用既有 `rank_search_results` 穩定排序。
+  完全同名可提升；相同分數仍保留 provider 原順序，追加分頁的已選 URL 也由
+  既有還原流程保留。
+- Regression-first 證據：新增案例修正前為 `1 failed`，修正後為 `1 passed`；
+  五個相關套件為 `56 passed`，完整 repository runner 為
+  `1542 passed, 7 skipped`。Quality audit 通過 Ruff `367` 個 Python 檔與文字
+  污染 `475` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖
+  `10`、版本文件 `4`、Testing 版本與 Repository 外隔離 `compileall` 均通過，
+  `Version/` 中有 `0` 個 `.pyc`。
+- 不新增外部請求、provider、fallback、Cookie、下載、重試或網站權限。
+- Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、
+  push 或發布。
+
+## 39.0.80（專用搜尋有界分頁終止）
+
+- 修正共用 `merge_search_results` 已將工作區限制為 200 筆，但 YouTube 與
+  Bilibili 專用工作區在達上限後仍保留 provider 下一頁游標的狀態落差；使用者
+  原本可繼續按「載入更多」，送出無法增加顯示結果的請求。
+- 兩個專用工作區現在於合併後共用檢查 `MAX_WORKSPACE_SEARCH_RESULTS`；達上限
+  即清除游標、停用下一頁操作，並在狀態文字顯示 `已達 200 筆上限`。未達上限
+  的正常分頁、失敗保留、去重、排序與選取還原行為不變。
+- Regression-first 證據：YouTube／Bilibili 兩條案例修正前為 `2 failed`，
+  修正後為 `2 passed`；六個相關套件為 `54 passed`，完整 repository runner
+  為 `1544 passed, 7 skipped`。Quality audit 通過 Ruff `367` 個 Python 檔與
+  文字污染 `475` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、
+  依賴鎖 `10`、版本文件 `4`、Testing 版本與 Repository 外隔離 `compileall`
+  均通過，`Version/` 中有 `0` 個 `.pyc`。
+- 不增加 provider、Cookie、下載、重試或網站權限。
+- Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、
+  push 或發布。
+
+## 39.0.81（引號標題 by 作者精確排序）
+
+- 修正常見的 `"標題" by 作者` 明確查詢仍只取得零散關鍵字分數的缺口；若
+  provider 先回傳把整句放入標題的延伸內容，真正分離在 `title`／`artist`
+  欄位的作品原本會排在後面。
+- 共用本機排序只新增嚴格的 `"{title}" by {artist}` 完整候選模板；既有雙引號
+  正規化同時涵蓋左右智慧引號。未加引號的 `by` 不作為欄位分隔符，
+  `Stand by Me` 等正式作品名稱不會被拆分；provider 查詢原文、外部請求與
+  其他分數保持不變。
+- Regression-first 證據：正例修正前為 `1 failed`，未加引號負例為 `1 passed`；
+  修正後兩條案例為 `2 passed`。七個相關套件為 `102 passed`，完整 repository
+  runner 為 `1546 passed, 7 skipped`。Quality audit 通過 Ruff `367` 個 Python
+  檔與文字污染 `475` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣
+  `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、Testing 版本與 Repository 外
+  隔離 `compileall` 均通過，`Version/` 中有 `0` 個 `.pyc`。
+- 不增加 provider、Cookie、下載、重試或網站權限。Testing `1.2.1` 與 `1.2.2`
+  保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.82（完整引號標題精確排序）
+
+- 修正使用者以成對雙引號搜尋完整曲名時，本機排序仍把引號視為標題內容的
+  缺口。`“Midnight Echo”` 原本無法讓未帶引號的正式 `Midnight Echo` 取得
+  完全相等順位，可能落在將引號整句放入標題的 `live cover` 後方。
+- 共用排序只在整個正規化查詢由成對雙引號包住時，額外建立去除最外層引號的
+  標題比較候選；既有智慧雙引號折疊與拉丁重音 fallback 同樣適用。未閉合引號、
+  查詢內部引號、UI 顯示及送往 provider 的原始查詢均不改寫。
+- Regression-first 證據：成對引號正例修正前為 `1 failed`，未閉合引號負例為
+  `1 passed`；修正後正負例、既有智慧引號與重音案例共 `4 passed`。七個相關
+  套件為 `104 passed`，完整 repository runner 為 `1548 passed, 7 skipped`。
+  Quality audit 通過 Ruff `367` 個 Python 檔與文字污染 `475` 個受控檔案；MOD
+  群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、Testing
+  版本與 Repository 外隔離 `compileall` 均通過，`Version/` 中有 `0` 個 `.pyc`。
+- 不增加 provider、Cookie、下載、重試或網站權限。Testing `1.2.1` 與 `1.2.2`
+  保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.83（引號曲名搭配作者精確排序）
+
+- 修正 39.0.81～82 只涵蓋整句引號標題及 `"標題" by 作者`，但常見的
+  `"標題" 作者`、`作者 "標題"`、`"標題" - 作者` 與反向破折號形式仍退回
+  零散關鍵字分數的缺口。
+- 嚴格跨欄位候選現在會同時使用原始完整標題及其成對引號形式，再套入既有
+  有限分隔符白名單與正向／反向排列。查詢仍必須完整等於 metadata 作者與完整
+  標題組合；`"Midnight" Nora Vale` 不會誤升為完整 `Midnight Echo` 的 100 分。
+- Regression-first 證據：四種正向／反向語法修正前形成 `1 failed`，部分曲名
+  負例為 `1 passed`；修正後加上 39.0.81～82 引號案例共 `5 passed`。七個相關
+  套件為 `106 passed`，完整 repository runner 為 `1550 passed, 7 skipped`。
+  Quality audit 通過 Ruff `367` 個 Python 檔與文字污染 `475` 個受控檔案；MOD
+  群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、Testing
+  版本與 Repository 外隔離 `compileall` 均通過，`Version/` 中有 `0` 個 `.pyc`。
+- 不改寫 provider 查詢，不增加外部請求、Cookie、下載、重試或網站權限。
+  Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、
+  push 或發布。
+
+## 39.0.84（完整引號作者精確排序）
+
+- 修正 39.0.82 的平衡引號候選只供標題精確比較使用，導致 `“Nora Vale”`
+  這類完整引號作者查詢仍可能排在標題提及該作者的內容之後。
+- 平衡引號候選改為標題／作者共用欄位候選；精確與 Unicode 折疊比較均沿用
+  相同有限規則。未閉合引號保持原文，不取得作者完全相等分數；provider 查詢
+  原文與外部請求行為不變。
+- Regression-first 證據：作者正例修正前為 `1 failed`，未閉合引號負例為
+  `1 passed`；修正後連同標題與重音案例共 `5 passed`。七個相關套件為
+  `108 passed`，完整 repository runner 為 `1552 passed, 7 skipped`。
+  Quality audit 通過 Ruff `367` 個 Python 檔與文字污染 `475` 個受控檔案；MOD
+  群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、Testing
+  版本與 Repository 外隔離 `compileall` 均通過，`Version/` 中有 `0` 個 `.pyc`。
+- 不增加 provider、Cookie、下載、重試或網站權限。Testing `1.2.1` 與 `1.2.2`
+  保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.85（引號作者搭配曲名精確排序）
+
+- 修正 39.0.83 的跨欄位候選只產生引號曲名，導致 39.0.84 雖可辨識單獨的
+  完整引號作者，`“Nora Vale” Midnight Echo` 等作者＋曲名查詢仍退回零散
+  關鍵字分數的缺口。
+- 完整 metadata 作者現在與完整標題一樣可產生成對引號候選，再套入既有有限
+  分隔符白名單與正向／反向排列；`“Nora Vale” “Midnight Echo”` 及
+  `“Midnight Echo” by “Nora Vale”` 亦維持嚴格完整欄位比較。部分作者不會被
+  誤升為完整匹配。
+- Regression-first 證據：多種完整引號作者語法修正前形成 `1 failed`，部分作者
+  負例為 `1 passed`；修正後連同既有引號欄位案例共 `6 passed`。七個相關套件
+  為 `110 passed`，完整 repository runner 為 `1554 passed, 7 skipped`。
+  Quality audit 通過 Ruff `367` 個 Python 檔與文字污染 `475` 個受控檔案；MOD
+  群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、Testing
+  版本與 Repository 外隔離 `compileall` 均通過，`Version/` 中有 `0` 個 `.pyc`。
+- 不改寫 provider 查詢，不增加外部請求、Cookie、下載、重試或網站權限。
+  Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、
+  push 或發布。
+
+## 39.0.86（東亞成對引號搜尋身分）
+
+- 修正 `「」`、`『』`、`《》`、`〈〉` 在共用排序、歷史建議及隔離的
+  `youtube-similar` MOD 中仍被視為不同文字身分，導致 `《曲名》` 無法提升
+  未加標記的正式標題，等價偏好也可能產生重複查詢的缺口。
+- 共用正規化只將完整配對且不含同型巢狀標記的內容轉為本機雙引號身分；錯配
+  `「曲名』` 維持原文。原始顯示、歷史代表值與送往 provider 的查詢均不改寫。
+  隔離 MOD 保留自含實作，並同步更新其 pinned SHA-256。
+- Regression-first 證據：排序、建議、相似搜尋正例修正前為 `3 failed`，錯配
+  標記負例為 `1 passed`；修正後共 `4 passed`。九個相關套件為
+  `126 passed, 1 skipped`，完整 repository runner 為
+  `1558 passed, 7 skipped`。Quality audit 通過 Ruff `367` 個 Python 檔與文字
+  污染 `475` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖
+  `10`、版本文件 `4`、Testing 版本與 Repository 外隔離 `compileall` 均通過，
+  `Version/` 中有 `0` 個 `.pyc`。
+- 不增加外部請求、Cookie、下載、重試或網站權限。Testing `1.2.1` 與 `1.2.2`
+  保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.87（補齊作者／標題有限分隔符）
+
+- 修正跨欄位候選重複列出已被共用正規化折疊為 `-` 的排版破折號，卻未涵蓋
+  常見 `/`、全形 `／`、日文中點 `・`，以及 `|`／`:` 單側空白形式的落差。
+- 候選改為正規化後的空白與連字號，加上 `|`、`:`、`·`、`・`、`/` 各四種
+  有限空白排列。只有完整 metadata 作者與完整標題的正向／反向組合能取得
+  跨欄位精確分數；不新增一般模糊切詞。
+- Regression-first 證據：新增分隔符正例修正前為 `1 failed`，部分作者負例為
+  `1 passed`；修正後連同舊分隔符與引號欄位案例共 `6 passed`。七個相關套件
+  為 `116 passed`，完整 repository runner 為 `1560 passed, 7 skipped`。
+  Quality audit 通過 Ruff `367` 個 Python 檔與文字污染 `475` 個受控檔案；MOD
+  群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、Testing
+  版本與 Repository 外隔離 `compileall` 均通過，`Version/` 中有 `0` 個 `.pyc`。
+- 不改寫 provider 查詢，不增加外部請求、Cookie、下載、重試或網站權限。
+  Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、
+  push 或發布。
+
+## 39.0.88（有限分隔符空白等價身分）
+
+- 修正 39.0.87 僅讓精確排序接受 `/`、`|`、`:`、`·`、`・` 的空白變體，
+  但共用歷史／偏好建議及隔離的 `youtube-similar` MOD 仍將
+  `Artist/Title`、`Artist / Title` 視為不同搜尋身分的跨模組落差。
+- 共用與隔離正規化只移除上述有限分隔符兩側的空白，保留分隔符本身；
+  `Artist Title` 仍是不同身分。排序候選改為只列出正規化後的七種分隔符，
+  不改寫 UI 顯示、歷史代表值或送往 provider 的查詢原文。
+- Regression-first 證據：搜尋建議、最近歷史及相似音樂三條案例修正前為
+  `3 failed`，修正後為 `3 passed`；搜尋排序、建議、歷史與相似音樂四個相關
+  套件為 `98 passed`，八個定向套件為 `126 passed`；完整 repository runner 為
+  `1563 passed, 7 skipped`。Quality audit 通過 Ruff `367` 個 Python 檔與文字
+  污染 `475` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖
+  `10`、版本文件 `4`、Testing 版本與 Repository 外隔離 `compileall` 均通過，
+  `Version/` 中有 `0` 個 `.pyc`。
+- 不增加外部請求、Cookie、下載、重試或網站權限。Testing `1.2.1` 與 `1.2.2`
+  保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
+## 39.0.89（lo-fi 空白破折號別名）
+
+- 修正共用搜尋身分已將連字號兩側空白視為同一排版，但送往 provider 前的既有
+  `lo-fi → lofi` 詞組修正仍只接受無空白連字號，造成 `lo - fi playlist` 沒有
+  套用既有別名的落差。
+- 詞組別名只在既有連字號位置接受零或多個空白，並沿用 ASCII、U+2010～U+2015
+  與 U+2212 白名單；完整詞界及 200 字元上限不變，`flo - fi`、
+  `lo - fighter` 等較長單字不會被改寫。
+- Regression-first 證據：四個空白連字號正例修正前為 `1 failed`，兩個較長單字
+  負例為 `1 passed`；最小修正後兩項為 `2 passed`。搜尋排序、YouTube／
+  Bilibili 工作區與版本定向回歸為 `92 passed`；完整 repository runner 為
+  `1565 passed, 7 skipped`。Quality audit 通過 Ruff `367` 個 Python 檔與文字
+  污染 `475` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖
+  `10`、版本文件 `4`、Testing 版本與 Repository 外隔離 `compileall` 均通過，
+  `Version/` 中有 `0` 個 `.pyc`。
+- 不增加外部請求、Cookie、下載、重試或網站權限。Testing `1.2.1` 與 `1.2.2`
+  保持不可變；本輪不執行 build、stage、commit、push 或發布。
+
 ## 39.0.11 Validation Baseline
 
 - 完整 repository runner：`1364 passed, 7 skipped`。
@@ -645,6 +1504,109 @@ Testing `1.2.2` 已由 Development `39.0.39` 的乾淨 source freeze
 audit、copied-folder current／previous／current smoke、deterministic ZIP、tag、
 prerelease 與全部附件 digest 均已驗證；Testing 1.2.1 的目錄、tag 與公開附件
 維持不可變。
+
+## 39.0.90（格式工廠本機影像浮水印）
+
+- 補齊格式工廠參考需求中的影片浮水印缺口；新增 `watermark-h264` preset 與
+  可信 UI 影像選擇欄，輸出 H.264／AAC 的 `.mp4` 或 `.mkv` 新檔。
+- 浮水印只接受使用者選取的單一 PNG／JPEG／WebP／BMP／TIFF 一般本機檔，
+  固定縮放上限與右下位置；不接受連結檔、網址、自訂 FFmpeg filter 或覆寫來源。
+- Regression-first 命令契約在修正前因 `ConversionRequest` 沒有 watermark 欄位而
+  `1 failed`；修正後命令契約、offscreen UI 與本機 FFmpeg smoke 為 `3 passed`；
+  五個定向套件為 `69 passed, 1 skipped`，完整 repository runner 為
+  `1567 passed, 7 skipped`。
+- 文件、DVD 與 CD 不屬於目前 FFmpeg 媒體工作區，不宣稱為已支援。Testing
+  `1.2.1` 與 `1.2.2` 保持不可變；本輪不執行 build、stage、commit、push 或發布。
+- Quality audit 通過 Ruff `367` 個 Python 檔與文字污染 `475` 個受控檔案；MOD
+  群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、兩個
+  Testing 版本、Repository 外隔離 `compileall` 與 `git diff --check` 均通過，
+  `Version/` 中有 `0` 個 `.pyc`。
+
+## 39.0.91（YouTube flat-search 片長契約隔離）
+
+- Root Cause：`youtube-search` 直接對 yt-dlp flat metadata 的任意數值執行
+  `int()`；`NaN` 會中止整頁搜尋，而布林、負值與超過 86400 秒的值會違反
+  `DiscoveryItemV1` 契約。
+- 在 MOD 邊界新增有界片長正規化；只接受有限的 `int`／`float` 0～86400 秒，
+  其餘值降為 `None`。不改查詢、結果順序、URL、下載或 Cookie 行為。
+- Regression-first 案例修正前為 `1 failed`，修正後為 `1 passed`；七個定向
+  套件為 `127 passed`，完整 repository runner 為 `1568 passed, 7 skipped`。
+- `youtube-search/provider.py` 的內建 pinned SHA-256 已同步；Testing `1.2.1` 與
+  `1.2.2` 保持不可變。本輪不執行 build、stage、commit、push 或發布。
+- Quality audit 通過 Ruff `367` 個 Python 檔與文字污染 `476` 個受控檔案；MOD
+  群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、兩個
+  Testing 版本、Repository 外隔離 `compileall` 與 `git diff --check` 均通過，
+  `Version/` 中有 `0` 個 `.pyc`。
+
+## 39.0.92（YouTube Music songs scope）
+
+- Root Cause：顯式 `music` scope 與相似音樂查詢雖已正確標為音樂，底層仍只把
+  `music` 文字加到一般 YouTube `ytsearch`，未使用目前鎖定 yt-dlp 已提供的
+  YouTube Music songs extractor。
+- `music` scope 現在以標準 URL 編碼建立
+  `https://music.youtube.com/search?...#songs` 目標；`playlistend`、offset 與
+  200 筆上限不變。`all`／`video` 仍使用原本的 bounded `ytsearch`。
+- 已移除被 songs extractor 吸收的 query-hint helper 與其測試，保留音樂訊號在
+  `all` scope 的本機分類用途；沒有新增 API key、Cookie、登入、下載或 fallback。
+- Regression-first 路由案例修正前為 `1 failed`，修正後 YouTube scope／MOD
+  matrix 為 `29 passed`；七個呼叫鏈定向套件為 `119 passed`，完整 repository
+  runner 為 `1569 passed, 7 skipped`。
+- `youtube-search/provider.py` 的內建 pinned SHA-256 已同步；Testing `1.2.1` 與
+  `1.2.2` 保持不可變。本輪不執行 build、stage、commit、push 或發布。
+- Quality audit 通過 Ruff `367` 個 Python 檔與文字污染 `476` 個受控檔案；MOD
+  群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、兩個
+  Testing 版本、Repository 外隔離 `compileall` 與 `git diff --check` 均通過，
+  `Version/` 中有 `0` 個 `.pyc`。
+
+## 39.0.93（H.265 Main10 NVENC／Opus Passthru MKV）
+
+- 新增 `hevc10-nvenc-opus-copy` 格式工廠 preset，固定輸出 `.mkv`；影片使用
+  `hevc_nvenc` Main10／`p010le`、p7 Slowest、HQ、VBR 平均 300 kbps、完整解析度
+  multipass、32-frame lookahead、Spatial／Temporal AQ，音訊使用 `copy`。
+- 不指定輸出解析度或固定 FPS，並明確不加入縮放、裁切、`-vf`、`-af` 或
+  filter graph；1920×1080／24 FPS 來源因此保持原尺寸與時間戳。
+- UI 只有在本機能力偵測到 `hevc_nvenc` 後才允許加入；服務層再以 ffprobe 確認
+  第一條來源音訊是 Opus。非 Opus、無音訊或缺少 NVENC 時明確拒絕，不做 CPU
+  fallback，也不以其他音訊編碼冒充 Passthru。
+- Regression-first 四條定向案例在實作前為 `4 failed`；完成後的相關套件為
+  `76 passed, 2 skipped`，完整 Repository runner 為 `1571 passed, 7 skipped`。
+  Quality audit 通過 Ruff `367` 個 Python 檔與文字污染 `476` 個受控檔案；MOD
+  群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、兩個
+  Testing 版本、Repository 外隔離 `compileall` 與 `git diff --check` 均通過。
+- 本機 FFmpeg 實測的短片輸出為 HEVC Main 10／`yuv420p10le`、Opus、Matroska，
+  來源與輸出 Opus packet SHA-256 相同；另以 1920x1080／24 FPS 樣本確認輸出仍為
+  1920x1080／24 FPS。這些測試只驗證目前機器的 NVIDIA／FFmpeg 路徑，不代表所有
+  GPU 與驅動組合均相容。
+- Testing `1.2.1` 與 `1.2.2` 保持不可變；本輪未獲授權 build、stage、commit、
+  push 或發布。
+
+## 39.0.94（H.265 Main10 輸出契約與量測式優化）
+
+- 以同一份 4 秒 1920x1080／24 FPS 樣本、相同 FFmpeg／GPU 路徑比較候選參數。
+  既有 p7／HQ 組合為 VMAF `62.479828`、SSIM `0.954483`；加入 B-reference、
+  UHQ、lookahead level 3 或改變 AQ strength 都降低其中一項或兩項品質指標，
+  lookahead 64 則與既有輸出完全相同，因此保留 39.0.93 的編碼參數。額外加入
+  300 kbps maxrate／600 kbps buffer 後，同一樣本由 `227806` 增為 `229185`
+  bytes，而 VMAF 只增加 `0.044476`，沒有檔案大小效益，因此不採用硬上限。
+- `hevc10-nvenc-opus-copy` 新增資料驅動 `output_contract`。FFmpeg 成功後、原子
+  提交前必須由 ffprobe 確認 Matroska、HEVC、Main 10、10-bit pixel format、
+  Opus、來源解析度與固定影格率，且來源／輸出 Opus 壓縮封包 SHA-256 必須
+  相同；欄位缺漏、規格偏離或封包雜湊改變都視為失敗並移除 `.part`。
+- 契約 schema 只接受有限已知欄位與型別，其他格式日後可重用相同機制；一般
+  preset 沒有宣告契約時維持原本「非空且至少一條可讀 stream」驗證。
+- ffprobe 與 Opus 封包雜湊沿用背景工作的取消事件；驗證中取消會終止子程序、
+  移除 `.part`，不會等候最長 300 秒雜湊 timeout 或留下半成品。
+- Regression-first 案例實作前為 `1 failed`；輸出契約定向案例為 `11 passed`，
+  完整轉換服務為 `59 passed, 1 skipped`，完整 Repository runner 為
+  `1592 passed, 7 skipped`。Quality audit 通過 Ruff `367` 個 Python 檔與
+  文字污染 `476` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、
+  依賴鎖 `10`、版本文件 `4`、兩個 Testing 版本、Repository 外隔離
+  `compileall` 與 `git diff --check` 均通過，`Version/` 中有 `0` 個 `.pyc`。
+- 實機服務以 1920x1080／24 FPS／Opus 樣本再次產生 `227806` bytes 的 HEVC
+  Main 10／`yuv420p10le`／Opus Matroska，並由新增 Gate 完成來源／輸出 Opus
+  封包 SHA-256 比對；這是目前機器的本機證據，不代表所有 GPU／驅動組合。
+- Testing `1.2.1` 與 `1.2.2` 保持不可變；Testing `1.2.3` 保留給此 source
+  freeze 的本機未簽署 `SAFE_MODE` 候選。本輪不 push、不簽署、不發布。
 
 ## 40.0
 

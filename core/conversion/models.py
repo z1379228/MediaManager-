@@ -32,6 +32,10 @@ class ConversionCapabilities:
     def supports_h264_nvenc(self) -> bool:
         return "h264_nvenc" in self.encoders
 
+    @property
+    def supports_hevc_nvenc(self) -> bool:
+        return "hevc_nvenc" in self.encoders
+
 
 @dataclass(frozen=True, slots=True)
 class ConversionRequest:
@@ -42,6 +46,7 @@ class ConversionRequest:
     end_time: float | None = None
     hardware_acceleration: bool = False
     remove_ranges: tuple[tuple[float, float], ...] = ()
+    watermark: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)

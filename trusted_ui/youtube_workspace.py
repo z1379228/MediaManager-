@@ -26,7 +26,11 @@ from trusted_ui.media_preview_controls import (
     PreviewSource,
     create_media_preview_controls,
 )
-from trusted_ui.search_paging import merge_search_results, provider_next_cursor
+from trusted_ui.search_paging import (
+    MAX_WORKSPACE_SEARCH_RESULTS,
+    merge_search_results,
+    provider_next_cursor,
+)
 from trusted_ui.thumbnail_loader import create_thumbnail_loader
 
 
@@ -911,7 +915,12 @@ def create_youtube_workspace(
             )
             added_count = len(self.source_results) - previous_count
             self.results = self.ordered_visible_results()
-            if not response.failures:
+            at_result_limit = (
+                len(self.source_results) >= MAX_WORKSPACE_SEARCH_RESULTS
+            )
+            if at_result_limit:
+                self.next_cursor = ""
+            elif not response.failures:
                 self.next_cursor = provider_next_cursor(
                     response, YOUTUBE_SEARCH_PROVIDER_ID
                 )
@@ -939,7 +948,13 @@ def create_youtube_workspace(
                 self.status.setText(f"YouTube 搜尋失敗：{message}")
             elif self.source_results:
                 suffix = f"；已略過 {rejected} 筆非官方來源" if rejected else ""
-                paging = "；可繼續載入" if self.next_cursor else "；已到結果尾端"
+                paging = (
+                    f"；已達 {MAX_WORKSPACE_SEARCH_RESULTS} 筆上限"
+                    if at_result_limit
+                    else "；可繼續載入"
+                    if self.next_cursor
+                    else "；已到結果尾端"
+                )
                 if operation == "similar":
                     self.status.setText(
                         f"找到 {len(self.results)} 筆相似音樂候選"

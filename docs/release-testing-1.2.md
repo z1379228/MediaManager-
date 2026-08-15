@@ -1,6 +1,20 @@
-# MediaManager Testing 1.2.2 發行紀錄
+# MediaManager Testing 1.2.3 候選與 1.2.x 發行紀錄
 
-## 發行身分
+## Testing 1.2.3 本機候選
+
+- 軌道：Testing
+- Testing 身分：`1.2.3`
+- 來源：Development `39.0.94` 的乾淨 source freeze
+- 資料夾：`Version/Testing/1.2.3`
+- 內容：39.0.40～39.0.94 的搜尋、歷史、工作區與格式工廠修正，包含具輸出
+  契約與 Opus 封包雜湊保證的 H.265 Main10 NVENC preset
+- 信任狀態：未簽署、`SAFE_MODE`、非 Stable
+- 發布狀態：只建立本機 staged runtime 與自包含 ZIP；不 push、不簽署、不發布
+- 相容性：既有 Testing `1.2.2` 及更早目錄、tag、附件與雜湊維持不可變
+
+以下保留 Testing `1.2.2` 已發布基線的完整發行證據。
+
+## Testing 1.2.2 發行身分
 
 - 軌道：Testing
 - Testing 身分：`1.2.2`

@@ -43,6 +43,7 @@ def test_format_factory_has_consistent_name_and_expanded_format_types() -> None:
         "audio-wav",
         "image-bmp",
         "image-tiff",
+        "watermark-h264",
     }.issubset(document["presets"])
 
 

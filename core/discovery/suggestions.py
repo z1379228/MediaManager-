@@ -5,6 +5,11 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from contracts.history_v1 import HistoryEventV1, HistoryPreferencesV1
+from core.discovery.text_normalization import normalized_search_text
+
+
+def _normalized_query_key(value: str) -> str:
+    return normalized_search_text(value)
 
 
 def recent_history_queries(
@@ -20,9 +25,11 @@ def recent_history_queries(
     queries: list[str] = []
     seen: set[str] = set()
     for event in events:
+        if getattr(event, "event_type", "") != "search":
+            continue
         value = getattr(event, "query", "")
         query = " ".join(value.split()) if isinstance(value, str) else ""
-        key = query.casefold()
+        key = _normalized_query_key(query)
         if not query or key in seen:
             continue
         seen.add(key)
@@ -46,7 +53,16 @@ def preference_search_queries(
     def top(values: dict[str, int]) -> str:
         if not values:
             return ""
-        return max(values.items(), key=lambda item: (item[1], item[0]))[0]
+        aggregated: dict[str, tuple[str, int]] = {}
+        for value, count in values.items():
+            key = _normalized_query_key(value)
+            if not key:
+                continue
+            representative, total = aggregated.get(key, (value, 0))
+            aggregated[key] = (representative, total + count)
+        if not aggregated:
+            return ""
+        return max(aggregated.values(), key=lambda item: (item[1], item[0]))[0]
 
     artist = top(preferences.artists)
     language = top(preferences.languages)
@@ -60,17 +76,27 @@ def preference_search_queries(
         candidates.append(category or language)
     if content_type:
         candidates.append({"music": "音樂", "video": "影片"}.get(content_type, content_type))
-    candidates.extend(event.query for event in events)
 
     result: list[str] = []
     seen: set[str] = set()
-    for raw in candidates:
+
+    def add(raw: object) -> bool:
+        if not isinstance(raw, str):
+            return False
         value = " ".join(raw.split())[:200]
-        key = value.casefold()
+        key = _normalized_query_key(value)
         if not value or key in seen:
-            continue
+            return False
         seen.add(key)
         result.append(value)
-        if len(result) >= bounded:
+        return len(result) >= bounded
+
+    for raw in candidates:
+        if add(raw):
+            return tuple(result)
+    for event in events:
+        if getattr(event, "event_type", "") != "search":
+            continue
+        if add(getattr(event, "query", "")):
             break
     return tuple(result)

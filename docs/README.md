@@ -4,7 +4,7 @@
 逐版重複日誌與退役功能說明已從目前樹移除；必要時由 Git 歷史或 GitHub Releases
 追查，不另建第二份歷史索引。
 
-- 目前來源版本為開發版 39.0（核心相容版本 39.0.39）。
+- 目前來源版本為開發版 39.0（核心相容版本 39.0.94）。
 - Development 40.0 仍是 `NO PLAN / NO RELEASE`。
 - Testing `1.2.0` 已由 Development `39.0.11` 建立本機歷史封存，保留於
   `Version/Testing/1.2`，未建立 GitHub Release。
@@ -38,6 +38,7 @@
 - [第三方 MOD 開發指南](mod-developer-guide.md)
 - [MOD 套件格式](mod-package-v1.md)
 - [Search／Download Adapter SDK](adapter-sdk.md)
+- [YouTube 搜尋 MOD 強化計畫](youtube-search-mod-plan.md)
 - [Repository 根目錄快速入口](../MOD-DEVELOPMENT.md)
 
 ## 維護與發行
@@ -45,7 +46,7 @@
 - [版本資料夾與三軌政策](version-layout.md)
 - [GitHub 免安裝自包含 ZIP](self-contained-zip.md)
 - [Development 39.0–40.0 更新紀錄](release-39.0-40.0.md)
-- [Testing 1.2.2 發行紀錄與 1.2.0／1.2.1 歷史](release-testing-1.2.md)
+- [Testing 1.2.3 候選與 1.2.x 發行紀錄](release-testing-1.2.md)
 - [Testing 1.1 說明](release-testing-1.1.md)
 - [簽章與發行 Gate](release-signing.md)
 - [GitHub 自動檢查與合併](github-auto-merge.md)

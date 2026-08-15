@@ -62,6 +62,61 @@ def _select_combo_data(combo: object, value: object) -> None:
     combo.setCurrentIndex(index)
 
 
+def test_youtube_workspace_stops_paging_at_workspace_result_limit(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    context = SimpleNamespace(
+        discovery=SimpleNamespace(
+            statuses=lambda: (
+                ProviderStatus("youtube-search", "YouTube Search", True),
+            ),
+            is_enabled=lambda provider_id: provider_id == "youtube-search",
+            video_preview_provider=Mock,
+        ),
+        download_providers=SimpleNamespace(
+            is_enabled=lambda provider_id: provider_id == "youtube",
+            provider_for=Mock,
+        ),
+        events=None,
+        audit=None,
+    )
+    workspace = create_youtube_workspace(context, lambda _urls: None)
+    try:
+        workspace.last_query = "bounded"
+        items = tuple(
+            _item(
+                str(index),
+                f"https://www.youtube.com/watch?v={index}",
+                f"Bounded result {index}",
+            )
+            for index in range(200)
+        )
+        response = FederatedSearchResult(
+            items,
+            (),
+            ("youtube-search",) * len(items),
+            (("youtube-search", "next-token"),),
+        )
+
+        workspace.show_results(0, response, "")
+
+        assert len(workspace.source_results) == 200
+        assert workspace.next_cursor == ""
+        assert not workspace.more_button.isEnabled()
+        assert "已達 200 筆上限" in workspace.status.text()
+    finally:
+        workspace.shutdown()
+        workspace.close()
+        workspace.deleteLater()
+        app.processEvents()
+
+
 def test_youtube_workspace_accepts_only_exact_official_https_hosts() -> None:
     accepted = {
         "https://youtube.com/watch?v=one": "YouTube",

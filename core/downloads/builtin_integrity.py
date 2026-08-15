@@ -11,7 +11,7 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
     },
     "media-convert": {
         "feature.json": "94acc1e77de17499ae118c2c89f3430f3b04721772851823841376c490f62946",
-        "presets.json": "f22eb6ea674e5993d3ca4993c3767247d317c63a84e7c676b1955e4dc3c7b564",
+        "presets.json": "441af528c087d891f0d7e8aea27731dafb5e50870323938612cc576e4bbb9956",
     },
     "media-ad-trim": {
         "feature.json": "49db63e4ae5e3b499702603537bd21495797dfe19e69f588f3570d97c510e69e",
@@ -123,7 +123,7 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "provider.json": "459f4faf6631165c49e93eb568afb91ab2bba0eb4c47b87dde3dadc467293a9e",
     },
     "youtube-similar": {
-        "provider.py": "58132d87a56974956108fe9734a4f6c922c83b57ed3c82c6315f70ef6d0b29d4",
+        "provider.py": "306fa34ec2cf75c334b254ed8bf5f58e6f96d2c3f9e0506aded738966b238437",
         "provider.json": "3c0d3b5d558562f16700d3508099489ba4249bb183612e56e94003e309ffbd45",
     },
     "youtube-recovery": {
@@ -135,7 +135,7 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "provider.json": "245272699a641df727f3d67b09b42d2d2bad0d0f5ea00a4086700300bfe1800a",
     },
     "youtube-search": {
-        "provider.py": "fbb4c9271212ea4e95d2d81c4cfd0958632ee284c9c945b6c797236d9bdb344e",
+        "provider.py": "26062580dd3dd1b8ba102ed8f35736304f723c32d1a62f1972cf039bcea8fea6",
         "provider.json": "9f6dd836093f3a5a549335812af2ea8d979474c453711cd8cc17253683b94254",
     },
     "youtube": {

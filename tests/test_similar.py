@@ -133,6 +133,365 @@ def test_similar_mod_prioritizes_the_selected_artist_and_title_together() -> Non
         provider.close()
 
 
+def test_similar_mod_uses_exact_title_when_artist_metadata_is_missing() -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    try:
+        plan = provider.similar_plan(
+            item(title="Instrumental Track", artist=""),
+            HistoryPreferencesV1(0, 0, {}, {}, {}, {}),
+        )
+
+        assert plan.queries[0] == "Instrumental Track"
+        assert "Instrumental Track related" in plan.queries
+        assert len(plan.queries) <= 3
+    finally:
+        provider.close()
+
+
+def test_similar_mod_deduplicates_unicode_equivalent_plan_queries() -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    original = replace(
+        item(title="Artist music", artist="Artist"),
+        category="ＭＵＳＩＣ",
+    )
+    try:
+        plan = provider.similar_plan(
+            original,
+            HistoryPreferencesV1(0, 0, {}, {}, {}, {}),
+        )
+
+        assert plan.queries == (
+            "Artist music",
+            "Artist music related",
+            "zh-TW ＭＵＳＩＣ",
+        )
+    finally:
+        provider.close()
+
+
+def test_similar_mod_deduplicates_latin_diacritic_artist_preferences() -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    try:
+        plan = provider.similar_plan(
+            item(title="Stay", artist="Beyoncé"),
+            HistoryPreferencesV1(
+                1,
+                0,
+                {},
+                {},
+                {"Beyonce": 1},
+                {},
+            ),
+        )
+
+        assert plan.queries == (
+            "Beyoncé Stay",
+            "Beyoncé music",
+            "Stay related",
+        )
+    finally:
+        provider.close()
+
+
+def test_similar_mod_deduplicates_smart_apostrophe_artist_preferences() -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    try:
+        plan = provider.similar_plan(
+            item(title="November Rain", artist="Guns N’ Roses"),
+            HistoryPreferencesV1(
+                1,
+                0,
+                {},
+                {},
+                {"Guns N' Roses": 1},
+                {},
+            ),
+        )
+
+        assert plan.queries == (
+            "Guns N’ Roses November Rain",
+            "Guns N’ Roses music",
+            "November Rain related",
+        )
+    finally:
+        provider.close()
+
+
+def test_similar_mod_deduplicates_typographic_dash_artist_preferences() -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    try:
+        plan = provider.similar_plan(
+            item(title="Thunderstruck", artist="AC\u2013DC"),
+            HistoryPreferencesV1(
+                1,
+                0,
+                {},
+                {},
+                {"AC-DC": 1},
+                {},
+            ),
+        )
+
+        assert plan.queries == (
+            "AC\u2013DC Thunderstruck",
+            "AC\u2013DC music",
+            "Thunderstruck related",
+        )
+    finally:
+        provider.close()
+
+
+def test_similar_mod_deduplicates_unicode_minus_artist_preferences() -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    try:
+        plan = provider.similar_plan(
+            item(title="Thunderstruck", artist="AC−DC"),
+            HistoryPreferencesV1(
+                1,
+                0,
+                {},
+                {},
+                {"AC-DC": 1},
+                {},
+            ),
+        )
+
+        assert plan.queries == (
+            "AC−DC Thunderstruck",
+            "AC−DC music",
+            "Thunderstruck related",
+        )
+    finally:
+        provider.close()
+
+
+def test_similar_mod_deduplicates_hyphen_spacing_artist_preferences() -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    try:
+        plan = provider.similar_plan(
+            item(title="Thunderstruck", artist="AC – DC"),
+            HistoryPreferencesV1(
+                1,
+                0,
+                {},
+                {},
+                {"AC-DC": 1},
+                {},
+            ),
+        )
+
+        assert plan.queries == (
+            "AC – DC Thunderstruck",
+            "AC – DC music",
+            "Thunderstruck related",
+        )
+    finally:
+        provider.close()
+
+
+def test_similar_mod_deduplicates_east_asian_quote_artist_preferences() -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    try:
+        plan = provider.similar_plan(
+            item(title="Hello", artist="「Nora Vale」"),
+            HistoryPreferencesV1(
+                1,
+                0,
+                {},
+                {},
+                {'"Nora Vale"': 1},
+                {},
+            ),
+        )
+
+        assert plan.queries == (
+            "「Nora Vale」 Hello",
+            "「Nora Vale」 music",
+            "Hello related",
+        )
+    finally:
+        provider.close()
+
+
+def test_similar_mod_deduplicates_smart_double_quote_artist_preferences() -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    try:
+        plan = provider.similar_plan(
+            item(title="Hello", artist="The “Band”"),
+            HistoryPreferencesV1(
+                1,
+                0,
+                {},
+                {},
+                {'The "Band"': 1},
+                {},
+            ),
+        )
+
+        assert plan.queries == (
+            "The “Band” Hello",
+            "The “Band” music",
+            "Hello related",
+        )
+    finally:
+        provider.close()
+
+
+def test_similar_mod_deduplicates_emoji_variation_selector_preferences() -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    try:
+        plan = provider.similar_plan(
+            item(title="Hello", artist="Band❤️"),
+            HistoryPreferencesV1(
+                1,
+                0,
+                {},
+                {},
+                {"Band❤": 1},
+                {},
+            ),
+        )
+
+        assert plan.queries == (
+            "Band❤️ Hello",
+            "Band❤️ music",
+            "Hello related",
+        )
+    finally:
+        provider.close()
+
+
+@pytest.mark.parametrize(
+    ("original", "candidate", "reason", "score"),
+    (
+        (
+            item(title="Café", artist="Alpha"),
+            item("title-accent", title="Cafe", artist="Beta"),
+            "title",
+            60,
+        ),
+        (
+            item(title="Halo", artist="Beyoncé"),
+            item("artist-accent", title="Different", artist="Beyonce"),
+            "artist",
+            55,
+        ),
+    ),
+)
+def test_similar_mod_scores_latin_diacritic_equivalent_tokens(
+    original: DiscoveryItemV1,
+    candidate: DiscoveryItemV1,
+    reason: str,
+    score: int,
+) -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    try:
+        results = provider.rank_similar(
+            original,
+            (candidate,),
+            HistoryPreferencesV1(0, 0, {}, {}, {}, {}),
+            limit=1,
+        )
+
+        assert len(results) == 1
+        assert results[0].score == score
+        assert reason in results[0].reasons
+    finally:
+        provider.close()
+
+
+def test_similar_mod_treats_title_underscores_as_token_boundaries() -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    try:
+        results = provider.rank_similar(
+            item(title="Hello World", artist="Alpha"),
+            (item("underscored", title="Hello_World", artist="Beta"),),
+            HistoryPreferencesV1(0, 0, {}, {}, {}, {}),
+            limit=1,
+        )
+
+        assert len(results) == 1
+        assert results[0].score == 60
+        assert results[0].reasons == ("title", "language", "category")
+    finally:
+        provider.close()
+
+
+def test_similar_mod_scores_tokens_at_the_end_of_contract_length_titles() -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    original = item(title=f"{'x' * 250} shared", artist="Alpha")
+    candidate = item(
+        "long-title",
+        title=f"{'y' * 250} shared",
+        artist="Beta",
+    )
+    try:
+        results = provider.rank_similar(
+            original,
+            (candidate,),
+            HistoryPreferencesV1(0, 0, {}, {}, {}, {}),
+            limit=1,
+        )
+
+        assert len(results) == 1
+        assert results[0].score == 37
+        assert "title" in results[0].reasons
+    finally:
+        provider.close()
+
+
 def test_similar_mod_returns_multiple_ranked_results_with_fallbacks() -> None:
     root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
     provider = SubprocessDownloadProvider(
@@ -171,6 +530,129 @@ def test_similar_mod_returns_multiple_ranked_results_with_fallbacks() -> None:
     assert results[-1].score == 5
     assert results[-1].reasons == ("search-query",)
     provider.close()
+
+
+def test_similar_mod_applies_unicode_equivalent_artist_preferences() -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    unicode_preferences = HistoryPreferencesV1(
+        1,
+        1,
+        {},
+        {},
+        {"ＡＩＭＥＲ": 7},
+        {},
+    )
+    try:
+        results = provider.rank_similar(
+            item(title="Seed", artist="Different Artist"),
+            (item("candidate", "Unrelated Song", "aimer"),),
+            unicode_preferences,
+            limit=1,
+        )
+
+        assert len(results) == 1
+        assert "preference" in results[0].reasons
+    finally:
+        provider.close()
+
+
+def test_similar_mod_uses_unicode_equivalent_artist_identity() -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    unicode_artist = item(title="Seed", artist="ＡＩＭＥＲ")
+    halfwidth_artist = item("candidate", "Different Song", "Aimer")
+    artist_preferences = HistoryPreferencesV1(
+        1,
+        1,
+        {},
+        {},
+        {"Aimer": 4},
+        {},
+    )
+    try:
+        plan = provider.similar_plan(unicode_artist, artist_preferences)
+        results = provider.rank_similar(
+            unicode_artist,
+            (halfwidth_artist,),
+            artist_preferences,
+            limit=1,
+        )
+
+        assert "Aimer music" not in plan.queries
+        assert len(results) == 1
+        assert "artist" in results[0].reasons
+    finally:
+        provider.close()
+
+
+def test_similar_mod_deduplicates_field_separator_spacing_identity() -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    try:
+        equivalent_plan = provider.similar_plan(
+            item(title="Seed", artist="Nora Vale / Midnight Echo"),
+            HistoryPreferencesV1(
+                1,
+                1,
+                {},
+                {},
+                {"Nora Vale/Midnight Echo": 4},
+                {},
+            ),
+        )
+        distinct_plan = provider.similar_plan(
+            item(title="Seed", artist="Nora Vale / Midnight Echo"),
+            HistoryPreferencesV1(
+                1,
+                1,
+                {},
+                {},
+                {"Nora Vale Midnight Echo": 3},
+                {},
+            ),
+        )
+
+        assert "Nora Vale/Midnight Echo music" not in equivalent_plan.queries
+        assert "Nora Vale Midnight Echo music" in distinct_plan.queries
+    finally:
+        provider.close()
+
+
+def test_similar_mod_normalizes_language_and_category_identity() -> None:
+    root = Path(__file__).parents[1] / "mod" / "builtin" / "youtube-similar"
+    provider = SubprocessDownloadProvider(
+        root,
+        application_root=Path(__file__).parents[1],
+    )
+    original = item(title="Seed Melody", artist="Alpha")
+    compatible_metadata = replace(
+        item("compatible", "Different Track", "Beta"),
+        language="ＺＨ－ＴＷ",
+        category="ＭＵＳＩＣ",
+    )
+    try:
+        results = provider.rank_similar(
+            original,
+            (compatible_metadata,),
+            HistoryPreferencesV1(0, 0, {}, {}, {}, {}),
+            limit=1,
+        )
+
+        assert len(results) == 1
+        assert results[0].score == 25
+        assert results[0].reasons == ("language", "category")
+    finally:
+        provider.close()
 
 
 def test_similar_mod_plans_and_scores_a_transformed_music_seed() -> None:

@@ -10,11 +10,16 @@ from urllib.parse import urlencode, urlsplit
 from contracts.discovery_v1 import DiscoveryItemV1
 from contracts.playlist_v1 import PlaylistEntryV1
 from core.discovery.adapters import FederatedSearchResult
+from core.discovery.query_ranking import prepare_search_query, rank_search_results
 from core.localization import normalized_core_locale
 from core.mod_groups import load_builtin_mod_group
 from core.site_routing import classify_site_url
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
-from trusted_ui.search_paging import merge_search_results, provider_next_cursor
+from trusted_ui.search_paging import (
+    MAX_WORKSPACE_SEARCH_RESULTS,
+    merge_search_results,
+    provider_next_cursor,
+)
 from trusted_ui.thumbnail_loader import create_thumbnail_loader
 
 
@@ -150,6 +155,7 @@ def create_bilibili_workspace(
             self.busy = False
             self.closing = False
             self.last_query = ""
+            self.last_corrections: tuple[str, ...] = ()
             self.next_cursor = ""
             self.loading_more = False
             self.thumbnail_loader = create_thumbnail_loader(self)
@@ -429,6 +435,7 @@ def create_bilibili_workspace(
             if len(query) > 200:
                 self.status.setText("搜尋文字不可超過 200 個字元。")
                 return
+            prepared = prepare_search_query(query)
             try:
                 enabled = context.discovery.is_enabled(BILIBILI_SEARCH_PROVIDER_ID)
             except (AttributeError, KeyError, RuntimeError, ValueError):
@@ -438,9 +445,11 @@ def create_bilibili_workspace(
                 return
             if self.busy or self.closing:
                 return
-            self.last_query = query
+            self.query.setText(prepared.query)
+            self.last_query = prepared.query
+            self.last_corrections = prepared.corrections
             self.next_cursor = ""
-            self.start_search(query, cursor="", append=False)
+            self.start_search(prepared.query, cursor="", append=False)
 
         def load_more(self) -> None:
             if (
@@ -469,9 +478,15 @@ def create_bilibili_workspace(
                 self.table.setRowCount(0)
                 self.up_filter.setCurrentIndex(0)
             self.thumbnail_loader.cancel_pending()
-            self.status.setText(
-                "正在載入更多 Bilibili 結果…" if append else "正在搜尋 Bilibili…"
-            )
+            if append:
+                self.status.setText("正在載入更多 Bilibili 結果…")
+            else:
+                correction_note = (
+                    f"（已修正：{'、'.join(self.last_corrections)}）"
+                    if self.last_corrections
+                    else ""
+                )
+                self.status.setText(f"正在搜尋 Bilibili…{correction_note}")
             self.update_action_state()
 
             def worker() -> None:
@@ -564,12 +579,21 @@ def create_bilibili_workspace(
                 accepted.append(item)
             selected_urls = set(self.selected_urls()) if append else set()
             previous_count = len(self.all_results) if append else 0
-            self.all_results = merge_search_results(
+            merged_results = merge_search_results(
                 self.all_results if append else (),
                 accepted,
             )
+            rankings = rank_search_results(self.last_query, merged_results)
+            self.all_results = tuple(
+                merged_results[ranking.index] for ranking in rankings
+            )
             added_count = len(self.all_results) - previous_count
-            if not response.failures:
+            at_result_limit = (
+                len(self.all_results) >= MAX_WORKSPACE_SEARCH_RESULTS
+            )
+            if at_result_limit:
+                self.next_cursor = ""
+            elif not response.failures:
                 self.next_cursor = provider_next_cursor(
                     response, BILIBILI_SEARCH_PROVIDER_ID
                 )
@@ -585,7 +609,13 @@ def create_bilibili_workspace(
                     {item.artist for item in self.all_results if item.artist}
                 )
                 suffix = f"；略過 {rejected} 筆非官方來源" if rejected else ""
-                paging = "；可繼續載入" if self.next_cursor else "；已到結果尾端"
+                paging = (
+                    f"；已達 {MAX_WORKSPACE_SEARCH_RESULTS} 筆上限"
+                    if at_result_limit
+                    else "；可繼續載入"
+                    if self.next_cursor
+                    else "；已到結果尾端"
+                )
                 if append:
                     self.status.setText(
                         f"新增 {added_count} 筆，目前共 {len(self.all_results)} 筆、"

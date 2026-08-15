@@ -6,9 +6,42 @@ import json
 import re
 import secrets
 import sys
+import unicodedata
+from itertools import islice
 from typing import Any
 
-_TOKEN = re.compile(r"[\w]+", re.UNICODE)
+_TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
+_SEARCH_PUNCTUATION_TRANSLATION = str.maketrans(
+    {
+        "\u2010": "-",
+        "\u2011": "-",
+        "\u2012": "-",
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2015": "-",
+        "\u2212": "-",
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\ufe0e": None,
+        "\ufe0f": None,
+    }
+)
+_SEARCH_SEPARATOR_SPACING_RE = re.compile(r"\s*([|:/·・-])\s*")
+_BALANCED_QUOTE_PATTERNS = tuple(
+    re.compile(
+        rf"{re.escape(opening)}([^{re.escape(opening + closing)}]*)"
+        rf"{re.escape(closing)}"
+    )
+    for opening, closing in (("「", "」"), ("『", "』"), ("《", "》"), ("〈", "〉"))
+)
+
+
+def canonicalize_balanced_quote_pairs(value: str) -> str:
+    for pattern in _BALANCED_QUOTE_PATTERNS:
+        value = pattern.sub(lambda match: f'"{match.group(1)}"', value)
+    return value
 
 
 def emit(message: dict[str, Any]) -> None:
@@ -21,8 +54,61 @@ def text(value: Any, limit: int) -> str:
     return " ".join(str(value or "").split())[:limit]
 
 
-def tokens(value: Any) -> set[str]:
-    return {part.casefold() for part in _TOKEN.findall(str(value or ""))}
+def normalized_text_key(value: Any, limit: int = 200) -> str:
+    normalized = canonicalize_balanced_quote_pairs(
+        unicodedata.normalize("NFKC", text(value, limit)).casefold()
+    )
+    normalized = normalized.translate(_SEARCH_PUNCTUATION_TRANSLATION)
+    normalized = _SEARCH_SEPARATOR_SPACING_RE.sub(r"\1", normalized)
+    decomposed = unicodedata.normalize("NFKD", normalized)
+    result: list[str] = []
+    latin_base = False
+    for character in decomposed:
+        if unicodedata.combining(character):
+            if not latin_base:
+                result.append(character)
+            continue
+        result.append(character)
+        latin_base = "LATIN" in unicodedata.name(character, "")
+    return unicodedata.normalize("NFKC", "".join(result))
+
+
+def tokens(value: Any, limit: int = 300) -> set[str]:
+    return set(_TOKEN.findall(normalized_text_key(value, limit)))
+
+
+def preference_groups(values: Any) -> dict[str, tuple[str, int]]:
+    """Aggregate bounded preference counters by their Unicode text identity."""
+
+    if not isinstance(values, dict):
+        return {}
+    groups: dict[str, tuple[str, int]] = {}
+    for raw_value, raw_count in islice(values.items(), 100):
+        value = text(raw_value, 200)
+        key = normalized_text_key(value)
+        if (
+            not key
+            or not isinstance(raw_count, int)
+            or isinstance(raw_count, bool)
+            or raw_count <= 0
+        ):
+            continue
+        representative, total = groups.get(key, (value, 0))
+        groups[key] = (representative, total + raw_count)
+    return groups
+
+
+def preferred_value(values: Any) -> str:
+    groups = preference_groups(values)
+    if not groups:
+        return ""
+    return max(groups.values(), key=lambda item: (item[1], item[0]))[0]
+
+
+def preference_weight(values: Any, value: Any) -> int:
+    key = normalized_text_key(value)
+    group = preference_groups(values).get(key)
+    return group[1] if group is not None else 0
 
 
 def plan(item: dict[str, Any], preferences: dict[str, Any]) -> dict[str, Any]:
@@ -31,13 +117,12 @@ def plan(item: dict[str, Any], preferences: dict[str, Any]) -> dict[str, Any]:
     language = text(item.get("language"), 24)
     category = text(item.get("category"), 40) or "video"
     queries: list[str] = []
+    query_keys: set[str] = set()
 
     preferred_artists = preferences.get("artists")
-    preferred_artist = ""
-    if isinstance(preferred_artists, dict) and preferred_artists:
-        preferred_artist = text(next(iter(preferred_artists)), 100)
+    preferred_artist = text(preferred_value(preferred_artists), 100)
 
-    combined_title = ""
+    combined_title = title
     if artist and title:
         artist_tokens = tokens(artist)
         title_tokens = tokens(title)
@@ -52,14 +137,18 @@ def plan(item: dict[str, Any], preferences: dict[str, Any]) -> dict[str, Any]:
         f"{artist} {category}" if artist else "",
         (
             f"{preferred_artist} {category}"
-            if preferred_artist and preferred_artist.casefold() != artist.casefold()
+            if preferred_artist
+            and normalized_text_key(preferred_artist, 100)
+            != normalized_text_key(artist, 100)
             else ""
         ),
         f"{title} related" if title else "",
         f"{language} {category}" if language else "",
     ):
         query = text(query, 200)
-        if query and query not in queries:
+        query_key = normalized_text_key(query)
+        if query_key and query_key not in query_keys:
+            query_keys.add(query_key)
             queries.append(query)
         if len(queries) == 3:
             break
@@ -77,8 +166,8 @@ def rank_one(
         return None
     score = 0
     reasons: list[str] = []
-    original_title, candidate_title = tokens(original.get("title")), tokens(
-        candidate.get("title")
+    original_title, candidate_title = tokens(original.get("title"), 300), tokens(
+        candidate.get("title"), 300
     )
     if original_title and candidate_title:
         overlap = round(
@@ -88,8 +177,8 @@ def rank_one(
         score += overlap
         if overlap:
             reasons.append("title")
-    original_artist, candidate_artist = tokens(original.get("artist")), tokens(
-        candidate.get("artist")
+    original_artist, candidate_artist = tokens(original.get("artist"), 200), tokens(
+        candidate.get("artist"), 200
     )
     if original_artist and candidate_artist:
         overlap = round(
@@ -99,17 +188,22 @@ def rank_one(
         score += overlap
         if overlap:
             reasons.append("artist")
-    if original.get("language") and original.get("language") == candidate.get("language"):
+    original_language = normalized_text_key(original.get("language"), 24)
+    candidate_language = normalized_text_key(candidate.get("language"), 24)
+    if original_language and original_language == candidate_language:
         score += 10
         reasons.append("language")
-    if original.get("category") and original.get("category") == candidate.get("category"):
+    original_category = normalized_text_key(original.get("category"), 40)
+    candidate_category = normalized_text_key(candidate.get("category"), 40)
+    if original_category and original_category == candidate_category:
         score += 15
         reasons.append("category")
 
     artists = preferences.get("artists")
     artist = text(candidate.get("artist"), 200)
-    if isinstance(artists, dict) and artist in artists:
-        score += min(10, int(artists[artist]))
+    artist_preference = preference_weight(artists, artist)
+    if artist_preference:
+        score += min(10, artist_preference)
         reasons.append("preference")
     if score < 15:
         return None
