@@ -11,12 +11,12 @@ from core.version import (
 
 
 def test_development_display_and_release_tracks_are_explicit() -> None:
-    assert display_version() == "開發版 39.0.94"
+    assert display_version() == "開發版 39.0.95"
     assert application_display_name() == "MediaManager v1.0"
     assert release_track("development") == "Development"
     assert release_track("testing") == "Testing"
     assert release_track("stable") == "Stable"
-    assert release_identity_version("development") == "39.0.94"
+    assert release_identity_version("development") == "39.0.95"
     assert release_identity_version("testing") == "1.2.3"
     assert release_identity_version("stable") == "1.0.0"
     with pytest.raises(ValueError):
@@ -48,5 +48,5 @@ def test_testing_display_preserves_the_correction_number(
 
 
 def test_development_39_rejects_manifest_upper_bound_32_1() -> None:
-    assert is_core_compatible("0.1.0", "39.0.94")
+    assert is_core_compatible("0.1.0", "39.0.95")
     assert not is_core_compatible("0.1.0", "32.1.0")

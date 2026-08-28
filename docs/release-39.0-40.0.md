@@ -1608,6 +1608,23 @@ prerelease 與全部附件 digest 均已驗證；Testing 1.2.1 的目錄、tag �
 - Testing `1.2.1` 與 `1.2.2` 保持不可變；Testing `1.2.3` 保留給此 source
   freeze 的本機未簽署 `SAFE_MODE` 候選。本輪不 push、不簽署、不發布。
 
+## 39.0.95（啟動流程取消自動彈出視窗）
+
+- Root Cause：可信主視窗在建立前無條件呼叫首次 MOD 設定模態視窗，建立後又在
+  YouTube 核心工具未就緒時排程依賴環境模態視窗；即使主畫面已有 MOD 管理與
+  環境狀態入口，啟動仍可能連續出現額外視窗。
+- 啟動現在直接顯示主畫面，不再自動開啟上述兩種視窗。MOD 與依賴狀態仍完整
+  顯示，使用者可從主畫面按鈕明確開啟；既有設定、MOD 狀態與工具安裝皆不會被
+  靜默修改。
+- Regression-first 案例修正前捕捉到「首次啟動：選擇要啟用的 MOD」並為
+  `1 failed`；移除自動開窗路徑後為 `1 passed`。六個相關套件為 `44 passed`，
+  完整 Repository runner 為 `1593 passed, 7 skipped`。
+- Quality audit 通過 Ruff `367` 個 Python 檔與文字污染 `476` 個受控檔案；MOD
+  群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、兩個
+  Testing 版本、Repository 外隔離 `compileall` 與 `git diff --check` 均通過。
+- Testing `1.2.1`、`1.2.2` 與本機 Testing `1.2.3` 產物保持不可變；本輪已獲
+  授權 stage、commit 與 push 原始碼，不執行 build、簽署或發布。
+
 ## 40.0
 
 沒有獨立 material delta，狀態為 `ABSORBED / NO RELEASE / NO PLAN`。不得為維持

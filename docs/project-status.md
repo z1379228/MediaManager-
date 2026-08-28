@@ -1,10 +1,12 @@
 # 目前專案狀態
 
-狀態日期：2026-08-15
+狀態日期：2026-08-29
 
 ## 結論
 
-MediaManager 目前工作來源為 Development `39.0.94`。`39.0.94` 保留 39.0.93
+MediaManager 目前工作來源為 Development `39.0.95`。`39.0.95` 移除啟動時
+自動開啟的首次 MOD 設定與依賴環境模態視窗，改由主畫面的 MOD 管理與環境
+狀態按鈕明確開啟；啟動不會改變 MOD 狀態或安裝工具。`39.0.94` 保留 39.0.93
 H.265 Main10 NVENC preset 經本機品質比較較佳的 p7／HQ 參數，並在原子提交前
 驗證 Matroska、HEVC Main 10、10-bit、Opus、來源解析度與固定影格率；不符合
 契約的 `.part` 會被刪除，來源與輸出 Opus 封包 SHA-256 也必須相同。執行前
@@ -521,6 +523,15 @@ Development `39.0.39` 的乾淨 source freeze 建置、建立新目錄與 prerel
   `compileall` 與 `git diff --check` 均通過，`Version/` 中有 `0` 個 `.pyc`。
   實機服務再次輸出 `227806` bytes 的 HEVC Main 10／`yuv420p10le`／Opus
   Matroska，並通過內建 Opus 封包 SHA-256 比對與 1920x1080／24 FPS 契約。
+- Development 39.0.95 將啟動流程改為非模態：不再自動執行首次 MOD 設定
+  `QDialog`，核心工具未達 4/4 時也不再排程環境視窗。主畫面原有的 MOD 管理與
+  環境狀態按鈕保留完整手動入口，既有設定不被靜默修改。Regression-first 案例
+  修正前捕捉到首次 MOD 視窗並為 `1 failed`，移除自動路徑後為 `1 passed`；
+  六個相關套件為 `44 passed`，完整 Repository runner 為
+  `1593 passed, 7 skipped`。Quality audit 通過 Ruff `367` 個 Python 檔與文字
+  污染 `476` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖
+  `10`、版本文件 `4`、兩個 Testing 版本、Repository 外隔離 `compileall` 與
+  `git diff --check` 均通過。
 - Development 39.0.73 將 U+201C／U+201D 左右智慧雙引號與直雙引號統一為
   相同的本機比較身分。修正前，同名結果會落後於較長的 `live cover`、歷史
   建議重複且相似音樂浪費第三個查詢槽；regression-first 三條案例修正前為

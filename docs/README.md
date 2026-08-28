@@ -4,7 +4,7 @@
 逐版重複日誌與退役功能說明已從目前樹移除；必要時由 Git 歷史或 GitHub Releases
 追查，不另建第二份歷史索引。
 
-- 目前來源版本為開發版 39.0（核心相容版本 39.0.94）。
+- 目前來源版本為開發版 39.0（核心相容版本 39.0.95）。
 - Development 40.0 仍是 `NO PLAN / NO RELEASE`。
 - Testing `1.2.0` 已由 Development `39.0.11` 建立本機歷史封存，保留於
   `Version/Testing/1.2`，未建立 GitHub Release。
