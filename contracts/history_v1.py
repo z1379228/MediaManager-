@@ -84,7 +84,9 @@ class HistoryPreferencesV1:
                 "history preferences fields invalid"
             ) from exc
         if not all(
-            isinstance(raw[key], int) and 0 <= raw[key] <= 100000
+            isinstance(raw[key], int)
+            and not isinstance(raw[key], bool)
+            and 0 <= raw[key] <= 100000
             for key in ("total_searches", "total_selections")
         ):
             raise HistoryContractError("history preference totals invalid")
@@ -94,7 +96,9 @@ class HistoryPreferencesV1:
                 raise HistoryContractError("history preference counters invalid")
             if not all(
                 isinstance(key, str) and 1 <= len(key) <= 200
-                and isinstance(value, int) and 0 < value <= 100000
+                and isinstance(value, int)
+                and not isinstance(value, bool)
+                and 0 < value <= 100000
                 for key, value in values.items()
             ):
                 raise HistoryContractError("history preference counters invalid")

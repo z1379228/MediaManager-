@@ -94,9 +94,13 @@ def _paths_overlap(first: Path, second: Path) -> bool:
     )
 
 
-def _version_folder_key(folder: str) -> tuple[int, int]:
-    major, minor = folder.split(".")
-    return int(major), int(minor)
+def _version_folder_key(folder: str) -> tuple[int, int, int]:
+    parts = folder.split(".")
+    if len(parts) not in {2, 3} or not all(part.isdigit() for part in parts):
+        raise ValueError("version folder must use major.minor or major.minor.patch")
+    major, minor = (int(part) for part in parts[:2])
+    patch = int(parts[2]) if len(parts) == 3 else 0
+    return major, minor, patch
 
 
 def default_temp_root(

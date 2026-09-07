@@ -389,21 +389,35 @@ def test_builtin_mod_events_sync_download_and_search_controls(
     # continues to exercise live event synchronization rather than defaults.
     set_builtin_mod_enabled(context, "bilibili", False)
     set_builtin_mod_enabled(context, "youtube-player", False)
+    set_builtin_mod_enabled(context, "youtube-similar", False)
     download_panel = create_download_panel(context, site_family="bilibili")
+    youtube_panel = create_download_panel(context, site_family="youtube")
     search_panel = create_search_panel(context)
     download_panel.timer.stop()
+    youtube_panel.timer.stop()
     try:
+        assert youtube_panel.youtube_workspace is not None
+        youtube_refresh = Mock(
+            wraps=youtube_panel.youtube_workspace.refresh_availability
+        )
+        monkeypatch.setattr(
+            youtube_panel.youtube_workspace,
+            "refresh_availability",
+            youtube_refresh,
+        )
         assert not download_panel.enabled.isChecked()
         assert not search_panel.video_enabled.isChecked()
         assert not search_panel.bilibili_search_enabled.isVisible()
 
         set_builtin_mod_enabled(context, "bilibili", True)
         set_builtin_mod_enabled(context, "youtube-player", True)
+        set_builtin_mod_enabled(context, "youtube-similar", True)
         app.processEvents()
 
         assert download_panel.enabled.isChecked()
         assert search_panel.video_enabled.isChecked()
         assert search_panel.bilibili_search_enabled.isVisible()
+        youtube_refresh.assert_called()
 
         set_builtin_mod_enabled(context, "bilibili-search", True)
         set_builtin_mod_enabled(context, "bilibili", False)
@@ -416,5 +430,7 @@ def test_builtin_mod_events_sync_download_and_search_controls(
         search_panel.deleteLater()
         download_panel.close()
         download_panel.deleteLater()
+        youtube_panel.close()
+        youtube_panel.deleteLater()
         app.processEvents()
         context.lifecycle.shutdown()

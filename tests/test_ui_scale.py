@@ -129,6 +129,11 @@ def test_core_panels_expose_accessible_controls_at_minimum_width(
         assert search.next_page_button.accessibleName() == "搜尋下一頁"
         assert search.limit.accessibleName() == "搜尋結果數量"
         assert search.table.accessibleName() == "單一網站搜尋結果"
+        assert download.youtube_workspace is not None
+        assert (
+            download.youtube_workspace.similar_button.accessibleName()
+            == "以選取的 YouTube 結果搜尋相似音樂"
+        )
         assert (
             download.scroll_area.horizontalScrollBarPolicy()
             == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
@@ -139,6 +144,54 @@ def test_core_panels_expose_accessible_controls_at_minimum_width(
         download.close()
         search.deleteLater()
         download.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
+def test_youtube_search_options_fit_minimum_window_viewport(
+    tmp_path: Path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtCore import QPoint
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    apply_application_theme(app)
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    panel = create_download_panel(context)
+    panel.timer.stop()
+    try:
+        # Match the established core-panel budget inside the 940 px minimum
+        # main window, then measure against the actual scroll-area viewport.
+        panel.resize(916, 500)
+        panel.show()
+        workspace = panel.youtube_workspace
+        assert workspace is not None
+        workspace.toggle_button.setChecked(True)
+        app.processEvents()
+
+        viewport = panel.scroll_area.viewport()
+        viewport_right = viewport.rect().right()
+        controls = (
+            workspace.content_type,
+            workspace.page_size,
+            workspace.duration_filter,
+            workspace.sort_mode,
+            workspace.history_button,
+        )
+        for control in controls:
+            top_left = control.mapTo(viewport, QPoint(0, 0))
+            right = top_left.x() + control.width() - 1
+            assert control.isVisible()
+            assert top_left.x() >= viewport.rect().left()
+            assert right <= viewport_right
+    finally:
+        panel.close()
+        panel.deleteLater()
         app.processEvents()
         context.lifecycle.shutdown()
 

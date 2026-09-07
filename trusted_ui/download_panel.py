@@ -1036,6 +1036,7 @@ def create_download_panel(
                 "youtube",
                 "youtube-search",
                 "youtube-player",
+                "youtube-similar",
             } and self.youtube_workspace:
                 self.youtube_workspace.refresh_availability()
             if changed_provider_id in {

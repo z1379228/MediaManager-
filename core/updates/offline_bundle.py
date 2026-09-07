@@ -1,4 +1,4 @@
-"""Signed offline update bundles installed into Version/<major>.<minor>."""
+"""Signed offline update bundles installed into the selected version track."""
 
 from __future__ import annotations
 
@@ -62,7 +62,10 @@ def create_offline_bundle(
     """Create an atomic bundle; callers keep the private key outside the repo."""
 
     release_root = release_root.resolve()
-    expected_folder = _version_folder(target_version)
+    expected_folder = _version_folder(
+        target_version,
+        version_root=release_root.parent,
+    )
     if not key_id or release_root.name != expected_folder:
         raise ValueError("release folder or update key id is invalid")
     if release_version(minimum_source_version) > release_version(
@@ -262,7 +265,11 @@ class OfflineUpdateInstaller:
             <= release_version(current_version)
             <= release_version(maximum)
             or release_version(target_version) <= release_version(current_version)
-            or raw["version_folder"] != _version_folder(target_version)
+            or raw["version_folder"]
+            != _version_folder(
+                target_version,
+                version_root=self.version_root,
+            )
         ):
             return OfflineUpdateVerification(False, errors=("offline update version range is invalid",))
         actual_payload = {
@@ -297,6 +304,8 @@ def _safe_relative(value: str) -> bool:
     return bool(value) and not path.is_absolute() and ".." not in path.parts
 
 
-def _version_folder(version: str) -> str:
-    major, minor, _patch = release_version(version)
+def _version_folder(version: str, *, version_root: Path) -> str:
+    major, minor, patch = release_version(version)
+    if version_root.name.casefold() == "testing" and patch:
+        return f"{major}.{minor}.{patch}"
     return f"{major}.{minor}"

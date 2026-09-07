@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -23,6 +24,8 @@ from core.conversion.service import (
     LOCAL_PROTOCOL_WHITELIST,
     MAX_CAPABILITY_OUTPUT_BYTES,
     MAX_FFPROBE_OUTPUT_BYTES,
+    MAX_STREAM_HASH_OUTPUT_BYTES,
+    STREAM_HASH_TIMEOUT_SECONDS,
     SUBPROCESS_CREATION_FLAGS,
     TOOL_PROBE_TIMEOUT_SECONDS,
 )
@@ -127,6 +130,393 @@ def test_still_image_presets_use_one_frame_and_reject_non_image_sources(
         )
 
 
+def test_watermark_h264_requires_one_bounded_local_image(
+    service: ConversionService,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.mp4"
+    watermark = tmp_path / "logo.png"
+    source.write_bytes(b"video fixture")
+    watermark.write_bytes(b"image fixture")
+
+    plan = service.preview(
+        ConversionRequest(
+            (source,),
+            tmp_path / "watermarked.mp4",
+            "watermark-h264",
+            watermark=watermark,
+        )
+    )
+
+    assert plan.request.watermark == watermark.resolve()
+    assert tuple(
+        plan.command[index + 1]
+        for index, value in enumerate(plan.command[:-1])
+        if value == "-i"
+    ) == (str(source.resolve()), str(watermark.resolve()))
+    assert "-filter_complex" in plan.command
+    assert any("overlay=" in value for value in plan.command)
+    assert "@OUTPUT@" in plan.command
+
+    with pytest.raises(ValueError, match="watermark"):
+        service.preview(
+            ConversionRequest(
+                (source,),
+                tmp_path / "missing-watermark.mp4",
+                "watermark-h264",
+            )
+        )
+
+    invalid_watermark = tmp_path / "logo.txt"
+    invalid_watermark.write_text("not an image", encoding="utf-8")
+    with pytest.raises(ValueError, match="watermark"):
+        service.preview(
+            ConversionRequest(
+                (source,),
+                tmp_path / "invalid-watermark.mp4",
+                "watermark-h264",
+                watermark=invalid_watermark,
+            )
+        )
+
+    with pytest.raises(ValueError, match="watermark"):
+        service.preview(
+            ConversionRequest(
+                (source,),
+                tmp_path / "unexpected-watermark.mkv",
+                "remux-copy",
+                watermark=watermark,
+            )
+        )
+
+
+def test_hevc10_nvenc_opus_copy_preset_is_exact_and_filterless(
+    service: ConversionService,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.mkv"
+    source.write_bytes(b"video fixture")
+
+    plan = service.preview(
+        ConversionRequest(
+            (source,),
+            tmp_path / "encoded.mkv",
+            "hevc10-nvenc-opus-copy",
+        )
+    )
+
+    assert "H.265 Main10" in plan.strategy
+    assert plan.fallback_command is None
+    assert ("-c:v", "hevc_nvenc") == tuple(
+        plan.command[plan.command.index("-c:v") : plan.command.index("-c:v") + 2]
+    )
+    expected_options = {
+        "-profile:v": "main10",
+        "-pix_fmt": "p010le",
+        "-preset": "p7",
+        "-tune": "hq",
+        "-rc": "vbr",
+        "-b:v": "300k",
+        "-multipass": "fullres",
+        "-rc-lookahead": "32",
+        "-spatial-aq": "1",
+        "-temporal-aq": "1",
+        "-aq-strength": "8",
+        "-highbitdepth": "1",
+        "-fps_mode": "passthrough",
+        "-c:a": "copy",
+    }
+    for option, value in expected_options.items():
+        index = plan.command.index(option)
+        assert plan.command[index + 1] == value
+    assert not {
+        "-r",
+        "-s",
+        "-vf",
+        "-af",
+        "-filter:v",
+        "-filter:a",
+        "-filter_complex",
+    }.intersection(plan.command)
+
+    with pytest.raises(ValueError, match="output extension"):
+        service.preview(
+            ConversionRequest(
+                (source,),
+                tmp_path / "encoded.mp4",
+                "hevc10-nvenc-opus-copy",
+            )
+        )
+
+
+def test_hevc10_nvenc_opus_copy_runtime_requires_encoder_and_opus_source(
+    service: ConversionService,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.mkv"
+    source.write_bytes(b"video fixture")
+    plan = service.preview(
+        ConversionRequest(
+            (source,),
+            tmp_path / "encoded.mkv",
+            "hevc10-nvenc-opus-copy",
+        )
+    )
+    available = ConversionCapabilities(encoders=frozenset({"hevc_nvenc"}))
+    monkeypatch.setattr(service, "capabilities", lambda **_kwargs: available)
+    monkeypatch.setattr(
+        service,
+        "_run_ffprobe",
+        lambda _path: (
+            0,
+            b'{"streams":[{"codec_type":"video","codec_name":"h264"},'
+            b'{"codec_type":"audio","codec_name":"opus"}]}',
+            "",
+        ),
+    )
+
+    service._validate_runtime_requirements(plan)
+
+    monkeypatch.setattr(
+        service,
+        "_run_ffprobe",
+        lambda _path: (
+            0,
+            b'{"streams":[{"codec_type":"video","codec_name":"h264"},'
+            b'{"codec_type":"audio","codec_name":"aac"}]}',
+            "",
+        ),
+    )
+    with pytest.raises(RuntimeError, match="Opus source audio"):
+        service._validate_runtime_requirements(plan)
+
+    monkeypatch.setattr(
+        service,
+        "_run_ffprobe",
+        lambda _path: (
+            0,
+            b'{"streams":[{"codec_type":"video","codec_name":"h264"},'
+            b'{"codec_type":"audio","codec_name":"aac"},'
+            b'{"codec_type":"audio","codec_name":"opus"}]}',
+            "",
+        ),
+    )
+    with pytest.raises(RuntimeError, match="detected: aac"):
+        service._validate_runtime_requirements(plan)
+
+    monkeypatch.setattr(
+        service,
+        "capabilities",
+        lambda **_kwargs: ConversionCapabilities(encoders=frozenset()),
+    )
+    with pytest.raises(RuntimeError, match="hevc_nvenc"):
+        service._validate_runtime_requirements(plan)
+
+
+def _hevc10_probe_documents() -> tuple[dict[str, object], dict[str, object]]:
+    source = {
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "width": 1920,
+                "height": 1080,
+                "r_frame_rate": "24/1",
+                "avg_frame_rate": "24/1",
+            },
+            {"codec_type": "audio", "codec_name": "opus"},
+        ],
+        "format": {"format_name": "matroska,webm"},
+    }
+    output = {
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "hevc",
+                "profile": "Main 10",
+                "pix_fmt": "yuv420p10le",
+                "width": 1920,
+                "height": 1080,
+                "r_frame_rate": "24/1",
+                "avg_frame_rate": "24/1",
+            },
+            {"codec_type": "audio", "codec_name": "opus"},
+        ],
+        "format": {"format_name": "matroska,webm"},
+    }
+    return source, output
+
+
+def test_hevc10_output_contract_accepts_exact_result(
+    service: ConversionService,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.mkv"
+    output = tmp_path / "encoded.part.mkv"
+    source.write_bytes(b"source")
+    output.write_bytes(b"output")
+    plan = service.preview(
+        ConversionRequest(
+            (source,),
+            tmp_path / "encoded.mkv",
+            "hevc10-nvenc-opus-copy",
+        )
+    )
+    source_document, output_document = _hevc10_probe_documents()
+    documents = {
+        source.resolve(): source_document,
+        output.resolve(): output_document,
+    }
+    monkeypatch.setattr(
+        service,
+        "_run_ffprobe",
+        lambda path, **_kwargs: (
+            0,
+            json.dumps(documents[path.resolve()]).encode(),
+            "",
+        ),
+    )
+    digested: list[Path] = []
+
+    cancel_event = Event()
+
+    def fake_digest(path: Path, **kwargs: object) -> str:
+        digested.append(path)
+        assert kwargs["cancel_event"] is cancel_event
+        return "a" * 64
+
+    monkeypatch.setattr(service, "_stream_digest", fake_digest)
+
+    service._verify_output(output, plan=plan, cancel_event=cancel_event)
+
+    assert digested == [source.resolve(), output]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("format_name", "mov,mp4,m4a,3gp,3g2,mj2"),
+        ("video_codec", "h264"),
+        ("video_profile", "Main"),
+        ("video_pix_fmt", "yuv420p"),
+        ("video_width", 1280),
+        ("video_width", None),
+        ("video_avg_frame_rate", "30/1"),
+        ("video_avg_frame_rate", None),
+        ("audio_codec", "aac"),
+    ],
+)
+def test_hevc10_output_contract_rejects_mismatched_result(
+    service: ConversionService,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: object,
+) -> None:
+    source = tmp_path / "source.mkv"
+    output = tmp_path / "encoded.part.mkv"
+    source.write_bytes(b"source")
+    output.write_bytes(b"output")
+    plan = service.preview(
+        ConversionRequest(
+            (source,),
+            tmp_path / "encoded.mkv",
+            "hevc10-nvenc-opus-copy",
+        )
+    )
+    source_document, output_document = _hevc10_probe_documents()
+    output_streams = output_document["streams"]
+    assert isinstance(output_streams, list)
+    video = output_streams[0]
+    audio = output_streams[1]
+    assert isinstance(video, dict) and isinstance(audio, dict)
+    output_format = output_document["format"]
+    assert isinstance(output_format, dict)
+    if field == "format_name":
+        output_format["format_name"] = value
+    elif field == "video_codec":
+        video["codec_name"] = value
+    elif field == "video_profile":
+        video["profile"] = value
+    elif field == "video_pix_fmt":
+        video["pix_fmt"] = value
+    elif field == "video_width":
+        video["width"] = value
+    elif field == "video_avg_frame_rate":
+        video["avg_frame_rate"] = value
+    elif field == "audio_codec":
+        audio["codec_name"] = value
+    else:
+        raise AssertionError(f"unhandled field: {field}")
+    documents = {
+        source.resolve(): source_document,
+        output.resolve(): output_document,
+    }
+    monkeypatch.setattr(
+        service,
+        "_run_ffprobe",
+        lambda path, **_kwargs: (
+            0,
+            json.dumps(documents[path.resolve()]).encode(),
+            "",
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_stream_digest",
+        lambda _path, **_kwargs: "a" * 64,
+    )
+
+    with pytest.raises(RuntimeError, match="output contract"):
+        service._verify_output(output, plan=plan)
+
+
+def test_hevc10_output_contract_rejects_changed_audio_packets(
+    service: ConversionService,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.mkv"
+    output = tmp_path / "encoded.part.mkv"
+    source.write_bytes(b"source")
+    output.write_bytes(b"output")
+    plan = service.preview(
+        ConversionRequest(
+            (source,),
+            tmp_path / "encoded.mkv",
+            "hevc10-nvenc-opus-copy",
+        )
+    )
+    source_document, output_document = _hevc10_probe_documents()
+    documents = {
+        source.resolve(): source_document,
+        output.resolve(): output_document,
+    }
+    monkeypatch.setattr(
+        service,
+        "_run_ffprobe",
+        lambda path, **_kwargs: (
+            0,
+            json.dumps(documents[path.resolve()]).encode(),
+            "",
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_stream_digest",
+        lambda path, **_kwargs: (
+            "a" * 64 if path.resolve() == source.resolve() else "b" * 64
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="audio packet digest"):
+        service._verify_output(output, plan=plan)
+
+
 def test_capability_probe_reports_only_observed_local_features(
     service: ConversionService,
     monkeypatch: pytest.MonkeyPatch,
@@ -135,7 +525,11 @@ def test_capability_probe_reports_only_observed_local_features(
         "-version": "ffmpeg version 8.1.2 Copyright FFmpeg developers",
         "-buildconf": "configuration:\n  --enable-gpl\n  --enable-libwebp",
         "-formats": " DE matroska        Matroska\n DE image2          image2 sequence",
-        "-encoders": " V....D h264_nvenc  NVIDIA NVENC H.264\n V..... libx264     H.264",
+        "-encoders": (
+            " V....D h264_nvenc  NVIDIA NVENC H.264\n"
+            " V....D hevc_nvenc  NVIDIA NVENC H.265\n"
+            " V..... libx264     H.264"
+        ),
         "-filters": " ... overlay         Overlay a video source\n ... scale           Scale video",
         "-hwaccels": "Hardware acceleration methods:\ncuda\nd3d11va\n",
     }
@@ -152,10 +546,13 @@ def test_capability_probe_reports_only_observed_local_features(
     assert capabilities.ffmpeg_version == "ffmpeg version 8.1.2 Copyright FFmpeg developers"
     assert "--enable-libwebp" in capabilities.build_configuration
     assert capabilities.formats == frozenset({"matroska", "image2"})
-    assert capabilities.encoders == frozenset({"h264_nvenc", "libx264"})
+    assert capabilities.encoders == frozenset(
+        {"h264_nvenc", "hevc_nvenc", "libx264"}
+    )
     assert capabilities.filters == frozenset({"overlay", "scale"})
     assert capabilities.hwaccels == frozenset({"cuda", "d3d11va"})
     assert capabilities.supports_h264_nvenc
+    assert capabilities.supports_hevc_nvenc
     assert capabilities.errors == ()
 
 
@@ -172,6 +569,7 @@ def test_capability_probe_does_not_invent_features_after_probe_failure(
     capabilities = service.capabilities(refresh=True)
 
     assert not capabilities.supports_h264_nvenc
+    assert not capabilities.supports_hevc_nvenc
     assert capabilities.encoders == frozenset()
     assert len(capabilities.errors) == 6
 
@@ -249,7 +647,11 @@ def test_ffprobe_failure_discards_partial_output_before_atomic_commit(
     monkeypatch.setattr(
         service,
         "_run_ffprobe",
-        lambda _path: (1, b"", "Invalid data found when processing input"),
+        lambda _path, **_kwargs: (
+            1,
+            b"",
+            "Invalid data found when processing input",
+        ),
     )
 
     with pytest.raises(RuntimeError, match="ffprobe"):
@@ -270,7 +672,7 @@ def test_ffprobe_accepts_bounded_json_with_at_least_one_stream(
     monkeypatch.setattr(
         service,
         "_run_ffprobe",
-        lambda _path: (0, payload, ""),
+        lambda _path, **_kwargs: (0, payload, ""),
     )
 
     service._verify_output(output)
@@ -305,7 +707,139 @@ def test_ffprobe_invocation_is_local_bounded_and_hidden(
     ]
     assert "http" not in command
     assert "https" not in command
+    show_entries = command[command.index("-show_entries") + 1]
+    assert "profile" in show_entries
+    assert "pix_fmt" in show_entries
+    assert "r_frame_rate" in show_entries
+    assert "avg_frame_rate" in show_entries
     assert captured["stdout_limit"] == MAX_FFPROBE_OUTPUT_BYTES
+
+
+def test_audio_packet_digest_invocation_is_local_bounded_and_hidden(
+    service: ConversionService,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.mkv"
+    source.write_bytes(b"media")
+    captured: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = tuple(command)
+        captured.update(kwargs)
+        return 0, b"SHA256=" + b"a" * 64 + b"\n", b"", False, False
+
+    monkeypatch.setattr(service, "_run_bounded_capture", fake_run)
+
+    cancel_event = Event()
+    assert (
+        service._stream_digest(source, cancel_event=cancel_event) == "a" * 64
+    )
+    command = captured["command"]
+    assert ("-protocol_whitelist", LOCAL_PROTOCOL_WHITELIST) == command[
+        command.index("-protocol_whitelist") :
+        command.index("-protocol_whitelist") + 2
+    ]
+    assert ("-map", "0:a:0") == command[
+        command.index("-map") : command.index("-map") + 2
+    ]
+    assert ("-c", "copy") == command[
+        command.index("-c") : command.index("-c") + 2
+    ]
+    assert "http" not in command
+    assert "https" not in command
+    assert captured["timeout"] == STREAM_HASH_TIMEOUT_SECONDS
+    assert captured["stdout_limit"] == MAX_STREAM_HASH_OUTPUT_BYTES
+    assert captured["cancel_event"] is cancel_event
+
+
+def test_bounded_capture_cancels_child_without_waiting_for_timeout() -> None:
+    cancel_event = Event()
+    cancel_event.set()
+    started = time.monotonic()
+
+    return_code, _stdout, _stderr, _stdout_truncated, _stderr_truncated = (
+        ConversionService._run_bounded_capture(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            timeout=30,
+            stdout_limit=256,
+            stderr_limit=256,
+            cancel_event=cancel_event,
+        )
+    )
+
+    assert return_code == -3
+    assert time.monotonic() - started < 5
+
+
+def test_probe_document_reports_cancelled_capture(
+    service: ConversionService,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.mkv"
+    source.write_bytes(b"media")
+    cancel_event = Event()
+    cancel_event.set()
+    monkeypatch.setattr(
+        service,
+        "_run_ffprobe",
+        lambda _path, **_kwargs: (-3, b"", ""),
+    )
+
+    with pytest.raises(RuntimeError, match="conversion cancelled"):
+        service._probe_document(
+            source,
+            "ffprobe validation failed",
+            cancel_event=cancel_event,
+        )
+
+
+@pytest.mark.parametrize(
+    "output_contract",
+    [
+        {},
+        {"unknown": True},
+        {"format_names": "matroska"},
+        {"video_codec": "hevc;invalid"},
+        {"preserve_dimensions": 1},
+        {"preserve_audio_packets": "true"},
+    ],
+)
+def test_output_contract_schema_rejects_ambiguous_or_unknown_values(
+    tmp_path: Path,
+    output_contract: object,
+) -> None:
+    ffmpeg = tmp_path / "ffmpeg.exe"
+    ffprobe = tmp_path / "ffprobe.exe"
+    ffmpeg.write_bytes(b"test")
+    ffprobe.write_bytes(b"test")
+    preset_path = tmp_path / "presets.json"
+    preset_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "presets": {
+                    "test": {
+                        "strategy": "test",
+                        "extensions": [".mkv"],
+                        "estimate_ratio": 1,
+                        "args": ["-c", "copy"],
+                        "output_contract": output_contract,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="preset is invalid"):
+        ConversionService(
+            ffmpeg,
+            preset_path,
+            tmp_path / "temp",
+            ffprobe=ffprobe,
+        )
 
 
 @pytest.mark.parametrize(
@@ -327,7 +861,7 @@ def test_ffprobe_rejects_invalid_or_streamless_documents(
     monkeypatch.setattr(
         service,
         "_run_ffprobe",
-        lambda _path: (0, payload, ""),
+        lambda _path, **_kwargs: (0, payload, ""),
     )
 
     with pytest.raises(RuntimeError, match="ffprobe"):
@@ -381,7 +915,7 @@ def test_gpu_failure_falls_back_to_cpu_and_commits_without_overwrite(
         return 1, "GPU encoder unavailable"
 
     monkeypatch.setattr(service, "_run", fake_run)
-    monkeypatch.setattr(service, "_verify_output", lambda _path: None)
+    monkeypatch.setattr(service, "_verify_output", lambda _path, **_kwargs: None)
     assert service._execute(task, plan) == output
     assert output.read_bytes() == b"converted"
     assert len(calls) == 2
@@ -405,6 +939,37 @@ def test_cancelled_conversion_removes_partial_output(
     monkeypatch.setattr(service, "_run", fake_run)
     with pytest.raises(RuntimeError, match="cancelled"):
         service._execute(task, plan)
+    assert not output.exists()
+    assert not list(tmp_path.glob("*.part.mkv"))
+
+
+def test_cancelled_output_verification_removes_partial_output(
+    service: ConversionService,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"media")
+    output = tmp_path / "output.mkv"
+    plan = service.preview(ConversionRequest((source,), output, "remux-copy"))
+    task = ConversionTask("cancel-verification", plan.request)
+
+    def fake_run(command, _cancel_event):
+        Path(command[-1]).write_bytes(b"converted")
+        return 0, ""
+
+    def fake_verify(_path, **kwargs):
+        assert kwargs["plan"] is plan
+        assert kwargs["cancel_event"] is task.cancel_event
+        task.cancel_event.set()
+        raise RuntimeError("conversion cancelled")
+
+    monkeypatch.setattr(service, "_run", fake_run)
+    monkeypatch.setattr(service, "_verify_output", fake_verify)
+
+    with pytest.raises(RuntimeError, match="conversion cancelled"):
+        service._execute(task, plan)
+
     assert not output.exists()
     assert not list(tmp_path.glob("*.part.mkv"))
 
@@ -641,7 +1206,7 @@ def test_ad_trim_parser_and_child_feature_are_independently_disabled(
     service.cancel_preset.assert_called_once_with("ad-trim-h264")
 
 
-def test_conversion_panel_exposes_ad_trim_only_when_child_is_enabled(
+def test_conversion_panel_exposes_optional_editing_controls(
     service: ConversionService,
     tmp_path: Path,
     monkeypatch,
@@ -677,6 +1242,32 @@ def test_conversion_panel_exposes_ad_trim_only_when_child_is_enabled(
         assert features.is_enabled("media-ad-trim")
         assert panel.ad_ranges.isEnabled()
         assert panel.submit.isEnabled()
+
+        watermark_index = panel.preset.findData("watermark-h264")
+        assert watermark_index >= 0
+        panel.preset.setCurrentIndex(watermark_index)
+        app.processEvents()
+        assert panel.watermark_text.isVisibleTo(panel)
+        assert panel.choose_watermark.isVisibleTo(panel)
+
+        hevc_index = panel.preset.findData("hevc10-nvenc-opus-copy")
+        assert hevc_index >= 0
+        panel.preset.setCurrentIndex(hevc_index)
+        app.processEvents()
+        assert not panel.submit.isEnabled()
+
+        monkeypatch.setattr(
+            service,
+            "capabilities",
+            lambda **_kwargs: ConversionCapabilities(
+                encoders=frozenset({"h264_nvenc", "hevc_nvenc"})
+            ),
+        )
+        panel.refresh_capabilities.click()
+        app.processEvents()
+        assert panel.hevc_nvenc_available
+        assert panel.submit.isEnabled()
+        assert "hevc_nvenc" in panel.capability_note.text()
     finally:
         panel.shutdown()
         panel.close()
@@ -722,6 +1313,91 @@ def test_local_ffmpeg_conversion_smoke(tmp_path: Path) -> None:
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             task = next(task for task in service.snapshots() if task.task_id == task_id)
+            if task.state.name in {"COMPLETED", "FAILED", "CANCELLED"}:
+                break
+            time.sleep(0.05)
+        assert task.state.name == "COMPLETED", task.error
+        assert output.is_file() and output.stat().st_size > 0
+    finally:
+        service.close()
+
+
+def test_local_ffmpeg_watermark_conversion_smoke(tmp_path: Path) -> None:
+    ffmpeg = shutil.which("ffmpeg")
+    ffprobe = shutil.which("ffprobe")
+    if ffmpeg is None or ffprobe is None:
+        pytest.skip("local FFmpeg / ffprobe is not installed")
+    source = tmp_path / "source.mp4"
+    watermark = tmp_path / "logo.bmp"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:s=320x180:r=10:d=0.2",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(source),
+        ],
+        check=True,
+        timeout=10,
+    )
+    subprocess.run(
+        [
+            ffmpeg,
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=red:s=32x24",
+            "-frames:v",
+            "1",
+            str(watermark),
+        ],
+        check=True,
+        timeout=10,
+    )
+    presets = (
+        Path(__file__).parents[1]
+        / "mod"
+        / "builtin"
+        / "media-convert"
+        / "presets.json"
+    )
+    service = ConversionService(
+        Path(ffmpeg),
+        presets,
+        tmp_path / "temp",
+        ffprobe=Path(ffprobe),
+    )
+    try:
+        service.set_enabled(True)
+        output = tmp_path / "watermarked.mp4"
+        task_id = service.submit(
+            ConversionRequest(
+                (source,),
+                output,
+                "watermark-h264",
+                watermark=watermark,
+            )
+        )
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            task = next(
+                task
+                for task in service.snapshots()
+                if task.task_id == task_id
+            )
             if task.state.name in {"COMPLETED", "FAILED", "CANCELLED"}:
                 break
             time.sleep(0.05)

@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 import sys
+import unicodedata
 from typing import Any
+from urllib.parse import urlencode
 
 
 class StderrLogger:
@@ -48,9 +52,19 @@ _MUSIC_SIGNALS = (
     "lyrics",
     "lyric video",
     "song",
+    "songs",
     "album",
+    "albums",
     "playlist",
+    "playlists",
     "mix",
+    "mixes",
+    "remix",
+    "remixes",
+    "soundtrack",
+    "soundtracks",
+    "ost",
+    "karaoke",
     "bgm",
     "音樂",
     "歌曲",
@@ -60,6 +74,39 @@ _MUSIC_SIGNALS = (
     "原聲帶",
     "作業用",
 )
+_LATIN_MUSIC_SIGNAL_RE = re.compile(
+    "|".join(
+        rf"(?<![a-z0-9_]){re.escape(signal)}(?![a-z0-9_])"
+        for signal in _MUSIC_SIGNALS
+        if signal.isascii()
+    )
+)
+_UNSPACED_MUSIC_SIGNALS = tuple(
+    signal for signal in _MUSIC_SIGNALS if not signal.isascii()
+)
+_TOPIC_CHANNEL_RE = re.compile(r"(?:^|\s)[-\u2010-\u2015\u2212]\s*topic$")
+_MAX_QUERY_LENGTH = 200
+_MAX_DISCOVERY_DURATION = 86400
+
+
+def contains_music_signal(value: str) -> bool:
+    """Match Latin signals as terms while retaining CJK substring behavior."""
+
+    normalized = unicodedata.normalize("NFKC", value).casefold()
+    return bool(_LATIN_MUSIC_SIGNAL_RE.search(normalized)) or any(
+        signal in normalized for signal in _UNSPACED_MUSIC_SIGNALS
+    )
+
+
+def has_topic_channel_signal(entry: dict[str, Any]) -> bool:
+    """Recognize YouTube's strict ``Artist - Topic`` channel suffix."""
+
+    return any(
+        _TOPIC_CHANNEL_RE.search(
+            unicodedata.normalize("NFKC", str(entry.get(field) or "")).casefold()
+        )
+        for field in ("channel", "uploader")
+    )
 
 
 def search_scope(request: dict[str, Any]) -> str:
@@ -69,12 +116,15 @@ def search_scope(request: dict[str, Any]) -> str:
     return str(value)
 
 
-def scoped_query(query: str, content_type: str) -> str:
-    if content_type == "music" and not any(
-        signal in query.casefold() for signal in _MUSIC_SIGNALS
-    ):
-        return f"{query} music"
-    return query
+def search_target(query: str, content_type: str, fetch_limit: int) -> str:
+    """Route explicit music searches to yt-dlp's bounded songs extractor."""
+
+    if content_type == "music":
+        return (
+            "https://music.youtube.com/search?"
+            f"{urlencode({'q': query})}#songs"
+        )
+    return f"ytsearch{fetch_limit}:{query}"
 
 
 def result_category(
@@ -89,7 +139,11 @@ def result_category(
         for field in ("title", "track", "album", "genre", "categories")
     )
     signals = f"{query} {metadata}".casefold()
-    return "music" if any(signal in signals for signal in _MUSIC_SIGNALS) else "video"
+    return (
+        "music"
+        if contains_music_signal(signals) or has_topic_channel_signal(entry)
+        else "video"
+    )
 
 
 def search_offset(request: dict[str, Any]) -> int:
@@ -104,18 +158,32 @@ def search_offset(request: dict[str, Any]) -> int:
     return offset
 
 
+def bounded_duration(value: object) -> int | None:
+    """Normalize flat metadata without violating the discovery contract."""
+
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value < 0
+        or value > _MAX_DISCOVERY_DURATION
+    ):
+        return None
+    return int(value)
+
+
 def search(request: dict[str, Any]) -> dict[str, Any]:
     from yt_dlp import YoutubeDL
 
     query = " ".join(str(request.get("query", "")).split())
     limit = int(request.get("limit", 12))
-    if not 1 <= len(query) <= 200:
+    if not 1 <= len(query) <= _MAX_QUERY_LENGTH:
         raise ValueError("search query length is invalid")
     limit = max(1, min(int(limit), 50))
     offset = search_offset(request)
     fetch_limit = min(offset + limit + 1, 200)
     content_type = search_scope(request)
-    provider_query = scoped_query(query, content_type)
+    target = search_target(query, content_type, fetch_limit)
     options = {
         "quiet": True,
         "no_warnings": True,
@@ -131,10 +199,7 @@ def search(request: dict[str, Any]) -> dict[str, Any]:
     options.update(runtime_options(request))
     emit({"type": "progress", "title": "Searching"})
     with YoutubeDL(options) as ydl:
-        info = ydl.extract_info(
-            f"ytsearch{fetch_limit}:{provider_query}",
-            download=False,
-        )
+        info = ydl.extract_info(target, download=False)
     results: list[dict[str, Any]] = []
     entries = ((info or {}).get("entries") or [])[offset : offset + limit + 1]
     has_more = len(entries) > limit and offset + limit < 200
@@ -153,11 +218,7 @@ def search(request: dict[str, Any]) -> dict[str, Any]:
                 "artist": str(entry.get("channel") or entry.get("uploader") or "")[
                     :200
                 ],
-                "duration": (
-                    int(entry["duration"])
-                    if isinstance(entry.get("duration"), (int, float))
-                    else None
-                ),
+                "duration": bounded_duration(entry.get("duration")),
                 "language": str(entry.get("language") or "")[:32],
                 "category": result_category(entry, content_type, query),
                 "thumbnail_url": thumbnail_url,

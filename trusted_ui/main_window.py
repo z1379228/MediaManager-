@@ -28,7 +28,6 @@ from trusted_ui.background import (
 from trusted_ui.dependency_dialog import (
     dependency_presentation,
     show_dependency_dialog,
-    startup_dependency_prompt_required,
 )
 from trusted_ui.download_panel import create_download_panel
 from trusted_ui.direct_http_workspace import create_direct_http_workspace
@@ -50,7 +49,6 @@ from trusted_ui.optional_workspace_manager import (
     OptionalWorkspaceSpec,
 )
 from trusted_ui.plugin_manager import show_plugin_manager
-from trusted_ui.initial_mod_setup import show_initial_mod_setup
 from trusted_ui.search_panel import create_search_panel
 from trusted_ui.theme import (
     UI_SCALE_VALUES,
@@ -667,14 +665,6 @@ def run_main_window(context: object) -> int:
             self.shortcuts.append(environment_shortcut)
 
             self.setCentralWidget(root)
-            if startup_dependency_prompt_required(dependency_report):
-                QTimer.singleShot(
-                    0,
-                    lambda: show_dependency_dialog(
-                        Path(context.paths.application),
-                        self,
-                    ),
-                )
 
         def ensure_system_tray(self) -> object | None:
             if self.system_tray is not None:
@@ -749,7 +739,8 @@ def run_main_window(context: object) -> int:
         if not icon.isNull():
             app.setWindowIcon(icon)
     apply_application_theme(app, context.settings.ui_scale)
-    show_initial_mod_setup(context)
+    # Startup stays non-modal.  MOD selection and dependency remediation remain
+    # available through the visible MOD manager and environment status buttons.
     window = Window()
     window.show()
     window.raise_()

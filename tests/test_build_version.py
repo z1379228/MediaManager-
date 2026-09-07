@@ -139,6 +139,16 @@ def test_version_build_paths_are_isolated_under_work(tmp_path: Path) -> None:
     assert retry.work == (
         tmp_path / ".work" / "Development" / "1.2-attempt-a1b2c3d4"
     )
+    testing_retry = version_build_paths(
+        tmp_path,
+        "11.0.0",
+        channel="testing",
+        release_version="1.2.1",
+        attempt_id="a1b2c3d4",
+    )
+    assert testing_retry.work == (
+        tmp_path / ".work" / "Testing" / "1.2.1-attempt-a1b2c3d4"
+    )
     with pytest.raises(ValueError, match="attempt id"):
         version_build_paths(tmp_path, "1.2.3", attempt_id="../unsafe")
 

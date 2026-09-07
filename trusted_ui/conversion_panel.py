@@ -126,6 +126,7 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
     capability_row.addWidget(refresh_capabilities)
     page.addLayout(capability_row)
     panel.gpu_available = False
+    panel.hevc_nvenc_available = False
 
     card = QFrame()
     card.setObjectName("card")
@@ -151,6 +152,8 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
         "join-copy": "相同格式串接",
         "video-h264": "H.264 相容轉檔",
         "compress-h265": "H.265 CPU 壓縮",
+        "hevc10-nvenc-opus-copy": "H.265 10-bit NVENC 300 kbps／Opus Passthru（MKV）",
+        "watermark-h264": "影片加本機影像浮水印",
         "video-vp9-webm": "VP9 / Opus WebM",
         "video-mpeg4-avi": "MPEG-4 / MP3 AVI",
         "audio-mp3": "音訊 MP3",
@@ -193,6 +196,18 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
     option_grid.addWidget(output_text, 1, 4)
     option_grid.addWidget(choose_output, 1, 5)
     form.addLayout(option_grid)
+
+    watermark_row = QHBoxLayout()
+    watermark_text = QLineEdit()
+    watermark_text.setReadOnly(True)
+    watermark_text.setPlaceholderText("尚未選擇 PNG／JPEG／WebP 等本機浮水印影像")
+    watermark_text.setAccessibleName("浮水印影像")
+    choose_watermark = QPushButton("選擇浮水印影像")
+    watermark_label = QLabel("浮水印")
+    watermark_row.addWidget(watermark_label)
+    watermark_row.addWidget(watermark_text, 1)
+    watermark_row.addWidget(choose_watermark)
+    form.addLayout(watermark_row)
 
     trim_card = QFrame()
     trim_card.setObjectName("subtleCard")
@@ -257,6 +272,11 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
             None if selected_preset == "ad-trim-h264" or end.value() == 0 else float(end.value()),
             hardware_acceleration=gpu.isChecked() and selected_preset == "video-h264",
             remove_ranges=ranges,
+            watermark=(
+                panel.watermark
+                if selected_preset == "watermark-h264"
+                else None
+            ),
         )
 
     def size_text(value: int) -> str:
@@ -268,13 +288,19 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
         return str(value)
 
     def update_mode() -> None:
-        selected = str(preset.currentData()) == "ad-trim-h264"
+        selected_preset = str(preset.currentData())
+        selected = selected_preset == "ad-trim-h264"
+        watermark_selected = selected_preset == "watermark-h264"
+        hevc10_selected = selected_preset == "hevc10-nvenc-opus-copy"
         child_enabled = trim_enabled()
         trim_card.setVisible(selected)
+        watermark_label.setVisible(watermark_selected)
+        watermark_text.setVisible(watermark_selected)
+        choose_watermark.setVisible(watermark_selected)
         start.setEnabled(not selected)
         end.setEnabled(not selected)
         gpu_enabled = (
-            str(preset.currentData()) == "video-h264"
+            selected_preset == "video-h264"
             and panel.gpu_available
         )
         gpu.setEnabled(gpu_enabled)
@@ -284,10 +310,24 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
         preview_trim.setEnabled(
             selected and child_enabled and len(panel.sources) == 1
         )
-        submit.setEnabled(not selected or child_enabled)
+        submit.setEnabled(
+            (not selected or child_enabled)
+            and (not hevc10_selected or panel.hevc_nvenc_available)
+        )
+        preset.setToolTip(
+            "需要本機 hevc_nvenc；來源第一條音訊必須是 Opus，才會直接複製。"
+            if hevc10_selected
+            else ""
+        )
 
     def update_preview() -> None:
         update_mode()
+        if (
+            str(preset.currentData()) == "hevc10-nvenc-opus-copy"
+            and not panel.hevc_nvenc_available
+        ):
+            estimate.setText("請先偵測本機 hevc_nvenc；實際加入時會驗證來源音訊為 Opus。")
+            return
         try:
             plan = service.preview(current_request())
         except (OSError, ValueError):
@@ -319,21 +359,26 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
             capabilities = service.capabilities(refresh=True)
         except (OSError, RuntimeError, ValueError) as error:
             panel.gpu_available = False
-            capability_note.setText(f"本機能力偵測失敗；維持 CPU 模式：{error}")
+            panel.hevc_nvenc_available = False
+            capability_note.setText(f"本機能力偵測失敗；GPU 格式維持停用：{error}")
         else:
             panel.gpu_available = capabilities.supports_h264_nvenc
+            panel.hevc_nvenc_available = capabilities.supports_hevc_nvenc
             version = capabilities.ffmpeg_version or "FFmpeg 版本未知"
-            gpu_text = (
-                "已偵測 h264_nvenc，可選 NVIDIA GPU"
-                if panel.gpu_available
-                else "未偵測到 h264_nvenc，維持 CPU 模式"
+            h264_text = (
+                "h264_nvenc 可用" if panel.gpu_available else "h264_nvenc 不可用"
+            )
+            hevc_text = (
+                "hevc_nvenc 可用" if panel.hevc_nvenc_available else "hevc_nvenc 不可用"
             )
             warning = (
                 f"；{len(capabilities.errors)} 項探測失敗"
                 if capabilities.errors
                 else ""
             )
-            capability_note.setText(f"{version}；{gpu_text}{warning}")
+            capability_note.setText(
+                f"{version}；{h264_text}；{hevc_text}{warning}"
+            )
         finally:
             refresh_capabilities.setEnabled(True)
             update_preview()
@@ -364,6 +409,18 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
         )
         if value:
             output_text.setText(value)
+            update_preview()
+
+    def select_watermark() -> None:
+        value, _ = QFileDialog.getOpenFileName(
+            panel,
+            "選擇本機浮水印影像",
+            str(Path.home()),
+            "影像 (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)",
+        )
+        if value:
+            panel.watermark = Path(value)
+            watermark_text.setText(value)
             update_preview()
 
     def preview_first_cut() -> None:
@@ -513,6 +570,7 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
 
     choose_sources.clicked.connect(select_sources)
     choose_output.clicked.connect(select_output)
+    choose_watermark.clicked.connect(select_watermark)
     preset.currentIndexChanged.connect(update_preview)
     start.valueChanged.connect(update_preview)
     end.valueChanged.connect(update_preview)
@@ -530,6 +588,9 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
     panel.timer = timer
     panel.shutdown = shutdown
     panel.preset = preset
+    panel.watermark = None
+    panel.watermark_text = watermark_text
+    panel.choose_watermark = choose_watermark
     panel.capability_note = capability_note
     panel.refresh_capabilities = refresh_capabilities
     panel.ad_trim_enabled = ad_trim_enabled

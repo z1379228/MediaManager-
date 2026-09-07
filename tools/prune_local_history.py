@@ -25,7 +25,10 @@ from tools.release_preflight import PreflightResult, check_release
 
 APPLY_CONFIRMATION = "DELETE-LOCAL-RELEASE-HISTORY"
 _RELEASE_TRACKS = frozenset({"Development", "Testing", "Stable"})
-_VERSION_FOLDER = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+_BASE_VERSION_FOLDER = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+_TESTING_CORRECTION_FOLDER = re.compile(
+    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.([1-9][0-9]*)$"
+)
 _PROTECTED_PARTS = frozenset({"userdata"})
 
 
@@ -57,6 +60,34 @@ def _is_linklike(path: Path) -> bool:
     return path.is_symlink() or bool(attributes & reparse)
 
 
+def _valid_version_folder(version: str, *, track: str | None) -> bool:
+    if _BASE_VERSION_FOLDER.fullmatch(version):
+        return True
+    return track == "Testing" and bool(
+        _TESTING_CORRECTION_FOLDER.fullmatch(version)
+    )
+
+
+def _version_sort_key(version: str) -> tuple[int, int, int]:
+    matched = _BASE_VERSION_FOLDER.fullmatch(version)
+    if matched:
+        return int(matched.group(1)), int(matched.group(2)), 0
+    matched = _TESTING_CORRECTION_FOLDER.fullmatch(version)
+    if matched:
+        return tuple(int(part) for part in matched.groups())
+    raise ValueError(f"invalid version folder: {version}")
+
+
+def _release_sort_key(value: str) -> tuple[str, int, int, int]:
+    relative = PurePosixPath(value)
+    if len(relative.parts) == 1:
+        track = ""
+        version = relative.parts[0]
+    else:
+        track, version = relative.parts
+    return (track.casefold(), *_version_sort_key(version))
+
+
 def _safe_release_relative(value: str) -> PurePosixPath:
     if not value or "\\" in value:
         raise ValueError("retained release path must use safe forward slashes")
@@ -68,12 +99,19 @@ def _safe_release_relative(value: str) -> PurePosixPath:
     ):
         raise ValueError("retained release path is unsafe")
     if len(relative.parts) == 1:
+        track = None
         version = relative.parts[0]
     elif len(relative.parts) == 2 and relative.parts[0] in _RELEASE_TRACKS:
+        track = relative.parts[0]
         version = relative.parts[1]
     else:
         raise ValueError("retained release path must name one exact release")
-    if _VERSION_FOLDER.fullmatch(version) is None:
+    if not _valid_version_folder(version, track=track):
+        if track == "Testing":
+            raise ValueError(
+                "retained Testing release folder must use major.minor or "
+                "nonzero major.minor.patch"
+            )
         raise ValueError("retained release folder must use major.minor")
     return relative
 
@@ -92,7 +130,7 @@ def _discover_releases(root: Path) -> tuple[dict[str, Path], tuple[str, ...]]:
         if _is_linklike(entry) or not entry.is_dir():
             errors.append(f"unexpected or link-like version root entry: {entry.name}")
             continue
-        if _VERSION_FOLDER.fullmatch(entry.name):
+        if _valid_version_folder(entry.name, track=None):
             releases[entry.name] = entry
             continue
         if entry.name not in _RELEASE_TRACKS:
@@ -105,7 +143,7 @@ def _discover_releases(root: Path) -> tuple[dict[str, Path], tuple[str, ...]]:
             if (
                 _is_linklike(release)
                 or not release.is_dir()
-                or _VERSION_FOLDER.fullmatch(release.name) is None
+                or not _valid_version_folder(release.name, track=entry.name)
             ):
                 errors.append(f"unexpected or link-like release entry: {relative}")
                 continue
@@ -160,7 +198,12 @@ def plan_local_history_prune(
     """Create a read-only local-release deletion plan."""
 
     version_root = _safe_root(root)
-    kept = tuple(sorted({_safe_release_relative(value).as_posix() for value in keep}))
+    kept = tuple(
+        sorted(
+            {_safe_release_relative(value).as_posix() for value in keep},
+            key=_release_sort_key,
+        )
+    )
     if len(kept) < 2:
         raise ValueError("at least two unique releases must be retained")
     releases, discovery_errors = _discover_releases(version_root)
@@ -183,7 +226,7 @@ def plan_local_history_prune(
             blocked.append(f"{relative} is not publish-ready: {detail}")
 
     candidates: list[PruneCandidate] = []
-    for relative in sorted(set(releases) - set(kept)):
+    for relative in sorted(set(releases) - set(kept), key=_release_sort_key):
         candidate, errors = _scan_candidate(releases[relative], relative)
         candidates.append(candidate)
         blocked.extend(errors)

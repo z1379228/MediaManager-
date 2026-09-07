@@ -237,3 +237,176 @@ def test_bilibili_workspace_filters_one_source_and_batches_selected_uploader(
         workspace.close()
         workspace.deleteLater()
         app.processEvents()
+
+
+def test_bilibili_workspace_prepares_text_query_before_dispatch(monkeypatch) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    calls: list[dict[str, object]] = []
+
+    class ImmediateThread:
+        def __init__(self, *, target, **_kwargs) -> None:
+            self.target = target
+
+        def start(self) -> None:
+            self.target()
+
+    monkeypatch.setattr(
+        "trusted_ui.bilibili_workspace.threading.Thread", ImmediateThread
+    )
+    discovery = SimpleNamespace(
+        statuses=lambda: (
+            ProviderStatus("bilibili-search", "Bilibili Search", True),
+        ),
+        is_enabled=lambda provider_id: provider_id == "bilibili-search",
+        federated_search=lambda query, **options: (
+            calls.append({"query": query, **options})
+            or FederatedSearchResult((), (), (), ())
+        ),
+    )
+    context = SimpleNamespace(
+        discovery=discovery,
+        download_providers=SimpleNamespace(
+            is_enabled=lambda provider_id: provider_id == "bilibili"
+        ),
+        events=None,
+        audit=None,
+    )
+    workspace = create_bilibili_workspace(context, lambda _urls: None)
+    try:
+        workspace.query.setText("  LO-FI   offical  ")
+        workspace.search()
+        app.processEvents()
+
+        assert workspace.query.text() == "lofi official"
+        assert workspace.last_query == "lofi official"
+        assert calls == [
+            {
+                "query": "lofi official",
+                "provider_ids": ("bilibili-search",),
+                "limit": 50,
+                "content_type": "all",
+                "cursor": "",
+            }
+        ]
+    finally:
+        workspace.shutdown()
+        workspace.close()
+        workspace.deleteLater()
+        app.processEvents()
+
+
+def test_bilibili_workspace_ranks_exact_title_before_extended_title(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    context = SimpleNamespace(
+        discovery=SimpleNamespace(
+            statuses=lambda: (
+                ProviderStatus("bilibili-search", "Bilibili Search", True),
+            ),
+            is_enabled=lambda provider_id: provider_id == "bilibili-search",
+        ),
+        download_providers=SimpleNamespace(
+            is_enabled=lambda provider_id: provider_id == "bilibili"
+        ),
+        events=None,
+        audit=None,
+    )
+    workspace = create_bilibili_workspace(context, lambda _urls: None)
+    try:
+        workspace.last_query = "Exact Match"
+        response = FederatedSearchResult(
+            (
+                _item(
+                    "extended",
+                    "https://www.bilibili.com/video/BVextended",
+                    "Exact Match Remix",
+                    "Uploader",
+                ),
+                _item(
+                    "exact",
+                    "https://www.bilibili.com/video/BVexact",
+                    "Exact Match",
+                    "Uploader",
+                ),
+            ),
+            (),
+            ("bilibili-search", "bilibili-search"),
+        )
+
+        workspace.show_results(0, response, "")
+
+        assert tuple(item.video_id for item in workspace.results) == (
+            "exact",
+            "extended",
+        )
+        assert workspace.table.item(0, 1).text() == "Exact Match"
+    finally:
+        workspace.shutdown()
+        workspace.close()
+        workspace.deleteLater()
+        app.processEvents()
+
+
+def test_bilibili_workspace_stops_paging_at_workspace_result_limit(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    context = SimpleNamespace(
+        discovery=SimpleNamespace(
+            statuses=lambda: (
+                ProviderStatus("bilibili-search", "Bilibili Search", True),
+            ),
+            is_enabled=lambda provider_id: provider_id == "bilibili-search",
+        ),
+        download_providers=SimpleNamespace(
+            is_enabled=lambda provider_id: provider_id == "bilibili"
+        ),
+        events=None,
+        audit=None,
+    )
+    workspace = create_bilibili_workspace(context, lambda _urls: None)
+    try:
+        workspace.last_query = "bounded"
+        items = tuple(
+            _item(
+                str(index),
+                f"https://www.bilibili.com/video/BV{index}",
+                f"Bounded result {index}",
+                "Uploader",
+            )
+            for index in range(200)
+        )
+        response = FederatedSearchResult(
+            items,
+            (),
+            ("bilibili-search",) * len(items),
+            (("bilibili-search", "next-token"),),
+        )
+
+        workspace.show_results(0, response, "")
+
+        assert len(workspace.all_results) == 200
+        assert workspace.next_cursor == ""
+        assert not workspace.more_button.isEnabled()
+        assert "已達 200 筆上限" in workspace.status.text()
+    finally:
+        workspace.shutdown()
+        workspace.close()
+        workspace.deleteLater()
+        app.processEvents()

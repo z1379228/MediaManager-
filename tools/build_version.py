@@ -50,7 +50,10 @@ def version_build_paths(
 ) -> VersionBuildPaths:
     if attempt_id is not None and not re.fullmatch(r"[a-z0-9-]{1,32}", attempt_id):
         raise ValueError("build attempt id is invalid")
-    folder = version_folder_name(release_version or version)
+    folder = version_folder_name(
+        release_version or version,
+        channel=channel,
+    )
     if attempt_id is not None:
         folder = f"{folder}-attempt-{attempt_id}"
     work = (
@@ -262,7 +265,9 @@ def _validated_built_artifacts(
 ) -> tuple[Path, Path]:
     work = work.resolve()
     expected_parent = (root / ".work" / release_track(channel)).resolve()
-    folder = re.escape(version_folder_name(release_version))
+    folder = re.escape(
+        version_folder_name(release_version, channel=channel)
+    )
     if work.parent != expected_parent or not re.fullmatch(
         rf"{folder}-attempt-[a-z0-9-]{{1,32}}", work.name
     ):
@@ -509,7 +514,10 @@ def build_version(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Build into .work and stage into Version/<major>.<minor>."
+        description=(
+            "Build into .work and stage into the channel-aware Version folder "
+            "(Testing corrections use X.Y.Z; other channels use X.Y)."
+        )
     )
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--version", default=CORE_VERSION)

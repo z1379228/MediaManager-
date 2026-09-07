@@ -37,14 +37,8 @@ jobs:
       - name: Ruff
         run: python -m tools.quality_audit --ruff-only
 
-      - name: Pytest
-        shell: pwsh
-        env:
-          # Keep cancelled or retried Windows jobs from sharing stale temp files.
-          PYTEST_BASETEMP: .work/pytest-ci-${{ github.run_id }}
-        run: |
-          New-Item -ItemType Directory -Force .work | Out-Null
-          python -m pytest -vv -rs --timeout=60 --basetemp="$env:PYTEST_BASETEMP"
+      - name: Repository tests
+        run: python -m tools.run_tests
 
       - name: Static project audits
         shell: pwsh
@@ -82,6 +76,6 @@ jobs:
 
       - name: Run symlink security tests
         run: >-
-          python -m pytest -vv -rs
-          tests/test_builtin_download_provider.py::test_builtin_provider_integrity_rejects_symlink
-          tests/test_library_service.py::test_scan_is_bounded_and_does_not_follow_symlink
+          python -m tools.run_tests
+          --target tests/test_builtin_download_provider.py::test_builtin_provider_integrity_rejects_symlink
+          --target tests/test_library_service.py::test_scan_is_bounded_and_does_not_follow_symlink

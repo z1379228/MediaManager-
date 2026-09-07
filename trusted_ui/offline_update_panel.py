@@ -24,7 +24,9 @@ def create_offline_update_panel(context: object, parent: object = None) -> objec
     page.setSpacing(10)
     intro = QLabel(
         "離線更新包只會在完整簽章、版本範圍與所有 SHA-256 驗證通過後，"
-        "交易式建立 Version/<major>.<minor>。目前版本不會被直接覆寫。"
+        "交易式建立新版本資料夾：Testing 修正版使用 "
+        "Version/Testing/<major>.<minor>.<patch>，其他通道維持 "
+        "Version/<track>/<major>.<minor>。目前版本不會被直接覆寫。"
     )
     intro.setWordWrap(True)
     intro.setObjectName("sectionSubtitle")

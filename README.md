@@ -1,56 +1,90 @@
 # MediaManager v1.0
 
-免費、無廣告、本機優先的媒體整理與模組化下載工作區。核心負責安全邊界、
-佇列、媒體庫與可信 UI；網站解析、轉換、轉錄及自動化等重功能由可個別停用的
-內建或第三方 MOD 提供。
+MediaManager 是免費、無廣告、Windows 優先且本機運作的模組化媒體管理工具，
+整合 YouTube、YouTube Music、Bilibili、MEGA、Direct HTTP 與本機媒體庫。
+核心負責下載佇列、媒體整理、安全邊界與可信 UI；網站解析、格式轉換、語音
+轉文字及自動化等功能由可個別停用的內建或第三方 MOD 提供。
 
-目前來源版本為開發版 39.0（核心相容版本 39.0.10）。`MediaManager v1.0`
-是產品顯示名稱，不表示 Stable 已發布。未簽署、維持 `SAFE_MODE` 的
-[Testing 1.1（39.0.10 重整）](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.1.0-r2)
-已發布供測試；它不是已簽署的 Stable 正式套件。
+MediaManager 只處理使用者有權存取的公開內容，不繞過 DRM、登入、Cookie、
+Cloudflare、廣告、付費、地區或其他網站限制。
+
+## 目前狀態
+
+- 目前來源版本為開發版 39.0（核心相容版本 39.0.96）。
+- 最新公開下載是未簽署的
+  [Testing 1.2.2 prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.2)，
+  對應 Development `39.0.39`。
+- Development `39.0.40`～`39.0.96` 的修改尚未包含在公開 Testing ZIP。
+- Testing `1.2.3` 目前只是本機候選，未上傳或發布。
+- 尚未發布已簽署的 Stable 套件；`MediaManager v1.0` 是產品顯示名稱，不代表
+  Stable 已發布。
+
+### 最近來源變更
+
+- `39.0.96`：移除第三方 MOD 驗證訊息中的硬編碼 `core 3.0`，並讓 GitHub
+  Quality workflow 統一使用具 60 秒逾時及隔離暫存目錄的專案測試 runner。
+- `39.0.95`：啟動時直接顯示主畫面，不再自動彈出首次 MOD 設定或依賴環境
+  視窗；相關功能仍可由主畫面的按鈕手動開啟。
+- `39.0.94`：強化 H.265 Main10 NVENC／Opus Passthru MKV preset 的輸出契約
+  驗證與失敗清理。
+- `39.0.90`～`39.0.93`：新增影像浮水印、YouTube Music 搜尋路徑與下載後
+  本機轉換 preset。
+- `39.0.13`～`39.0.89`：改善多來源搜尋、分頁、去重、Unicode 比對、相似音樂
+  排序、失敗隔離及第三方 Search v2 MOD 契約。
+
+完整技術紀錄請見
+[Development 39.0–40.0 更新紀錄](docs/release-39.0-40.0.md)。
+
+## 快速下載與啟動
+
+1. 從 [Testing 1.2.2 prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.2)
+   下載
+   [`MediaManager-Testing-1.2.2.zip`](https://github.com/z1379228/MediaManager-/releases/download/test-v1.2.2/MediaManager-Testing-1.2.2.zip)
+   與
+   [`MediaManager-Testing-1.2.2.zip.sha256`](https://github.com/z1379228/MediaManager-/releases/download/test-v1.2.2/MediaManager-Testing-1.2.2.zip.sha256)。
+2. 將兩個檔案放在同一資料夾，使用 PowerShell 核對 SHA-256：
+
+   ```powershell
+   Get-FileHash -Algorithm SHA256 .\MediaManager-Testing-1.2.2.zip
+   Get-Content .\MediaManager-Testing-1.2.2.zip.sha256
+   ```
+
+3. 確認兩者雜湊相同後，將 ZIP 解壓縮至新的空資料夾。
+4. 進入含有 `MediaManager.exe` 的資料夾並雙擊啟動，不需要另外安裝 Python。
+
+Testing 1.2.2 是未簽署測試版，Windows 可能顯示無法驗證發布者的警告。請只從
+上述 GitHub Release 下載並核對雜湊，不要關閉 Windows 安全功能。建議下載完整
+ZIP，不要單獨下載 EXE；ZIP 不包含任何使用者資料。
+
+一般雙擊啟動會使用 `%APPDATA%\MediaManager`、`%LOCALAPPDATA%\MediaManager`
+與 `Downloads\MediaManager`，不等同於 `--portable` 資料模式。詳見
+[免安裝自包含 ZIP 說明](docs/self-contained-zip.md)。
 
 ## 主要能力
 
-- YouTube、Bilibili、MEGA、Direct HTTP 與網站矩陣明列的獨立工作區。
-- 本機媒體庫、原子寫入的下載佇列、歷史、取消、重試與恢復。
-- 格式工廠：使用本機 FFmpeg 進行影片、音訊、影像與字幕處理。
+- YouTube／YouTube Music 公開搜尋、批次工作與相似音樂候選。
+- Bilibili、MEGA、Direct HTTP 及網站矩陣中明列的獨立工作區。
+- 本機媒體庫、原子寫入下載佇列、歷史、取消、重試與恢復。
+- 格式工廠：使用本機 FFmpeg 處理影片、音訊、影像、字幕、切割、串接、壓縮、
+  固定位置影像浮水印及 H.265 Main10 NVENC／Opus Passthru MKV。
 - Gopeed Bridge／P2P Transfer：只連接使用者自行啟動的 localhost Gopeed API。
-- 選用 Speech to Text 與 Automation；未安裝不影響核心。
-- schema v2 第三方 MOD、Ed25519 發布者簽章、最小權限、受控程序與宣告式 UI。
+- 選用 Speech to Text 與 Automation；未安裝不影響核心功能。
+- schema v2 第三方 MOD、Ed25519 發布者簽章、最小權限、受控程序及宣告式 UI。
 
-實際能力以 MOD 管理、[依賴檢查](docs/dependency-health.md)與
-[網站主機清冊](docs/site-host-inventory.md)為準。外部工具名稱不表示 MediaManager
-會自動安裝、捆綁或承諾其全部功能。
+實際可用能力以程式內的 MOD 管理、
+[依賴檢查](docs/dependency-health.md)與
+[網站主機清冊](docs/site-host-inventory.md)為準。外部工具名稱不表示
+MediaManager 會自動安裝、捆綁或承諾其全部功能。
 
-## 安裝
+## 從原始碼執行
 
-### 方法一：Testing 1.1 portable ZIP（一般使用者）
+必要條件：
 
-1. 從 [Testing 1.1 Release](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.1.0-r2)
-   下載
-   [`MediaManager-Testing-1.1.0-r2.zip`](https://github.com/z1379228/MediaManager-/releases/download/test-v1.1.0-r2/MediaManager-Testing-1.1.0-r2.zip)
-   及
-   [`MediaManager-Testing-1.1.0-r2.zip.sha256`](https://github.com/z1379228/MediaManager-/releases/download/test-v1.1.0-r2/MediaManager-Testing-1.1.0-r2.zip.sha256)。
-2. 將兩個檔案放在同一資料夾，於該資料夾開啟 PowerShell 並核對雜湊：
+- Windows 10／11 x64。
+- Python 3.14 以上。
+- Git。
 
-   ```powershell
-   Get-FileHash -Algorithm SHA256 .\MediaManager-Testing-1.1.0-r2.zip
-   Get-Content .\MediaManager-Testing-1.1.0-r2.zip.sha256
-   ```
-
-   兩者的 SHA-256 必須相同；目前發布值為
-   `31a1ab2c61ada07bc07eb8121107e8bbc7a16692347cae54af5fc5edb7dcf912`。
-3. 將 ZIP 解壓縮到新的空資料夾，進入含有 `MediaManager.exe` 的資料夾後執行
-   `MediaManager.exe`。不需要另外安裝 Python。
-
-Testing 1.1 是未簽署測試版，Windows 可能顯示無法驗證發布者的警告。只應從上述
-GitHub Release 下載並在雜湊一致時執行；不要關閉 Windows 安全功能。portable
-ZIP 已包含目前封裝的執行檔、資產與可攜工具，建議優先使用 ZIP，而不是單獨下載
-`MediaManager.exe`。發行附件不包含 `UserData`。
-
-### 方法二：從原始碼安裝
-
-必要條件為 Windows 10／11 x64、Git 與 Python 3.14 以上。在 PowerShell 執行：
+在 PowerShell 執行：
 
 ```powershell
 git clone https://github.com/z1379228/MediaManager-.git
@@ -62,26 +96,31 @@ py -3.14 -m venv .venv
 .\.venv\Scripts\python.exe .\main.py
 ```
 
-若要執行測試與開發工具，將安裝命令改為
-`.\.venv\Scripts\python.exe -m pip install -e ".[ui,dev]"`。`--verify-only`
-只驗證核心完整性；啟動 UI 後可從主畫面的核心／選用 MOD 工具狀態按鈕開啟
-「執行環境」，再按「重新檢查」確認外部工具。
+開發者若需要測試工具，將安裝命令改為：
 
-`main.py` 是唯一正式入口；`desktop.py` 只保留為舊版相容轉接。可攜模式會把
-使用者資料放在程式旁的 `UserData/`。更完整的更新、移除與排錯說明見
-[INSTALL.md](INSTALL.md)及[依賴檢查](docs/dependency-health.md)。
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[ui,dev]"
+```
 
-## 安全邊界
+`main.py` 是正式入口；`desktop.py` 僅為舊版相容轉接。`--verify-only` 只驗證
+核心完整性。啟動 UI 後，可點擊主畫面的核心／選用 MOD 工具狀態按鈕開啟
+「執行環境」，再按「重新檢查」確認 yt-dlp、FFmpeg、JavaScript runtime 等
+外部工具。程式只顯示缺少項目，不會未經確認自動安裝。
+
+完整的更新、移除及排錯流程請見 [INSTALL.md](INSTALL.md)。
+
+## 安全與資料界線
 
 - 不繞過 DRM、登入、Cookie、Cloudflare、廣告、付費、地區或網站存取限制。
-- Cookie、Token、私鑰、production 憑證與個人資料不得寫入 Repository 或 Log。
+- Cookie、Token、私鑰、production 憑證及個人資料不得寫入 Repository 或 Log。
 - URL、檔案、MOD manifest、IPC 與外部程序輸出一律視為不可信。
-- 新安裝或更新的第三方 MOD 預設停用；發布者信任與使用者啟用是兩個獨立決定。
+- 新安裝或更新的第三方 MOD 預設停用；信任發布者與啟用 MOD 是兩個獨立決定。
 - 宣告式 MOD UI 不執行外部 HTML、Qt 物件或任意腳本。
 - Development、Testing 與 Stable 的身分、雜湊、簽章及發布 Gate 不可互相冒用。
 
-第三方 MOD 作者請從 [MOD-DEVELOPMENT.md](MOD-DEVELOPMENT.md) 開始。安全與
-發行細節見 [MOD 套件契約](docs/mod-package-v1.md)及
+第三方 MOD 作者請從 [MOD-DEVELOPMENT.md](MOD-DEVELOPMENT.md) 開始，並參考
+[第三方 MOD 開發指南](docs/mod-developer-guide.md)、
+[MOD 套件契約](docs/mod-package-v1.md)與
 [簽章流程](docs/release-signing.md)。
 
 ## Repository 結構
@@ -108,21 +147,23 @@ py -3.14 -m venv .venv
 git diff --check
 ```
 
-Repository 測試應透過 `tools.run_tests` 使用 Repository 外的每輪唯一暫存目錄；
-不得讓 raw pytest 回退到 Repository 根目錄。
+Repository 測試應使用 `tools.run_tests` 的 Repository 外隔離暫存目錄；不得讓
+raw pytest 回退到 Repository 根目錄。
 
 ## 文件
 
 - [文件索引](docs/README.md)
+- [安裝與啟動](INSTALL.md)
 - [目前專案狀態](docs/project-status.md)
 - [Development 39.0–40.0 更新紀錄](docs/release-39.0-40.0.md)
 - [下載工作契約](docs/downloads-v1.md)
 - [第三方 MOD 開發指南](docs/mod-developer-guide.md)
 - [版本與發布政策](docs/version-layout.md)
+- [免安裝自包含 ZIP](docs/self-contained-zip.md)
 
-舊 roadmap、過期候選與逐版日誌不再留在目前樹；需要稽核時由 Git 歷史與
-GitHub Releases 的不可變附件追查。已公開的 EXE、checksum、release metadata
-與 tag 不得刪除或覆寫。
+舊 roadmap、過期候選與逐版重複日誌不保留在目前文件索引；需要稽核時，應由
+Git 歷史及 GitHub Releases 的不可變附件追查。已公開的 EXE、checksum、release
+metadata 與 tag 不得刪除或覆寫。
 
 ## License
 

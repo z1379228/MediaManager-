@@ -8,9 +8,17 @@ import zipfile
 from tools.audit_versions import audit_version, audit_versions
 
 
-def _write_release(root: Path, version: str) -> Path:
-    major, minor, _patch = version.split(".")
-    release = root / f"{major}.{minor}"
+def _write_release(
+    root: Path,
+    version: str,
+    *,
+    track: str | None = None,
+) -> Path:
+    major, minor, patch = version.split(".")
+    folder = f"{major}.{minor}"
+    if track == "Testing" and patch != "0":
+        folder = version
+    release = root / folder
     release.mkdir(parents=True)
     (release / "MediaManager.exe").write_bytes(b"test executable")
     tools = release / "tools"
@@ -27,7 +35,7 @@ def _write_release(root: Path, version: str) -> Path:
             {
                 "schema_version": 1,
                 "core_version": version,
-                "version_folder": f"{major}.{minor}",
+                "version_folder": folder,
                 "portable_tools": ["deno.exe"],
             }
         ),
@@ -46,7 +54,7 @@ def _write_release(root: Path, version: str) -> Path:
 
 
 def _write_tracked_release(root: Path, version: str, track: str) -> Path:
-    release = _write_release(root / track, version)
+    release = _write_release(root / track, version, track=track)
     info_path = release / "release-info.json"
     info = json.loads(info_path.read_text(encoding="utf-8"))
     info["release_track"] = track
@@ -111,6 +119,22 @@ def test_audit_supports_independent_development_and_stable_tracks(
         ("Stable", "1.0"),
         ("Development", "5.0"),
         ("Development", "6.0"),
+    ]
+
+
+def test_audit_supports_zero_patch_and_patch_testing_versions(
+    tmp_path: Path,
+) -> None:
+    version_root = tmp_path / "Version"
+    _write_tracked_release(version_root, "1.2.0", "Testing")
+    _write_tracked_release(version_root, "1.2.1", "Testing")
+
+    report = audit_versions(version_root)
+
+    assert report.valid
+    assert [(item.track, item.folder) for item in report.versions] == [
+        ("Testing", "1.2"),
+        ("Testing", "1.2.1"),
     ]
 
 
