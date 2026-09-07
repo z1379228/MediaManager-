@@ -121,7 +121,10 @@ def validate_manifest_contract(
     ):
         errors.append(f"unsupported runtime protocol: {manifest.runtime_protocol}")
     warnings = (
-        ("schema v1 executable MODs cannot be enabled by core 3.0",)
+        (
+            "schema v1 executable MODs cannot be enabled by core "
+            f"{core_version}",
+        )
         if manifest.schema_version == 1 and manifest.executable
         else ()
     )

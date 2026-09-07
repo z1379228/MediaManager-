@@ -31,6 +31,17 @@ def test_targets_are_confined_to_repository_tests(tmp_path: Path) -> None:
         run_tests.resolve_test_targets(tmp_path, ("outside.py",))
 
 
+def test_pytest_command_enforces_the_repository_timeout(tmp_path: Path) -> None:
+    test_file = tmp_path / "tests" / "test_example.py"
+    test_file.parent.mkdir()
+    test_file.write_text("def test_example(): pass\n", encoding="utf-8")
+
+    command = run_tests.pytest_command(tmp_path, tmp_path / "pytest-temp")
+
+    assert "--timeout=60" in command
+    assert "-rs" in command
+
+
 def test_symbolic_link_tests_root_is_rejected(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()

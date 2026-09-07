@@ -1,12 +1,15 @@
 # 目前專案狀態
 
-狀態日期：2026-08-29
+狀態日期：2026-09-08
 
 ## 結論
 
-MediaManager 目前工作來源為 Development `39.0.95`。`39.0.95` 移除啟動時
-自動開啟的首次 MOD 設定與依賴環境模態視窗，改由主畫面的 MOD 管理與環境
-狀態按鈕明確開啟；啟動不會改變 MOD 狀態或安裝工具。`39.0.94` 保留 39.0.93
+MediaManager 目前工作來源為 Development `39.0.96`。`39.0.96` 移除第三方 MOD
+驗證警告中失效的硬編碼 `core 3.0`，改為回報實際參與相容性檢查的核心版本；
+GitHub Quality workflow 也統一使用具 60 秒測試逾時、受限收集範圍與外部隔離
+暫存目錄的 Repository runner，不再在工作樹建立 `.work/pytest-ci-*`。`39.0.95`
+移除啟動時自動開啟的首次 MOD 設定與依賴環境模態視窗，改由主畫面的 MOD 管理
+與環境狀態按鈕明確開啟；啟動不會改變 MOD 狀態或安裝工具。`39.0.94` 保留 39.0.93
 H.265 Main10 NVENC preset 經本機品質比較較佳的 p7／HQ 參數，並在原子提交前
 驗證 Matroska、HEVC Main 10、10-bit、Opus、來源解析度與固定影格率；不符合
 契約的 `.part` 會被刪除，來源與輸出 Opus 封包 SHA-256 也必須相同。執行前
@@ -523,6 +526,17 @@ Development `39.0.39` 的乾淨 source freeze 建置、建立新目錄與 prerel
   `compileall` 與 `git diff --check` 均通過，`Version/` 中有 `0` 個 `.pyc`。
   實機服務再次輸出 `227806` bytes 的 HEVC Main 10／`yuv420p10le`／Opus
   Matroska，並通過內建 Opus 封包 SHA-256 比對與 1920x1080／24 FPS 契約。
+- Development 39.0.96 將 schema v1 executable MOD 的警告由固定 `core 3.0`
+  改為呼叫端實際選用的核心版本，避免目前版本與測試指定版本被舊字串誤導。
+  GitHub 的 Windows 完整套件及 Ubuntu symlink 安全套件都改由
+  `tools.run_tests` 執行，沿用 runner 的 Repository `tests/` 邊界、每次獨立
+  user-local 暫存目錄與完成後清理；runner 固定加入 `--timeout=60`。兩個新增
+  regression-first 案例修正前為 `2 failed`；MOD、runner、workflow、入口與版本
+  文件定向驗證修正後為 `37 passed, 1 skipped`，Windows 略過項目是目前權限
+  無法建立目錄 symlink。完整 Repository runner 為 `1595 passed, 7 skipped`；
+  Quality audit 通過 Ruff `367` 個 Python 檔與文字污染 `476` 個受控檔案，MOD
+  群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、兩個
+  Testing 版本與隔離 `compileall` 也都通過。
 - Development 39.0.95 將啟動流程改為非模態：不再自動執行首次 MOD 設定
   `QDialog`，核心工具未達 4/4 時也不再排程環境視窗。主畫面原有的 MOD 管理與
   環境狀態按鈕保留完整手動入口，既有設定不被靜默修改。Regression-first 案例

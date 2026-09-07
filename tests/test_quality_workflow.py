@@ -11,12 +11,23 @@ def _workflow_text() -> str:
     return WORKFLOW.read_text(encoding="utf-8")
 
 
-def test_quality_workflow_keeps_hard_test_timeout() -> None:
+def test_quality_workflow_uses_the_isolated_repository_runner() -> None:
     text = _workflow_text()
 
-    assert "python -m pytest -vv -rs --timeout=60" in text
-    assert "PYTEST_BASETEMP: .work/pytest-ci-${{ github.run_id }}" in text
-    assert '--basetemp="$env:PYTEST_BASETEMP"' in text
+    assert text.count("python -m tools.run_tests") == 2
+    assert "python -m pytest" not in text
+    assert "PYTEST_BASETEMP" not in text
+    assert ".work/pytest" not in text
+    assert (
+        "--target "
+        "tests/test_builtin_download_provider.py::"
+        "test_builtin_provider_integrity_rejects_symlink"
+    ) in text
+    assert (
+        "--target "
+        "tests/test_library_service.py::"
+        "test_scan_is_bounded_and_does_not_follow_symlink"
+    ) in text
 
 
 def test_quality_workflow_runs_release_and_mod_audits() -> None:

@@ -55,8 +55,8 @@
 .\.venv\Scripts\python.exe -m tools.run_tests
 .\.venv\Scripts\python.exe -m tools.audit_versions --root Version
 .\.venv\Scripts\python.exe -m tools.copied_folder_smoke `
-  --current Version\Development\32.1 `
-  --previous Version\Development\32.0 `
+  --current Version\Testing\1.2.3 `
+  --previous Version\Testing\1.2.2 `
   --retained-root Version
 ```
 

@@ -111,3 +111,22 @@ def test_manifest_contract_rejects_unsupported_api(tmp_path: Path) -> None:
     report = validate_mod_manifest(path)
     assert not report.valid
     assert report.errors == ("unsupported API contract: 99.0",)
+
+
+def test_schema_v1_warning_reports_selected_core_version(tmp_path: Path) -> None:
+    target = create_mod_template(tmp_path / "sample", "sample.processor")
+    path = target / "plugin.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["schema_version"] = 1
+    manifest["minimum_core_version"] = "77.8.9"
+    manifest["maximum_core_version"] = "77.8.9"
+    for field in ("runtime", "runtime_protocol", "ui_descriptor"):
+        manifest.pop(field)
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    report = validate_mod_manifest(path, core_version="77.8.9")
+
+    assert report.valid
+    assert report.warnings == (
+        "schema v1 executable MODs cannot be enabled by core 77.8.9",
+    )

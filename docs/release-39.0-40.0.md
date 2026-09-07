@@ -1625,6 +1625,31 @@ prerelease 與全部附件 digest 均已驗證；Testing 1.2.1 的目錄、tag �
 - Testing `1.2.1`、`1.2.2` 與本機 Testing `1.2.3` 產物保持不可變；本輪已獲
   授權 stage、commit 與 push 原始碼，不執行 build、簽署或發布。
 
+## 39.0.96（移除失效版本字串並統一 CI 測試入口）
+
+- Root Cause：schema v1 executable MOD 的相容性警告把核心版本固定寫成
+  `3.0`，因此即使呼叫端以其他版本驗證仍顯示舊資料；GitHub Quality workflow
+  另行直接呼叫 pytest 並在 Repository 內建立 `.work/pytest-ci-*`，繞過專案已
+  提供的收集邊界、隔離暫存與清理 runner。
+- MOD 警告現在回報實際傳入的 `core_version`。這只修正診斷文字，不放寬 schema
+  v1 executable MOD 的停用限制，也不改變 manifest、runtime protocol 或信任契約。
+- `tools.run_tests` 固定加入 60 秒單項測試逾時與 skip reason；Windows 完整套件及
+  Ubuntu symlink 安全套件都改由此 runner 執行，後者以重複 `--target` 保留原本
+  的兩個安全案例。`dev` extra 同步宣告 `pytest-timeout`；CI 不再把 pytest 暫存
+  寫入工作樹。
+- 兩個 regression-first 案例修正前為 `2 failed`；MOD、runner、workflow、入口與
+  版本文件定向驗證為 `37 passed, 1 skipped`，完整 Repository runner 為
+  `1595 passed, 7 skipped`。七個 Windows skip 均是目前帳號無法建立測試用
+  symlink／link 的既有環境限制。Quality audit 通過 Ruff `367` 個 Python 檔與
+  文字污染 `476` 個受控檔案；MOD 群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴
+  鎖 `10`、版本文件 `4`、兩個 Testing 版本與 Repository 外隔離 `compileall`
+  均通過。
+- 截圖中的 `3.0`、`6.0` 等路徑旁文字多數是 GitHub 顯示的最後修改 commit，
+  屬於不可改寫的歷史，不是目前檔案版本。本次只更新確認失效的現行資料，不為
+  改變列表標籤而批次觸碰有效檔案、重寫歷史或更改既有 Testing 產物。
+- 回復方式是還原此 source commit；Testing `1.2.1`、`1.2.2` 與本機 Testing
+  `1.2.3` 產物保持不可變。本次不 build、不簽署、不建立 Stable 或發布附件。
+
 ## 40.0
 
 沒有獨立 material delta，狀態為 `ABSORBED / NO RELEASE / NO PLAN`。不得為維持

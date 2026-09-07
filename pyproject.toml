@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mediamanager"
-version = "39.0.95"
+version = "39.0.96"
 description = "Platform-independent desktop media manager core"
 requires-python = ">=3.14"
 license = "MIT"
@@ -16,7 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 ui = ["PySide6>=6.8"]
-dev = ["pytest>=8.3"]
+dev = ["pytest>=8.3", "pytest-timeout>=2.3"]
 
 [project.scripts]
 mediamanager = "main:main"

@@ -14,6 +14,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+DEFAULT_TEST_TIMEOUT_SECONDS = 60
+
+
 @dataclass(frozen=True, slots=True)
 class TestRunPaths:
     attempt: Path
@@ -149,6 +152,8 @@ def pytest_command(
         "-m",
         "pytest",
         "-q",
+        "-rs",
+        f"--timeout={DEFAULT_TEST_TIMEOUT_SECONDS}",
         "--rootdir",
         str(root),
         "--basetemp",

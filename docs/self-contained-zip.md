@@ -4,8 +4,10 @@
 `MediaManager.exe` 的 Windows x64 附件。ZIP 內的 EXE、資產、內建 MOD 與必要
 portable runtime 必須全部來自同一個已稽核 staged release。
 
-目前新候選是 Testing `1.2.2`，由 Development `39.0.39` 的乾淨 source freeze
-建立於 `Version/Testing/1.2.2`，並使用唯一 tag `test-v1.2.2`。既有
+目前最新公開附件是 Testing `1.2.2`，由 Development `39.0.39` 的乾淨 source
+freeze 建立於 `Version/Testing/1.2.2`，並使用唯一 tag `test-v1.2.2`。本機
+Testing `1.2.3` 是由 Development `39.0.94` 建立的未發布候選，不得冒充或覆寫
+公開的 `1.2.2`。既有
 [Testing `1.2.1` prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)
 及 `Version/Testing/1.2`、`Version/Testing/1.2.1` 保持不可變。
 
@@ -17,9 +19,10 @@ portable runtime 必須全部來自同一個已稽核 staged release。
 4. 進入唯一頂層 `MediaManager-Testing-1.2.2/`。
 5. 執行 `MediaManager.exe`。
 
-Testing 1.2.2 的最終 SHA-256 只在本輪 sidecar、staged manifest 與 GitHub asset
-digest 閉合後記錄；不得沿用 Testing 1.2.1 的雜湊。ZIP 必須完整包含 staged
-release，且不得混入 UserData、下載內容、cache、log、Cookie、憑證或私鑰。
+Testing 1.2.2 的最終 SHA-256 由該版本 sidecar、staged manifest 與 GitHub asset
+digest 記錄；後續候選不得沿用它或 Testing 1.2.1 的雜湊。ZIP 必須完整包含
+同一 staged release，且不得混入 UserData、下載內容、cache、log、Cookie、憑證
+或私鑰。
 
 ## 自包含不等於資料可攜
 
