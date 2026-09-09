@@ -9,6 +9,7 @@ from core.downloads.models import DownloadRequest, DownloadState, DownloadTask
 from core.storage.paths import AppPaths
 from trusted_ui.download_panel import (
     ACTIVE_REFRESH_INTERVAL_MS,
+    HIDDEN_IDLE_REFRESH_INTERVAL_MS,
     HIDDEN_REFRESH_INTERVAL_MS,
     IDLE_REFRESH_INTERVAL_MS,
     create_download_panel,
@@ -79,6 +80,10 @@ def test_download_refresh_interval_adapts_to_visibility_and_queue_state(
         download_refresh_interval((task,), visible=True)
         == ACTIVE_REFRESH_INTERVAL_MS
     )
+    assert (
+        download_refresh_interval((task,), visible=False)
+        == HIDDEN_REFRESH_INTERVAL_MS
+    )
     task.state = DownloadState.COMPLETED
     assert (
         download_refresh_interval((task,), visible=True)
@@ -86,7 +91,7 @@ def test_download_refresh_interval_adapts_to_visibility_and_queue_state(
     )
     assert (
         download_refresh_interval((task,), visible=False)
-        == HIDDEN_REFRESH_INTERVAL_MS
+        == HIDDEN_IDLE_REFRESH_INTERVAL_MS
     )
 
 

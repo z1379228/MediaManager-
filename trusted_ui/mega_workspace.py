@@ -13,6 +13,7 @@ from core.mod_groups import load_builtin_mod_group
 from core.site_routing import classify_site_url
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.download_panel import download_refresh_interval, safe_task_output_path
+from trusted_ui.table_refresh import suspended_table_updates
 
 
 _CONTENT_LABELS = {
@@ -83,8 +84,8 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
         QLineEdit,
         QMessageBox,
         QPlainTextEdit,
-        QProgressBar,
         QPushButton,
+        QProgressBar,
         QScrollArea,
         QSpinBox,
         QTableWidget,
@@ -681,7 +682,6 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             if signature == self.render_signature:
                 return
             self.render_signature = signature
-            self.table.setRowCount(len(tasks))
             state_labels = {
                 DownloadState.QUEUED: "等待中",
                 DownloadState.RUNNING: "下載中",
@@ -691,25 +691,39 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
                 DownloadState.FAILED: "失敗",
                 DownloadState.CANCELLED: "已取消",
             }
-            for row, task in enumerate(tasks):
-                title = task.title or task.request.output_filename or task.request.url
-                title_item = QTableWidgetItem(title)
-                title_item.setData(Qt.ItemDataRole.UserRole, task.task_id)
-                title_item.setToolTip(task.error or task.request.url)
-                self.table.setItem(row, 0, title_item)
-                state_item = QTableWidgetItem(state_labels[task.state])
-                if task.state is DownloadState.FAILED:
-                    state_item.setForeground(QColor("#ff7b72"))
-                self.table.setItem(row, 1, state_item)
-                progress = QProgressBar()
-                progress.setRange(0, 1000)
-                progress.setValue(int(task.progress * 10))
-                progress.setFormat(f"{task.progress:.0f}%")
-                self.table.setCellWidget(row, 2, progress)
-                self.table.setItem(row, 3, QTableWidgetItem(task.speed or "—"))
-                self.table.setItem(row, 4, QTableWidgetItem(task.eta or "—"))
-                if task.task_id == selected_id:
-                    self.table.selectRow(row)
+            with suspended_table_updates(self.table):
+                self.table.setRowCount(len(tasks))
+                for row, task in enumerate(tasks):
+                    title = (
+                        task.title
+                        or task.request.output_filename
+                        or task.request.url
+                    )
+                    title_item = QTableWidgetItem(title)
+                    title_item.setData(Qt.ItemDataRole.UserRole, task.task_id)
+                    title_item.setToolTip(task.error or task.request.url)
+                    self.table.setItem(row, 0, title_item)
+                    state_item = QTableWidgetItem(state_labels[task.state])
+                    if task.state is DownloadState.FAILED:
+                        state_item.setForeground(QColor("#ff7b72"))
+                    self.table.setItem(row, 1, state_item)
+                    progress = QProgressBar()
+                    progress.setRange(0, 1000)
+                    progress.setValue(int(task.progress * 10))
+                    progress.setFormat(f"{task.progress:.0f}%")
+                    self.table.setCellWidget(row, 2, progress)
+                    self.table.setItem(
+                        row,
+                        3,
+                        QTableWidgetItem(task.speed or "—"),
+                    )
+                    self.table.setItem(
+                        row,
+                        4,
+                        QTableWidgetItem(task.eta or "—"),
+                    )
+                    if task.task_id == selected_id:
+                        self.table.selectRow(row)
             active = sum(
                 task.state
                 in {

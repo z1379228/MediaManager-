@@ -94,11 +94,14 @@ def test_wrong_known_field_types_default_per_field_and_block_save(
         "language": [],
         "ui_scale": 3,
         "download_workers": True,
+        "youtube_performance_profile": [],
         "portable_mode": "false",
         "log_level": [],
         "in_app_download_notifications": 1,
         "system_download_notifications": "false",
         "initial_mod_setup_completed": "false",
+        "close_behavior": [],
+        "start_with_windows": "false",
     }
     original = json.dumps(document).encode("utf-8")
     service.path.write_bytes(original)
@@ -109,22 +112,28 @@ def test_wrong_known_field_types_default_per_field_and_block_save(
     assert result.settings.language == "zh-TW"
     assert result.settings.ui_scale == "standard"
     assert result.settings.download_workers == 2
+    assert result.settings.youtube_performance_profile == "balanced"
     assert result.settings.portable_mode is False
     assert result.settings.log_level == "INFO"
     assert result.settings.in_app_download_notifications is True
     assert result.settings.system_download_notifications is False
     assert result.settings.initial_mod_setup_completed is False
+    assert result.settings.close_behavior == "minimize-to-tray"
+    assert result.settings.start_with_windows is False
     assert result.state == "invalid"
     assert not result.writable
     assert set(result.diagnostics) == {
         "invalid_type:language",
         "invalid_type:ui_scale",
         "invalid_type:download_workers",
+        "invalid_type:youtube_performance_profile",
         "invalid_type:portable_mode",
         "invalid_type:log_level",
         "invalid_type:in_app_download_notifications",
         "invalid_type:system_download_notifications",
         "invalid_type:initial_mod_setup_completed",
+        "invalid_type:close_behavior",
+        "invalid_type:start_with_windows",
     }
     _save_is_blocked_without_changing_source(service, original)
 
@@ -230,6 +239,18 @@ def test_patch_merges_only_requested_fields_from_latest_source(tmp_path: Path) -
     assert second.system_download_notifications is True
     assert second.ui_scale == "large"
     assert service.load().system_download_notifications is True
+
+
+def test_background_lifecycle_settings_round_trip(tmp_path: Path) -> None:
+    service = SettingsService(tmp_path / "settings.json")
+
+    service.save(
+        Settings(close_behavior="exit", start_with_windows=True)
+    )
+
+    loaded = service.load()
+    assert loaded.close_behavior == "exit"
+    assert loaded.start_with_windows is True
 
 
 @pytest.mark.parametrize(

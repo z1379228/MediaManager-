@@ -4,8 +4,12 @@
 逐版重複日誌與退役功能說明已從目前樹移除；必要時由 Git 歷史或 GitHub Releases
 追查，不另建第二份歷史索引。
 
-- 目前來源版本為開發版 39.0（核心相容版本 39.0.96）。
-- Development 40.0 仍是 `NO PLAN / NO RELEASE`。
+- 目前來源版本為開發版 39.0（核心相容版本 39.0.106）。
+- [下一次 Development 資源與 MOD 效能計畫](performance-mod-optimization-plan.md)
+  已開始執行；39.0.106 已完成階段 A、階段 B、階段 C 與階段 D 的安全實驗
+  工具，但尚未執行原型 build 或取得配置比較結果。build、
+  Testing／Stable、push 與發布均未授權。Development 40.0 仍是 `NO RELEASE`，
+  不因規劃文件建立空版本。
 - Testing `1.2.0` 已由 Development `39.0.11` 建立本機歷史封存，保留於
   `Version/Testing/1.2`，未建立 GitHub Release。
 - [Testing `1.2.2`](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.2)
@@ -26,6 +30,7 @@
 
 ## 架構與能力邊界
 
+- [下一次 Development 資源與 MOD 效能計畫](performance-mod-optimization-plan.md)
 - [下載工作契約](downloads-v1.md)
 - [網站主機與路徑清冊](site-host-inventory.md)
 - [Direct HTTP 能力邊界](direct-http-boundary.md)

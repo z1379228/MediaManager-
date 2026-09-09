@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 from pathlib import Path
 from threading import Event, RLock
@@ -18,6 +18,12 @@ from contracts.download_capability_v2 import (
 )
 from core.downloads.negotiation import negotiate_download
 from core.downloads.models import DownloadRequest
+from core.downloads.performance_profiles import (
+    DEFAULT_YOUTUBE_PERFORMANCE_PROFILE,
+    YOUTUBE_PERFORMANCE_OPTION_KEYS,
+    ResolvedYouTubePerformance,
+    resolve_youtube_performance,
+)
 
 
 class ProviderUnavailableError(RuntimeError):
@@ -34,7 +40,13 @@ class ProviderStatus:
 
 
 class DownloadProviderRegistry:
-    def __init__(self, state_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        state_path: Path | None = None,
+        *,
+        youtube_performance_profile: str = DEFAULT_YOUTUBE_PERFORMANCE_PROFILE,
+        download_workers: int = 2,
+    ) -> None:
         self._providers: dict[str, DownloadProvider] = {}
         self._capabilities: dict[str, DownloadCapabilityV2] = {}
         self._unavailable: dict[str, tuple[str, str, frozenset[str]]] = {}
@@ -42,6 +54,25 @@ class DownloadProviderRegistry:
         self._lock = RLock()
         self._state_path = state_path
         self._saved = self._load_state()
+        self._youtube_performance = resolve_youtube_performance(
+            youtube_performance_profile,
+            download_workers,
+        )
+
+    @property
+    def youtube_performance(self) -> ResolvedYouTubePerformance:
+        with self._lock:
+            return self._youtube_performance
+
+    def configure_youtube_performance(
+        self,
+        profile_id: object,
+        worker_count: object,
+    ) -> ResolvedYouTubePerformance:
+        resolved = resolve_youtube_performance(profile_id, worker_count)
+        with self._lock:
+            self._youtube_performance = resolved
+        return resolved
 
     def register(self, provider: DownloadProvider, *, enabled: bool = False) -> None:
         if not provider.provider_id or provider.provider_id in self._providers:
@@ -191,8 +222,14 @@ class DownloadProviderRegistry:
         return self.provider_for(url).analyze(url)
 
     def playlist(
-        self, url: str, *, limit: int = 500
+        self,
+        url: str,
+        *,
+        limit: int = 500,
+        lazy: bool = False,
     ) -> tuple[PlaylistEntryV1, ...]:
+        if type(lazy) is not bool:
+            raise ValueError("playlist lazy mode must be a boolean")
         provider = self.provider_for(url)
         with self._lock:
             capability = self._capabilities.get(provider.provider_id)
@@ -201,6 +238,14 @@ class DownloadProviderRegistry:
         bounded_limit = (
             min(limit, capability.max_batch_size) if capability is not None else limit
         )
+        if lazy:
+            if provider.provider_id != "youtube":
+                raise ValueError("lazy playlist mode is only available for YouTube")
+            return provider.playlist(
+                url,
+                limit=bounded_limit,
+                lazy=True,
+            )
         return provider.playlist(url, limit=bounded_limit)
 
     def validate_batch(self, requests: Iterable[DownloadRequest]) -> None:
@@ -237,6 +282,20 @@ class DownloadProviderRegistry:
             capability = self._capabilities.get(provider.provider_id)
         if capability is not None:
             negotiate_download(request, capability)
+        if provider.provider_id == "youtube":
+            with self._lock:
+                performance = self._youtube_performance
+            retained_options = tuple(
+                option
+                for option in request.provider_options
+                if option[0] not in YOUTUBE_PERFORMANCE_OPTION_KEYS
+            )
+            request = replace(
+                request,
+                provider_options=(
+                    retained_options + performance.provider_options()
+                ),
+            )
         return provider.download(request, progress, cancel_event)
 
     def _load_state(self) -> dict[str, bool]:

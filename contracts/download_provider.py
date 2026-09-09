@@ -19,7 +19,11 @@ class DownloadProvider(Protocol):
     def analyze(self, url: str) -> dict[str, Any]: ...
 
     def playlist(
-        self, url: str, *, limit: int = 500
+        self,
+        url: str,
+        *,
+        limit: int = 500,
+        lazy: bool = False,
     ) -> tuple[PlaylistEntryV1, ...]: ...
 
     def download(

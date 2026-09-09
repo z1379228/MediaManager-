@@ -5,6 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
+from trusted_ui.table_refresh import (
+    suspended_table_updates,
+    visible_rows_signature,
+)
+
 
 TRANSFER_WORKSPACE_LABEL = "Gopeed / P2P"
 
@@ -249,19 +254,35 @@ def create_transfer_panel(context: object, parent: object = None) -> object:
             return str(meta["name"])
         return ""
 
+    task_render_signature: list[tuple[tuple[str, ...], ...] | None] = [None]
+
     def render_tasks() -> None:
         tasks = bridge.list_tasks()
-        task_table.setRowCount(len(tasks))
-        for row, task in enumerate(tasks):
-            progress = task.get("progress", "")
-            values = (
+        rows = tuple(
+            (
                 str(task.get("id", "")),
                 task_name(task),
                 str(task.get("status", "")),
-                str(progress),
+                str(task.get("progress", "")),
             )
-            for column, value in enumerate(values):
-                task_table.setItem(row, column, QTableWidgetItem(value))
+            for task in tasks
+        )
+        signature = visible_rows_signature(rows)
+        if signature == task_render_signature[0]:
+            return
+        selected_row = task_table.currentRow()
+        selected_item = (
+            task_table.item(selected_row, 0) if selected_row >= 0 else None
+        )
+        selected_id = selected_item.text() if selected_item is not None else ""
+        task_render_signature[0] = signature
+        with suspended_table_updates(task_table):
+            task_table.setRowCount(len(rows))
+            for row, values in enumerate(rows):
+                for column, value in enumerate(values):
+                    task_table.setItem(row, column, QTableWidgetItem(value))
+                if values[0] == selected_id:
+                    task_table.selectRow(row)
 
     def run(action: Callable[[], object], *, refresh: bool = False) -> None:
         try:

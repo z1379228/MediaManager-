@@ -144,7 +144,7 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "locales/ja.json": "02536cf0599ff5e866044db79812f8a147ee4775d6b019980246cf6bcd55f7ce",
         "locales/zh-CN.json": "aecb2c1652049bbc57280f4a70ab8e8912d635a7f7516b57c4a46ce7ed43472a",
         "locales/zh-TW.json": "6ab7e060426c53add0a1f9f552ff261572eb2c089d5d3d671c334958198e75b0",
-        "provider.py": "c10299a295ea2a8c4cf035d725d83aee4b2b3763aaf66d86d4d6a22a06a0e65e",
+        "provider.py": "cf4ec901d5ca0537b094c9da891ad1232b056cc08adb3372d4417aaed1464877",
         "provider.json": "51b6199ea2197f6364088a10301b4433ca2fd169e5a97a6d600b1f4ce61a6a9f",
         "site-matrix.json": "1ec046c1b7d6d3e631013d825c0b5478d10f912a3a5a99eb2a0f6785f619feaf",
     }

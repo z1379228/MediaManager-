@@ -31,7 +31,11 @@ from trusted_ui.builtin_mod_control import (
     builtin_mod_is_enabled,
     set_builtin_mod_enabled,
 )
-from trusted_ui.thumbnail_loader import create_thumbnail_loader
+from trusted_ui.thumbnail_loader import (
+    create_thumbnail_loader,
+    visible_thumbnail_rows,
+)
+from trusted_ui.idle_state import is_background_idle
 from trusted_ui.search_paging import (
     MAX_WORKSPACE_SEARCH_RESULTS,
     merge_federated_search_pages,
@@ -194,8 +198,6 @@ def history_preference_summary(preferences: object) -> str:
 def create_search_panel(context: object, parent: object = None) -> object:
     from PySide6.QtCore import QObject, QSize, Qt, QUrl, Signal
     from PySide6.QtGui import QAction, QDesktopServices, QIcon, QKeySequence, QShortcut
-    from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
-    from PySide6.QtMultimediaWidgets import QVideoWidget
     from PySide6.QtWidgets import (
         QComboBox,
         QDialog,
@@ -240,7 +242,10 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.generation = 0
             self.results_generation = 0
             self.closing = False
+            self.thumbnail_requests: set[tuple[int, int, str]] = set()
             self.thumbnail_loader = create_thumbnail_loader(self)
+            self.thumbnail_loader.on_cancel(self.thumbnail_requests.clear)
+            self.thumbnail_loader.on_resume(self.load_visible_thumbnails)
             self.bridge = SearchBridge()
             self.bridge.finished.connect(self.show_results)
             self.preview_bridge = PreviewBridge()
@@ -253,12 +258,9 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.video_preview_provider = None
             self.video_dialog = None
             self.video_player = None
-            self.audio_output = QAudioOutput(self)
-            self.audio_output.setVolume(0.7)
-            self.audio_player = QMediaPlayer(self)
-            self.audio_player.setAudioOutput(self.audio_output)
-            self.audio_player.mediaStatusChanged.connect(self.handle_audio_status)
-            self.audio_player.errorOccurred.connect(self.handle_audio_error)
+            self.audio_output = None
+            self.audio_player = None
+            self.audio_end_status = None
             page = QVBoxLayout(self)
             page.setContentsMargins(2, 4, 2, 2)
             page.setSpacing(12)
@@ -718,6 +720,9 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 )
             self.table.itemDoubleClicked.connect(self.open_selected)
             self.table.itemSelectionChanged.connect(self.update_action_state)
+            self.table.verticalScrollBar().valueChanged.connect(
+                lambda *_: self.load_visible_thumbnails()
+            )
             self.result_stack = QStackedWidget()
             self.result_empty = create_empty_state(
                 "開始搜尋影片或音樂",
@@ -1554,13 +1559,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
                     score.setToolTip("、".join(ranking.reasons) or "無直接文字符合")
                 score.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(row, 6, score)
-                if item.thumbnail_url:
-                    self.thumbnail_loader.load(
-                        item.thumbnail_url,
-                        lambda pixmap, generation=self.results_generation, row=row, item=item: (
-                            self.show_thumbnail(generation, row, item, pixmap)
-                        ),
-                    )
+            self.load_visible_thumbnails()
             if (
                 history_query
                 and isinstance(results, FederatedSearchResult)
@@ -1574,6 +1573,24 @@ def create_search_panel(context: object, parent: object = None) -> object:
 
                 threading.Thread(target=record_search_history, daemon=True).start()
             self.update_action_state()
+
+        def load_visible_thumbnails(self) -> None:
+            if self.closing:
+                return
+            generation = self.results_generation
+            for row in visible_thumbnail_rows(self.table, len(self.results)):
+                item = self.results[row]
+                url = item.thumbnail_url
+                key = (generation, row, url)
+                if not url or key in self.thumbnail_requests:
+                    continue
+                self.thumbnail_requests.add(key)
+                self.thumbnail_loader.load(
+                    url,
+                    lambda pixmap, generation=generation, row=row, item=item: (
+                        self.show_thumbnail(generation, row, item, pixmap)
+                    ),
+                )
 
         def show_thumbnail(
             self,
@@ -1611,13 +1628,38 @@ def create_search_panel(context: object, parent: object = None) -> object:
             selected = self.selected_result()
             return selected.url if selected is not None else None
 
+        def ensure_audio_player(self) -> object:
+            if self.audio_player is not None:
+                return self.audio_player
+            from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+
+            audio_output = QAudioOutput(self)
+            audio_output.setVolume(0.7)
+            player = QMediaPlayer(self)
+            player.setAudioOutput(audio_output)
+            player.mediaStatusChanged.connect(self.handle_audio_status)
+            player.errorOccurred.connect(self.handle_audio_error)
+            self.audio_output = audio_output
+            self.audio_player = player
+            self.audio_end_status = QMediaPlayer.MediaStatus.EndOfMedia
+            return player
+
         def cleanup_audio_preview(self) -> None:
             provider = self.preview_provider
             path = self.preview_path
             self.preview_provider = None
             self.preview_path = None
-            self.audio_player.stop()
-            self.audio_player.setSource(QUrl())
+            player, audio_output = self.audio_player, self.audio_output
+            self.audio_player = None
+            self.audio_output = None
+            self.audio_end_status = None
+            if player is not None:
+                player.stop()
+                player.setSource(QUrl())
+                player.setAudioOutput(None)
+                player.deleteLater()
+            if audio_output is not None:
+                audio_output.deleteLater()
             if provider is not None and path is not None:
                 try:
                     provider.cleanup_audio_preview(path)
@@ -1638,7 +1680,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
 
         def handle_audio_status(self, status: object) -> None:
             if (
-                status == QMediaPlayer.MediaStatus.EndOfMedia
+                status == self.audio_end_status
                 and self.preview_path is not None
             ):
                 self.cleanup_audio_preview()
@@ -1647,9 +1689,10 @@ def create_search_panel(context: object, parent: object = None) -> object:
                     self.update_action_state()
 
         def handle_audio_error(self, *_error: object) -> None:
-            if self.preview_path is None:
+            player = self.audio_player
+            if self.preview_path is None or player is None:
                 return
-            message = self.audio_player.errorString() or "無法播放音訊"
+            message = player.errorString() or "無法播放音訊"
             self.cleanup_audio_preview()
             if not self.closing:
                 self.status.setText(f"試聽播放失敗：{message}")
@@ -1661,10 +1704,14 @@ def create_search_panel(context: object, parent: object = None) -> object:
             if player is not None:
                 player.stop()
                 player.setSource(QUrl())
+                player.setAudioOutput(None)
+                player.setVideoOutput(None)
+                player.deleteLater()
             dialog = self.video_dialog
             self.video_dialog = None
             if dialog is not None:
                 dialog.close()
+                dialog.deleteLater()
             if (
                 self.video_preview_provider is not None
                 and self.video_preview_path is not None
@@ -1762,12 +1809,23 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 self.status.setText(f"影片預覽失敗：{error or '未知錯誤'}")
                 self.update_action_state()
                 return
+            if is_background_idle(self):
+                try:
+                    result.provider.cleanup_video_preview(result.path)
+                except OSError:
+                    pass
+                self.status.setText("背景待機中，已取消尚未開始的影片預覽。")
+                self.update_action_state()
+                return
             if not self.video_enabled.isChecked():
                 result.provider.cleanup_video_preview(result.path)
                 self.update_action_state()
                 return
             self.video_preview_provider = result.provider
             self.video_preview_path = result.path
+            from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+            from PySide6.QtMultimediaWidgets import QVideoWidget
+
             dialog = QDialog(self)
             dialog.setWindowTitle("影片預覽（最多 60 秒）")
             dialog.resize(720, 480)
@@ -1848,10 +1906,19 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 self.status.setText(f"試聽失敗：{error or '沒有音訊'}")
                 self.update_action_state()
                 return
+            if is_background_idle(self):
+                try:
+                    result.provider.cleanup_audio_preview(result.path)
+                except OSError:
+                    pass
+                self.status.setText("背景待機中，已取消尚未開始的音訊試聽。")
+                self.update_action_state()
+                return
             self.preview_provider = result.provider
             self.preview_path = result.path
-            self.audio_player.setSource(QUrl.fromLocalFile(str(self.preview_path)))
-            self.audio_player.play()
+            player = self.ensure_audio_player()
+            player.setSource(QUrl.fromLocalFile(str(self.preview_path)))
+            player.play()
             self.status.setText("正在播放 30 秒試聽；再次試聽會自動清理前一個暫存。")
             self.update_action_state()
 

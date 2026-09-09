@@ -451,14 +451,27 @@ class SubprocessDownloadProvider:
         return result
 
     def playlist(
-        self, url: str, *, limit: int = MAX_PLAYLIST_ENTRIES_V1
+        self,
+        url: str,
+        *,
+        limit: int = MAX_PLAYLIST_ENTRIES_V1,
+        lazy: bool = False,
     ) -> tuple[PlaylistEntryV1, ...]:
         self._require_download_network()
         if not self.supports(url):
             raise ValueError("URL is not supported by this MOD")
+        if type(lazy) is not bool:
+            raise ValueError("playlist lazy mode must be a boolean")
         bounded_limit = max(1, min(int(limit), MAX_PLAYLIST_ENTRIES_V1))
+        payload: dict[str, Any] = {
+            "operation": "playlist",
+            "url": url,
+            "limit": bounded_limit,
+        }
+        if lazy:
+            payload["lazy"] = True
         result = self._execute(
-            {"operation": "playlist", "url": url, "limit": bounded_limit},
+            payload,
             None,
             threading.Event(),
             timeout=self.analyze_timeout,
@@ -989,7 +1002,7 @@ class SubprocessDownloadProvider:
                 "--provider-root",
                 str(self.root.parent),
             ]
-        return [sys.executable, "-I", str(self.entry_point)]
+        return [sys.executable, "-B", "-I", str(self.entry_point)]
 
     def _execute(
         self,

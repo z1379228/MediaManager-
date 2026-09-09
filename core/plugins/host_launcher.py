@@ -63,7 +63,14 @@ class HostLauncher:
         ]
         if getattr(sys, "frozen", False):
             return [sys.executable, "--plugin-host", *arguments]
-        return [sys.executable, "-I", "-m", "plugin_host.main", *arguments]
+        return [
+            sys.executable,
+            "-B",
+            "-I",
+            "-m",
+            "plugin_host.main",
+            *arguments,
+        ]
 
     @staticmethod
     def _minimal_environment() -> dict[str, str]:

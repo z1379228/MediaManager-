@@ -82,6 +82,7 @@ def test_environment(runtime_temp: Path) -> dict[str, str]:
             "TEMP": temporary_path,
             "TMP": temporary_path,
             "TMPDIR": temporary_path,
+            "PYTHONDONTWRITEBYTECODE": "1",
         }
     )
     return environment

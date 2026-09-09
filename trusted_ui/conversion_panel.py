@@ -7,6 +7,10 @@ from pathlib import Path
 
 from core.conversion import ConversionRequest, ConversionState
 from trusted_ui.table_refresh import task_table_interval, visible_rows_signature
+from trusted_ui.idle_state import (
+    PAUSE_IN_BACKGROUND_PROPERTY,
+    is_background_idle,
+)
 
 
 CONVERSION_WORKSPACE_LABEL = "格式工廠"
@@ -55,8 +59,6 @@ def parse_removal_ranges(value: str) -> tuple[tuple[float, float], ...]:
 
 def create_conversion_panel(context: object, parent: object = None) -> object:
     from PySide6.QtCore import QSignalBlocker, Qt, QTimer, QUrl
-    from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
-    from PySide6.QtMultimediaWidgets import QVideoWidget
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QCheckBox,
@@ -434,6 +436,9 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
             return
         if panel.preview_dialog is not None:
             panel.preview_dialog.close()
+        from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+        from PySide6.QtMultimediaWidgets import QVideoWidget
+
         dialog = QDialog(panel)
         dialog.setWindowTitle("本機切點預覽")
         dialog.resize(720, 460)
@@ -461,18 +466,37 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
         preview_start = max(0, int((ranges[0][0] - 5.0) * 1000))
         pause_timer = QTimer(dialog)
         pause_timer.setSingleShot(True)
+        pause_timer.setProperty(PAUSE_IN_BACKGROUND_PROPERTY, True)
 
         def play() -> None:
+            if is_background_idle(dialog):
+                note.setText("背景待機中；還原視窗後可按「重新播放」。")
+                return
             player.setPosition(preview_start)
             player.play()
             pause_timer.start(10_000)
+
+        released = [False]
+
+        def release_preview() -> None:
+            if released[0]:
+                return
+            released[0] = True
+            pause_timer.stop()
+            player.stop()
+            player.setSource(QUrl())
+            player.setAudioOutput(None)
+            player.setVideoOutput(None)
+            player.deleteLater()
+            audio.deleteLater()
+            if panel.preview_dialog is dialog:
+                panel.preview_dialog = None
 
         pause_timer.timeout.connect(player.pause)
         replay.clicked.connect(play)
         stop.clicked.connect(player.stop)
         close.clicked.connect(dialog.close)
-        dialog.finished.connect(lambda _result: player.stop())
-        dialog.finished.connect(lambda _result: pause_timer.stop())
+        dialog.finished.connect(lambda _result: release_preview())
         dialog.show()
         panel.preview_dialog = dialog
         QTimer.singleShot(0, play)

@@ -1,3 +1,4 @@
+import builtins
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -24,7 +25,11 @@ def test_verify_only_does_not_start_background_workers(monkeypatch) -> None:
         def initialize(self):
             raise AssertionError("verify-only must not initialize runtime services")
 
-    monkeypatch.setattr(main, "Bootstrap", FakeBootstrap)
+    monkeypatch.setattr(
+        main,
+        "_create_bootstrap",
+        lambda *, portable: FakeBootstrap(portable=portable),
+    )
     assert main.main(["--verify-only"]) == 0
     assert calls == ["verify_only"]
 
@@ -113,7 +118,7 @@ def test_version_prepares_frozen_cli_output_before_argparse(
 
     assert raised.value.code == 0
     assert calls == ["restore", "close"]
-    assert "MediaManager 開發版 39.0.96" in capsys.readouterr().out
+    assert "MediaManager 開發版 39.0.106" in capsys.readouterr().out
 
 
 def test_frozen_windowed_cli_uses_hard_process_exit(monkeypatch) -> None:
@@ -150,6 +155,53 @@ def test_source_script_entry_keeps_normal_system_exit(monkeypatch) -> None:
         main._script_entry(["--headless"])
 
     assert raised.value.code == 3
+
+
+def test_start_minimized_is_forwarded_only_to_the_graphical_shell(
+    monkeypatch,
+) -> None:
+    calls: list[bool] = []
+
+    class FakeBootstrap:
+        def __init__(self, *, portable: bool = False) -> None:
+            assert not portable
+
+        def initialize(self):
+            return SimpleNamespace(
+                lifecycle=SimpleNamespace(shutdown=lambda: None)
+            )
+
+    monkeypatch.setattr(
+        main,
+        "_create_bootstrap",
+        lambda *, portable: FakeBootstrap(portable=portable),
+    )
+    monkeypatch.setattr(
+        main,
+        "_run_graphical_shell",
+        lambda _context, *, start_minimized: calls.append(start_minimized) or 0,
+    )
+
+    assert main.main(["--start-minimized"]) == 0
+    assert calls == [True]
+
+
+def test_importing_entrypoint_does_not_load_bootstrap_or_graphical_shell(
+    monkeypatch,
+) -> None:
+    imported: list[str] = []
+    original_import = builtins.__import__
+
+    def track_import(name, globals=None, locals=None, fromlist=(), level=0):
+        imported.append(name)
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", track_import)
+    source = Path(main.__file__).read_text(encoding="utf-8-sig")
+    exec(compile(source, main.__file__, "exec"), {"__name__": "entry_probe"})
+
+    assert "core.bootstrap.bootstrap" not in imported
+    assert "trusted_ui.main_window" not in imported
 
 
 def test_provider_host_routes_with_explicit_builtin_root(

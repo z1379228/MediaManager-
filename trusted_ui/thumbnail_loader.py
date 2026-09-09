@@ -114,8 +114,62 @@ def decode_thumbnail(data: bytes) -> object | None:
     )
 
 
+def visible_thumbnail_rows(
+    table: object,
+    total: int,
+    *,
+    overscan: int = 2,
+) -> range:
+    """Return a bounded visible-row window without walking every result."""
+
+    if total <= 0:
+        return range(0)
+    viewport = table.viewport()
+    height = max(1, int(viewport.height()))
+    top = int(table.rowAt(0))
+    if top < 0:
+        top = 0
+    bottom = int(table.rowAt(height - 1))
+    if bottom < top:
+        row_height = max(1, int(table.rowHeight(top)))
+        bottom = min(total - 1, top + max(1, height // row_height))
+    margin = max(0, overscan)
+    return range(
+        max(0, top - margin),
+        min(total, bottom + margin + 1),
+    )
+
+
+def cancel_thumbnail_clients(root: object) -> int:
+    """Cancel thumbnail callbacks owned by one workspace before it becomes hidden."""
+
+    from PySide6.QtCore import QObject
+
+    cancelled = 0
+    for client in root.findChildren(QObject, "trustedThumbnailClient"):
+        cancel = getattr(client, "cancel_pending", None)
+        if callable(cancel):
+            cancel()
+            cancelled += 1
+    return cancelled
+
+
+def resume_thumbnail_clients(root: object) -> int:
+    """Ask one visible workspace to refill its bounded thumbnail window."""
+
+    from PySide6.QtCore import QObject
+
+    resumed = 0
+    for client in root.findChildren(QObject, "trustedThumbnailClient"):
+        resume = getattr(client, "resume", None)
+        if callable(resume):
+            resume()
+            resumed += 1
+    return resumed
+
+
 def create_thumbnail_loader(parent: object = None) -> object:
-    from PySide6.QtCore import QUrl
+    from PySide6.QtCore import QObject, QUrl
     from PySide6.QtGui import QPixmap
     from PySide6.QtNetwork import (
         QNetworkAccessManager,
@@ -123,23 +177,38 @@ def create_thumbnail_loader(parent: object = None) -> object:
         QNetworkRequest,
     )
 
-    class ThumbnailLoader(QNetworkAccessManager):
-        def __init__(self) -> None:
-            super().__init__(parent)
+    class ThumbnailService(QNetworkAccessManager):
+        def __init__(self, owner: object = None) -> None:
+            super().__init__(owner)
+            self.setObjectName("trustedThumbnailService")
             self.cache: OrderedDict[str, QPixmap] = OrderedDict()
-            self.pending: dict[str, list[Callable[[object | None], None]]] = {}
+            self.pending: dict[
+                str,
+                dict[object, list[Callable[[object | None], None]]],
+            ] = {}
             self.replies: dict[str, QNetworkReply] = {}
 
         def _complete(self, url: str, pixmap: object | None) -> None:
-            callbacks = self.pending.pop(url, ())
-            for callback in callbacks:
-                try:
-                    callback(pixmap)
-                except RuntimeError:
-                    # The owning widget may have closed while the reply completed.
-                    continue
+            waiting = self.pending.pop(url, {})
+            for callbacks in waiting.values():
+                for callback in callbacks:
+                    try:
+                        callback(pixmap)
+                    except RuntimeError:
+                        # The owning widget may have closed while the reply completed.
+                        continue
 
-        def cancel_pending(self) -> None:
+        def cancel_client(self, client: object) -> None:
+            for url, waiting in tuple(self.pending.items()):
+                waiting.pop(client, None)
+                if waiting:
+                    continue
+                self.pending.pop(url, None)
+                reply = self.replies.pop(url, None)
+                if reply is not None and reply.isRunning():
+                    reply.abort()
+
+        def cancel_all_pending(self) -> None:
             self.pending.clear()
             replies = tuple(self.replies.values())
             self.replies.clear()
@@ -147,13 +216,19 @@ def create_thumbnail_loader(parent: object = None) -> object:
                 if reply.isRunning():
                     reply.abort()
 
-        def shutdown(self) -> None:
-            """Cancel network work and release cached pixmaps before widget teardown."""
-
-            self.cancel_pending()
+        def clear_cache(self) -> None:
             self.cache.clear()
 
-        def load(self, url: str, callback: Callable[[object | None], None]) -> None:
+        def shutdown_service(self) -> None:
+            self.cancel_all_pending()
+            self.clear_cache()
+
+        def load_for(
+            self,
+            client: object,
+            url: str,
+            callback: Callable[[object | None], None],
+        ) -> None:
             if not valid_thumbnail_url(url):
                 callback(None)
                 return
@@ -164,12 +239,12 @@ def create_thumbnail_loader(parent: object = None) -> object:
                 return
             waiting = self.pending.get(url)
             if waiting is not None:
-                waiting.append(callback)
+                waiting.setdefault(client, []).append(callback)
                 return
             if len(self.pending) >= _MAX_PENDING_ITEMS:
                 callback(None)
                 return
-            self.pending[url] = [callback]
+            self.pending[url] = {client: [callback]}
             request = QNetworkRequest(QUrl(url))
             request.setAttribute(
                 QNetworkRequest.Attribute.RedirectPolicyAttribute,
@@ -217,4 +292,85 @@ def create_thumbnail_loader(parent: object = None) -> object:
             reply.downloadProgress.connect(check_size)
             reply.finished.connect(finished)
 
-    return ThumbnailLoader()
+    class ThumbnailLoaderClient(QObject):
+        def __init__(
+            self,
+            service: object,
+            owner: object = None,
+            *,
+            owns_service: bool = False,
+        ) -> None:
+            super().__init__(owner)
+            self.setObjectName("trustedThumbnailClient")
+            self.service = service
+            self.token = object()
+            self.owns_service = owns_service
+            self.closed = False
+            self.cancel_handlers: list[Callable[[], None]] = []
+            self.resume_handlers: list[Callable[[], None]] = []
+
+        def load(
+            self,
+            url: str,
+            callback: Callable[[object | None], None],
+        ) -> None:
+            if self.closed:
+                callback(None)
+                return
+            self.service.load_for(self.token, url, callback)
+
+        def cancel_pending(self) -> None:
+            self.service.cancel_client(self.token)
+            for handler in tuple(self.cancel_handlers):
+                try:
+                    handler()
+                except RuntimeError:
+                    continue
+
+        def on_cancel(self, handler: Callable[[], None]) -> None:
+            self.cancel_handlers.append(handler)
+
+        def on_resume(self, handler: Callable[[], None]) -> None:
+            self.resume_handlers.append(handler)
+
+        def resume(self) -> None:
+            if self.closed:
+                return
+            for handler in tuple(self.resume_handlers):
+                try:
+                    handler()
+                except RuntimeError:
+                    continue
+
+        def shutdown(self) -> None:
+            if self.closed:
+                return
+            self.closed = True
+            self.cancel_pending()
+            self.cancel_handlers.clear()
+            self.resume_handlers.clear()
+            if self.owns_service:
+                self.service.shutdown_service()
+                self.service.deleteLater()
+
+    root = parent
+    if root is not None:
+        parent_of = getattr(root, "parent", None)
+        while callable(parent_of):
+            candidate = parent_of()
+            if candidate is None:
+                break
+            root = candidate
+            parent_of = getattr(root, "parent", None)
+    attribute = "_media_manager_thumbnail_service"
+    service = getattr(root, attribute, None) if root is not None else None
+    owns_service = service is None and root is None
+    if service is None:
+        service = ThumbnailService(root)
+        if root is not None:
+            setattr(root, attribute, service)
+    return ThumbnailLoaderClient(
+        service,
+        parent,
+        owns_service=owns_service,
+    )

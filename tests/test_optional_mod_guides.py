@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import Mock
+
 import pytest
 
 from core.bootstrap.bootstrap import Bootstrap
@@ -33,6 +35,15 @@ def test_optional_mod_panels_have_visible_chinese_usage_guides(
         assert "FFmpeg" in guides[0]
         assert "whisper-cli" in guides[1]
         assert "對應 MOD" in guides[2]
+        assert (
+            panels[2].timer.property("keepRunningInBackground") is not True
+        )
+        assert callable(panels[2].observe_clipboard_change)
+        assert panels[2].timer.interval() == 10_000
+        observe_clipboard = Mock(return_value=0)
+        context.automation.observe_clipboard = observe_clipboard
+        panels[2].observe_clipboard_change()
+        observe_clipboard.assert_called_once()
     finally:
         for panel in panels:
             panel.shutdown()

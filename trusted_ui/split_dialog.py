@@ -105,7 +105,6 @@ def show_split_dialog(
     from pathlib import Path
 
     from PySide6.QtCore import Qt, QUrl
-    from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QDialog,
@@ -210,30 +209,58 @@ def show_split_dialog(
 
     refresh(rows)
 
-    audio_output = QAudioOutput(dialog)
-    audio_output.setVolume(0.7)
-    player = QMediaPlayer(dialog)
-    player.setAudioOutput(audio_output)
     path = Path(preview_path).resolve()
     preview_available = path.is_file()
-    if preview_available:
-        player.setSource(QUrl.fromLocalFile(str(path)))
+    player: list[object | None] = [None]
+    audio_output: list[object | None] = [None]
     stop_at_ms = [0]
 
     def stop_at(position: int) -> None:
         if stop_at_ms[0] and position >= stop_at_ms[0]:
-            player.pause()
+            if player[0] is not None:
+                player[0].pause()
             stop_at_ms[0] = 0
 
-    player.positionChanged.connect(stop_at)
+    def ensure_player() -> object:
+        if player[0] is not None:
+            return player[0]
+        from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+
+        output = QAudioOutput(dialog)
+        output.setVolume(0.7)
+        instance = QMediaPlayer(dialog)
+        instance.setAudioOutput(output)
+        instance.setSource(QUrl.fromLocalFile(str(path)))
+        instance.positionChanged.connect(stop_at)
+        audio_output[0] = output
+        player[0] = instance
+        return instance
+
+    def stop_player() -> None:
+        if player[0] is not None:
+            player[0].stop()
+
+    def release_player() -> None:
+        instance, output = player[0], audio_output[0]
+        player[0] = None
+        audio_output[0] = None
+        stop_at_ms[0] = 0
+        if instance is not None:
+            instance.stop()
+            instance.setSource(QUrl())
+            instance.setAudioOutput(None)
+            instance.deleteLater()
+        if output is not None:
+            output.deleteLater()
 
     def play_range(start: float, end: float) -> None:
         if not preview_available:
             QMessageBox.information(dialog, "音訊預覽", "預覽音訊檔案不可用。")
             return
-        player.setPosition(max(0, int(start * 1000)))
+        instance = ensure_player()
+        instance.setPosition(max(0, int(start * 1000)))
         stop_at_ms[0] = max(1, int(end * 1000))
-        player.play()
+        instance.play()
 
     controls = QHBoxLayout()
     play_segment = QPushButton("播放選定片段")
@@ -322,7 +349,7 @@ def show_split_dialog(
 
     play_segment.clicked.connect(play_selected)
     play_cut.clicked.connect(play_around_cut)
-    stop.clicked.connect(player.stop)
+    stop.clicked.connect(stop_player)
     add_cut.clicked.connect(add_boundary)
     remove_cut.clicked.connect(remove_boundary)
 
@@ -336,7 +363,7 @@ def show_split_dialog(
     layout.addLayout(buttons)
     confirm_button.clicked.connect(confirm)
     cancel.clicked.connect(dialog.reject)
-    dialog.finished.connect(lambda *_: player.stop())
+    dialog.finished.connect(lambda *_: release_player())
     dialog.exec()
-    player.setSource(QUrl())
+    release_player()
     return result[0] if result else None

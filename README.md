@@ -10,17 +10,55 @@ Cloudflare、廣告、付費、地區或其他網站限制。
 
 ## 目前狀態
 
-- 目前來源版本為開發版 39.0（核心相容版本 39.0.96）。
+- 目前來源版本為開發版 39.0（核心相容版本 39.0.106）。
 - 最新公開下載是未簽署的
   [Testing 1.2.2 prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.2)，
   對應 Development `39.0.39`。
-- Development `39.0.40`～`39.0.96` 的修改尚未包含在公開 Testing ZIP。
+- Development `39.0.40`～`39.0.106` 的修改尚未包含在公開 Testing ZIP。
 - Testing `1.2.3` 目前只是本機候選，未上傳或發布。
 - 尚未發布已簽署的 Stable 套件；`MediaManager v1.0` 是產品顯示名稱，不代表
   Stable 已發布。
 
 ### 最近來源變更
 
+- `39.0.106`：補強 onefile／onedir 比較器的執行安全。證據輸出路徑會在 build
+  前及寫入前各驗證一次；Windows 測量程序先以 suspended 狀態加入具
+  kill-on-close 的 Job Object 才開始執行，逾時或設定失敗會收容並清理完整
+  程序樹。目前仍未執行原型 build。
+- `39.0.105`：新增隔離的 onefile／onedir PyInstaller 配置比較器。正式發行建置
+  仍強制使用 onefile；比較器預設只列出計畫，必須明確指定 `--execute` 才會
+  在 Repository 外建立兩種原型、量測啟動／驗證／Provider Host、核對完整樹
+  SHA-256 並執行複製資料夾 smoke。目前尚未授權或執行原型 build，沒有封裝
+  效能結論。
+- `39.0.104`：YouTube 播放清單新增預設關閉的「大型清單快速模式」，最多仍
+  載入 500 項；使用者選取後才啟用 yt-dlp lazy playlist，並明示結果不是完整
+  總數且不支援隨機或反向排序。未選取時及其他網站維持原有契約。
+- `39.0.103`：YouTube 下載新增由可信核心管理的省資源、平衡、高速與自動
+  效能設定；核心依全域同時工作數配置有界片段併發，覆寫外來同名選項，
+  切換後同步所有下載頁。進行中或暫停中的工作不允許切換設定，避免新舊
+  配額重疊；不使用實驗性 HTTP chunk 或網站限制規避參數。
+- `39.0.102`：MEGA、Direct HTTP 與 Gopeed 工作表以資料簽章跳過相同快照，
+  有變動時在批次套用期間暫停中間 repaint；大量表格基準顯示逐 cell 重用較慢，
+  因此未採用該候選或提前遷移 model/view。隱藏且無工作時維持 10 秒低頻檢查，
+  關閉頁面會停止既有 timer。
+- `39.0.101`：YouTube、Bilibili、網站搜尋及播放清單共用主視窗層級的
+  有界縮圖服務；每頁只請求目前可見列與少量前後緩衝，離開分頁會取消
+  該頁尚未完成的請求，返回時再補載，共用快取不會被單一頁關閉清空。
+- `39.0.100`：主視窗只在啟動時建立目前的 YouTube 工作區；Bilibili、
+  網站搜尋、本機媒體庫與已啟用的選用工作區保留分頁 shell，第一次
+  開啟時才匯入模組並建立介面，之後保留同一物件與使用者輸入。
+- `39.0.99`：將重複的下載 RUNNING 進度通知合併為每工作的最新快照，
+  並保留完成、失敗、暫停與取消等狀態立即送達；音訊與影片播放元件
+  改為首次預覽才建立，關閉或停止後釋放媒體來源與 Qt 物件；
+  來源模式的 Provider／Plugin Host 明確使用 Python `-B`，完整測試後不會
+  在 Repository 留下位元碼快取。
+- `39.0.98`：將 version、verify、Provider 與 Plugin 等非圖形角色分流到可信 UI
+  匯入前，並新增隔離使用者資料、禁止網路與可見 UI 的啟動資源基準工具；
+  pytest 子程序不再把 Python 位元碼快取寫回來源樹。
+- `39.0.97`：新增低資源背景待機、可選的關閉至系統匣／完全結束，以及由使用者
+  明確啟用的 Windows 登入後背景啟動；閒置分頁降低輪詢頻率，Automation 在
+  沒有規則時不再週期喚醒，剪貼簿改由變更事件觸發。快速最小化／還原不會
+  誤留在待機狀態，背景期間完成的預覽準備也不會自行開始播放。
 - `39.0.96`：移除第三方 MOD 驗證訊息中的硬編碼 `core 3.0`，並讓 GitHub
   Quality workflow 統一使用具 60 秒逾時及隔離暫存目錄的專案測試 runner。
 - `39.0.95`：啟動時直接顯示主畫面，不再自動彈出首次 MOD 設定或依賴環境
@@ -65,6 +103,8 @@ ZIP，不要單獨下載 EXE；ZIP 不包含任何使用者資料。
 - YouTube／YouTube Music 公開搜尋、批次工作與相似音樂候選。
 - Bilibili、MEGA、Direct HTTP 及網站矩陣中明列的獨立工作區。
 - 本機媒體庫、原子寫入下載佇列、歷史、取消、重試與恢復。
+- 背景待機：最小化或關閉至系統匣時暫停不可見 UI 輪詢；右下角可改為完全
+  結束，設定選單可選擇 Windows 登入後自動在背景啟動。
 - 格式工廠：使用本機 FFmpeg 處理影片、音訊、影像、字幕、切割、串接、壓縮、
   固定位置影像浮水印及 H.265 Main10 NVENC／Opus Passthru MKV。
 - Gopeed Bridge／P2P Transfer：只連接使用者自行啟動的 localhost Gopeed API。
@@ -153,6 +193,7 @@ raw pytest 回退到 Repository 根目錄。
 ## 文件
 
 - [文件索引](docs/README.md)
+- [下一次 Development 資源與 MOD 效能計畫](docs/performance-mod-optimization-plan.md)
 - [安裝與啟動](INSTALL.md)
 - [目前專案狀態](docs/project-status.md)
 - [Development 39.0–40.0 更新紀錄](docs/release-39.0-40.0.md)
@@ -161,9 +202,9 @@ raw pytest 回退到 Repository 根目錄。
 - [版本與發布政策](docs/version-layout.md)
 - [免安裝自包含 ZIP](docs/self-contained-zip.md)
 
-舊 roadmap、過期候選與逐版重複日誌不保留在目前文件索引；需要稽核時，應由
-Git 歷史及 GitHub Releases 的不可變附件追查。已公開的 EXE、checksum、release
-metadata 與 tag 不得刪除或覆寫。
+目前文件索引只保留仍有效的下一次更新計畫；已結案 roadmap、過期候選與逐版
+重複日誌由 Git 歷史及 GitHub Releases 的不可變附件追查。已公開的 EXE、
+checksum、release metadata 與 tag 不得刪除或覆寫。
 
 ## License
 

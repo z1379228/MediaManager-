@@ -29,6 +29,7 @@ from tools.stage_version import stage_version, version_folder_name
 
 
 BUILD_RECEIPT_SCHEMA_VERSION = 1
+PYINSTALLER_LAYOUT_ENVIRONMENT = "MEDIAMANAGER_PYINSTALLER_LAYOUT"
 
 
 @dataclass(frozen=True, slots=True)
@@ -423,6 +424,9 @@ def build_version(
         build_environment = os.environ.copy()
         build_environment["TEMP"] = str(build_temp)
         build_environment["TMP"] = str(build_temp)
+        # Release builds remain onefile until the isolated onedir experiment
+        # passes the complete packaging and copied-folder gates.
+        build_environment[PYINSTALLER_LAYOUT_ENVIRONMENT] = "onefile"
         pyinstaller = Path(sys.executable).with_name("pyinstaller.exe")
         if not pyinstaller.is_file():
             raise FileNotFoundError(

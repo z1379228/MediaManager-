@@ -17,6 +17,7 @@ from typing import BinaryIO, Iterator, Literal
 from core.localization import SUPPORTED_LOCALE_CODES, normalized_core_locale
 
 SUPPORTED_UI_LANGUAGES = SUPPORTED_LOCALE_CODES
+CLOSE_BEHAVIOR_VALUES = ("minimize-to-tray", "exit")
 SETTINGS_SCHEMA_VERSION = 1
 MAX_SETTINGS_BYTES = 64 * 1024
 SETTINGS_LOCK_TIMEOUT_SECONDS = 2.0
@@ -39,11 +40,14 @@ class Settings:
     language: str = "zh-TW"
     ui_scale: str = "standard"
     download_workers: int = 2
+    youtube_performance_profile: str = "balanced"
     portable_mode: bool = False
     log_level: str = "INFO"
     in_app_download_notifications: bool = True
     system_download_notifications: bool = False
     initial_mod_setup_completed: bool = False
+    close_behavior: str = "minimize-to-tray"
+    start_with_windows: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,11 +70,14 @@ _SETTINGS_TYPES: dict[str, type[object]] = {
     "language": str,
     "ui_scale": str,
     "download_workers": int,
+    "youtube_performance_profile": str,
     "portable_mode": bool,
     "log_level": str,
     "in_app_download_notifications": bool,
     "system_download_notifications": bool,
     "initial_mod_setup_completed": bool,
+    "close_behavior": str,
+    "start_with_windows": bool,
 }
 _SETTINGS_FIELD_NAMES = frozenset(item.name for item in fields(Settings))
 
@@ -83,6 +90,12 @@ def normalized_download_workers(value: object) -> int:
 
 def normalized_language(value: object) -> str:
     return normalized_core_locale(value)
+
+
+def normalized_close_behavior(value: object) -> str:
+    if isinstance(value, str) and value in CLOSE_BEHAVIOR_VALUES:
+        return value
+    return "minimize-to-tray"
 
 
 def _invalid_field_types(values: dict[str, object]) -> tuple[str, ...]:

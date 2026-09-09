@@ -613,6 +613,18 @@ def test_frozen_provider_command_passes_verified_builtin_root(
     ]
 
 
+def test_source_provider_command_disables_bytecode_cache(tmp_path: Path) -> None:
+    root = make_provider(tmp_path, "print('unused')")
+    provider = SubprocessDownloadProvider(root, application_root=tmp_path)
+
+    assert provider._command() == [
+        sys.executable,
+        "-B",
+        "-I",
+        str((root / "provider.py").resolve()),
+    ]
+
+
 def test_youtube_provider_receives_validated_javascript_runtime(
     tmp_path: Path,
 ) -> None:
@@ -740,6 +752,32 @@ def test_subprocess_playlist_validates_bounded_entries(tmp_path: Path) -> None:
     result = provider.playlist("https://example.com/list", limit=2)
 
     assert result[0].entry_id == "abc"
+
+
+def test_subprocess_playlist_sends_lazy_flag_only_when_selected(
+    tmp_path: Path,
+) -> None:
+    source = (
+        "import json, sys\n"
+        "raw=json.loads(sys.stdin.readline())\n"
+        "assert raw['operation'] == 'playlist' and raw['lazy'] is True\n"
+        "print(json.dumps({'type':'result','value':[]}), flush=True)\n"
+    )
+    root = make_provider(tmp_path, source)
+    provider = SubprocessDownloadProvider(root, application_root=tmp_path)
+
+    assert provider.playlist("https://example.com/list", lazy=True) == ()
+
+
+def test_subprocess_playlist_rejects_non_boolean_lazy_mode(tmp_path: Path) -> None:
+    root = make_provider(tmp_path, "raise SystemExit(1)\n")
+    provider = SubprocessDownloadProvider(root, application_root=tmp_path)
+
+    with pytest.raises(ValueError, match="must be a boolean"):
+        provider.playlist(
+            "https://example.com/list",
+            lazy="true",  # type: ignore[arg-type]
+        )
 
 
 def test_subprocess_playlist_rejects_duplicate_positions(tmp_path: Path) -> None:

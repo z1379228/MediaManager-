@@ -77,6 +77,7 @@ def test_run_uses_repository_root_and_cleans_only_owned_temp(
         assert runtime_temp.is_dir()
         assert env["TMP"] == str(runtime_temp)
         assert env["TMPDIR"] == str(runtime_temp)
+        assert env["PYTHONDONTWRITEBYTECODE"] == "1"
         assert "PYTEST_ADDOPTS" not in env
         assert basetemp.parent == runtime_temp.parent
         assert not basetemp.exists()

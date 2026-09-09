@@ -54,6 +54,7 @@ class AutomationService:
         self._enabled = False
         self._closed = False
         self._stop = Event()
+        self._wake = Event()
         self._thread: Thread | None = None
         self._create_schema()
 
@@ -108,10 +109,12 @@ class AutomationService:
             self._enabled = enabled
             if enabled and (self._thread is None or not self._thread.is_alive()):
                 self._stop.clear()
+                self._wake.clear()
                 self._thread = Thread(target=self._monitor, name="automation", daemon=True)
                 self._thread.start()
             elif not enabled:
                 self._stop.set()
+                self._wake.set()
                 thread = self._thread
                 self._thread = None
         if thread is not None and thread.is_alive():
@@ -176,12 +179,14 @@ class AutomationService:
             )
             if cursor.rowcount != 1:
                 raise KeyError(rule_id)
+        self._wake.set()
 
     def remove_rule(self, rule_id: str) -> None:
         with self._lock, self._connection:
             cursor = self._connection.execute("DELETE FROM rules WHERE rule_id=?", (rule_id,))
             if cursor.rowcount != 1:
                 raise KeyError(rule_id)
+        self._wake.set()
 
     def list_rules(self) -> tuple[AutomationRule, ...]:
         with self._lock:
@@ -249,8 +254,23 @@ class AutomationService:
             if cursor.rowcount != 1:
                 raise KeyError(candidate_key)
 
+    def _monitor_timeout(self) -> float | None:
+        """Return no timeout when there is no rule requiring periodic work."""
+
+        with self._lock:
+            enabled = self._connection.execute(
+                "SELECT 1 FROM rules WHERE enabled=1 LIMIT 1"
+            ).fetchone()
+        return self.poll_seconds if enabled is not None else None
+
     def _monitor(self) -> None:
-        while not self._stop.wait(self.poll_seconds):
+        while not self._stop.is_set():
+            configuration_changed = self._wake.wait(self._monitor_timeout())
+            self._wake.clear()
+            if self._stop.is_set():
+                break
+            if configuration_changed:
+                continue
             try:
                 self.run_once()
             except Exception:

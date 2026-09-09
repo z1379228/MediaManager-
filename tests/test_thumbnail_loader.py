@@ -1,9 +1,12 @@
 from trusted_ui.thumbnail_loader import (
+    cancel_thumbnail_clients,
     create_thumbnail_loader,
     decode_thumbnail,
+    resume_thumbnail_clients,
     thumbnail_resource_limits,
     valid_thumbnail_response,
     valid_thumbnail_url,
+    visible_thumbnail_rows,
 )
 
 
@@ -57,6 +60,29 @@ def test_thumbnail_response_rejects_failed_or_non_image_replies() -> None:
     )
 
 
+def test_visible_thumbnail_rows_adds_bounded_overscan() -> None:
+    class Viewport:
+        @staticmethod
+        def height() -> int:
+            return 100
+
+    class Table:
+        @staticmethod
+        def viewport() -> Viewport:
+            return Viewport()
+
+        @staticmethod
+        def rowAt(position: int) -> int:
+            return 10 if position == 0 else 14
+
+        @staticmethod
+        def rowHeight(_row: int) -> int:
+            return 20
+
+    assert tuple(visible_thumbnail_rows(Table(), 100)) == tuple(range(8, 17))
+    assert tuple(visible_thumbnail_rows(Table(), 0)) == ()
+
+
 def test_thumbnail_decoder_returns_bounded_pixmap(monkeypatch) -> None:
     import pytest
 
@@ -99,15 +125,19 @@ def test_thumbnail_loader_cancels_pending_replies(monkeypatch) -> None:
 
     app = QApplication.instance() or QApplication([])
     loader = create_thumbnail_loader()
+    service = loader.service
     reply = Reply()
-    loader.pending["https://i.ytimg.com/example.jpg"] = [lambda _: None]
-    loader.replies["https://i.ytimg.com/example.jpg"] = reply
+    service.pending["https://i.ytimg.com/example.jpg"] = {
+        loader.token: [lambda _: None]
+    }
+    service.replies["https://i.ytimg.com/example.jpg"] = reply
 
     loader.cancel_pending()
 
-    assert loader.pending == {}
-    assert loader.replies == {}
+    assert service.pending == {}
+    assert service.replies == {}
     assert reply.aborted
+    loader.shutdown()
     loader.deleteLater()
     app.processEvents()
 
@@ -128,16 +158,81 @@ def test_thumbnail_loader_shutdown_releases_cache_and_pending_replies(monkeypatc
 
     app = QApplication.instance() or QApplication([])
     loader = create_thumbnail_loader()
+    service = loader.service
     reply = Reply()
-    loader.cache["https://i.ytimg.com/example.jpg"] = object()
-    loader.pending["https://i.ytimg.com/example.jpg"] = [lambda _: None]
-    loader.replies["https://i.ytimg.com/example.jpg"] = reply
+    service.cache["https://i.ytimg.com/example.jpg"] = object()
+    service.pending["https://i.ytimg.com/example.jpg"] = {
+        loader.token: [lambda _: None]
+    }
+    service.replies["https://i.ytimg.com/example.jpg"] = reply
 
     loader.shutdown()
 
-    assert loader.cache == {}
-    assert loader.pending == {}
-    assert loader.replies == {}
+    assert service.cache == {}
+    assert service.pending == {}
+    assert service.replies == {}
     assert reply.aborted
     loader.deleteLater()
     app.processEvents()
+
+
+def test_thumbnail_clients_share_one_root_service_and_cancel_independently(
+    monkeypatch,
+) -> None:
+    import pytest
+
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QWidget
+
+    class Reply:
+        aborted = False
+
+        def isRunning(self) -> bool:
+            return True
+
+        def abort(self) -> None:
+            self.aborted = True
+
+    app = QApplication.instance() or QApplication([])
+    root = QWidget()
+    first_owner = QWidget(root)
+    second_owner = QWidget(root)
+    first = create_thumbnail_loader(first_owner)
+    second = create_thumbnail_loader(second_owner)
+    lifecycle: list[str] = []
+    first.on_cancel(lambda: lifecycle.append("cancel"))
+    first.on_resume(lambda: lifecycle.append("resume"))
+    reply = Reply()
+    url = "https://i.ytimg.com/example.jpg"
+    service = first.service
+    service.pending[url] = {
+        first.token: [lambda _: None],
+        second.token: [lambda _: None],
+    }
+    service.replies[url] = reply
+    service.cache[url] = object()
+
+    try:
+        assert second.service is service
+        assert root._media_manager_thumbnail_service is service
+
+        assert cancel_thumbnail_clients(first_owner) == 1
+        assert lifecycle == ["cancel"]
+        assert tuple(service.pending[url]) == (second.token,)
+        assert not reply.aborted
+
+        assert resume_thumbnail_clients(first_owner) == 1
+        assert lifecycle == ["cancel", "resume"]
+
+        second.cancel_pending()
+        assert service.pending == {}
+        assert service.replies == {}
+        assert reply.aborted
+
+        first.shutdown()
+        assert url in service.cache
+    finally:
+        second.shutdown()
+        root.deleteLater()
+        app.processEvents()

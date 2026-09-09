@@ -9,6 +9,7 @@ from unittest.mock import Mock
 import pytest
 
 from contracts.discovery_v1 import DiscoveryItemV1
+from contracts.playlist_v1 import PlaylistEntryV1
 from contracts.similar_v1 import SimilarSelectionV1
 from core.discovery.adapters import FederatedSearchResult
 from core.downloads.provider_registry import ProviderStatus
@@ -455,6 +456,93 @@ def test_youtube_workspace_uses_one_source_and_only_prefills_selected_urls(
         workspace.shutdown()
         workspace.close()
         workspace.deleteLater()
+        app.processEvents()
+
+
+def test_youtube_large_playlist_mode_is_explicit_and_bounded(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    class ImmediateThread:
+        def __init__(self, *, target: object, **_options: object) -> None:
+            self.target = target
+
+        def start(self) -> None:
+            self.target()
+
+    app = QApplication.instance() or QApplication([])
+    download_providers = Mock()
+    download_providers.statuses.return_value = (
+        ProviderStatus("youtube", "YouTube", True),
+    )
+    download_providers.is_enabled.return_value = True
+    download_providers.capability_for_provider.return_value = None
+    download_providers.provider_for.return_value = SimpleNamespace(
+        provider_id="youtube"
+    )
+    download_providers.playlist.return_value = (
+        PlaylistEntryV1(
+            "one",
+            "https://www.youtube.com/watch?v=one",
+            "One",
+            "Artist",
+            60,
+            1,
+            True,
+        ),
+    )
+    discovery = Mock()
+    discovery.statuses.return_value = ()
+    discovery.is_enabled.return_value = False
+    context = SimpleNamespace(
+        download_providers=download_providers,
+        download_queue=SimpleNamespace(snapshots=lambda: ()),
+        discovery=discovery,
+        settings=SimpleNamespace(download_workers=2),
+        paths=SimpleNamespace(
+            downloads=Path("Downloads"),
+            settings=Path("settings"),
+        ),
+        events=None,
+        audit=None,
+    )
+    monkeypatch.setattr(
+        "trusted_ui.download_panel.threading.Thread",
+        ImmediateThread,
+    )
+    monkeypatch.setattr(
+        "trusted_ui.download_panel.show_playlist_dialog",
+        lambda *_args, **_kwargs: None,
+    )
+
+    panel = create_download_panel(context)
+    try:
+        panel.timer.stop()
+        panel.urls.setPlainText(
+            "https://music.youtube.com/playlist?list=PLexample"
+        )
+        app.processEvents()
+        assert panel.youtube_lazy_playlist.isEnabled()
+        assert not panel.youtube_lazy_playlist.isChecked()
+        assert "完整總數" in panel.youtube_lazy_playlist.toolTip()
+
+        panel.youtube_lazy_playlist.setChecked(True)
+        panel.prepare_playlist()
+        app.processEvents()
+
+        download_providers.playlist.assert_called_once_with(
+            "https://music.youtube.com/playlist?list=PLexample",
+            limit=500,
+            lazy=True,
+        )
+        assert "不是完整總數" in panel.preview.text()
+    finally:
+        panel.close()
+        panel.deleteLater()
         app.processEvents()
 
 

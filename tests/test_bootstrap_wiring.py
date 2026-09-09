@@ -217,6 +217,52 @@ def test_bootstrap_applies_supported_language_to_mod_ui(tmp_path, monkeypatch) -
         context.lifecycle.shutdown()
 
 
+def test_bootstrap_normalizes_youtube_performance_settings(
+    tmp_path, monkeypatch
+) -> None:
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    SettingsService(paths.settings / "settings.json").save(
+        Settings(
+            download_workers=4,
+            youtube_performance_profile="resource",
+        )
+    )
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    try:
+        assert context.settings.youtube_performance_profile == "resource"
+        assert context.settings.download_workers == 2
+        assert context.download_queue.worker_count == 2
+        assert context.download_providers.youtube_performance.worker_count == 2
+        assert (
+            context.download_providers.youtube_performance.fragment_concurrency
+            == 1
+        )
+    finally:
+        context.lifecycle.shutdown()
+
+
+def test_bootstrap_unknown_youtube_performance_profile_uses_balanced(
+    tmp_path, monkeypatch
+) -> None:
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    SettingsService(paths.settings / "settings.json").save(
+        Settings(youtube_performance_profile="future-mode")
+    )
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    try:
+        assert context.settings.youtube_performance_profile == "balanced"
+        assert (
+            context.download_providers.youtube_performance.profile.profile_id
+            == "balanced"
+        )
+    finally:
+        context.lifecycle.shutdown()
+
+
 def test_bootstrap_invalid_settings_starts_with_read_only_status(
     tmp_path, monkeypatch
 ) -> None:

@@ -218,11 +218,41 @@ def media_languages(info: dict[str, Any]) -> tuple[list[str], list[str]]:
     return sorted(audio)[:32], sorted(subtitles)[:32]
 
 
-def _postprocess_options(request: dict[str, Any]) -> tuple[bool, bool, bool]:
+_CORE_PERFORMANCE_KEYS = {
+    "_core_performance_schema",
+    "_core_performance_profile",
+    "_core_worker_count",
+    "_core_fragment_concurrency",
+    "_core_fragment_budget",
+}
+_CORE_PERFORMANCE_PROFILES = {
+    "resource": (2, 2, 2),
+    "balanced": (4, 4, 2),
+    "high": (4, 8, 4),
+    "auto": (4, 4, 4),
+}
+
+
+def _provider_options(request: dict[str, Any]) -> dict[str, str]:
     raw = request.get("provider_options", {})
     if not isinstance(raw, dict):
         raise ValueError("provider options are invalid")
-    allowed = {"embed_metadata", "embed_thumbnail", "embed_chapters"}
+    if not all(
+        isinstance(key, str) and isinstance(value, str)
+        for key, value in raw.items()
+    ):
+        raise ValueError("provider options are invalid")
+    return raw
+
+
+def _postprocess_options(request: dict[str, Any]) -> tuple[bool, bool, bool]:
+    raw = _provider_options(request)
+    allowed = {
+        "embed_metadata",
+        "embed_thumbnail",
+        "embed_chapters",
+        *_CORE_PERFORMANCE_KEYS,
+    }
     if set(raw) - allowed:
         raise ValueError("unsupported YouTube provider option")
     values: list[bool] = []
@@ -232,6 +262,34 @@ def _postprocess_options(request: dict[str, Any]) -> tuple[bool, bool, bool]:
             raise ValueError("YouTube post-processing option is invalid")
         values.append(value == "true")
     return values[0], values[1], values[2]
+
+
+def _performance_fragment_concurrency(request: dict[str, Any]) -> int:
+    raw = _provider_options(request)
+    present = set(raw) & _CORE_PERFORMANCE_KEYS
+    if not present:
+        return 1
+    if present != _CORE_PERFORMANCE_KEYS:
+        raise ValueError("YouTube performance option contract is incomplete")
+    if raw["_core_performance_schema"] != "1":
+        raise ValueError("YouTube performance option schema is unsupported")
+    profile_id = raw["_core_performance_profile"]
+    specification = _CORE_PERFORMANCE_PROFILES.get(profile_id)
+    try:
+        workers = int(raw["_core_worker_count"])
+        fragments = int(raw["_core_fragment_concurrency"])
+        budget = int(raw["_core_fragment_budget"])
+    except ValueError as error:
+        raise ValueError("YouTube performance option is invalid") from error
+    if specification is None:
+        raise ValueError("YouTube performance profile is invalid")
+    maximum_workers, expected_budget, per_task_limit = specification
+    if not 1 <= workers <= maximum_workers:
+        raise ValueError("YouTube performance allocation is invalid")
+    expected_fragments = min(per_task_limit, max(1, expected_budget // workers))
+    if budget != expected_budget or fragments != expected_fragments:
+        raise ValueError("YouTube performance allocation is invalid")
+    return fragments
 
 
 def analyze(request: dict[str, Any]) -> dict[str, Any]:
@@ -286,6 +344,9 @@ def playlist(request: dict[str, Any]) -> list[dict[str, Any]]:
     limit = int(request.get("limit", 500))
     if not 1 <= limit <= 500:
         raise ValueError("playlist limit is invalid")
+    lazy = request.get("lazy", False)
+    if type(lazy) is not bool:
+        raise ValueError("playlist lazy mode is invalid")
     options: dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
@@ -294,6 +355,8 @@ def playlist(request: dict[str, Any]) -> list[dict[str, Any]]:
         "ignoreerrors": True,
         "playlistend": limit,
     }
+    if lazy:
+        options["lazy_playlist"] = True
     options.update(runtime_options(request))
     with YoutubeDL(options) as ydl:
         info = ydl.extract_info(request["url"], download=False)
@@ -424,6 +487,7 @@ def download(request: dict[str, Any]) -> str:
     embed_metadata, embed_thumbnail, embed_chapters = _postprocess_options(
         request
     )
+    fragment_concurrency = _performance_fragment_concurrency(request)
 
     audio_only = request.get("audio_only") is True or format_preset.startswith(
         "audio-"
@@ -446,6 +510,7 @@ def download(request: dict[str, Any]) -> str:
         "socket_timeout": 20,
         "retries": 3,
         "fragment_retries": 3,
+        "concurrent_fragment_downloads": fragment_concurrency,
         "extractor_retries": 3,
         "continuedl": True,
         "nopart": False,

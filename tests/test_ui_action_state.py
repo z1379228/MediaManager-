@@ -70,6 +70,87 @@ def test_download_worker_count_reverts_when_settings_are_read_only(
         context.lifecycle.shutdown()
 
 
+def test_youtube_performance_profile_is_persisted_and_shared(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    app = QApplication.instance() or QApplication([])
+    information = Mock(return_value=QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(QMessageBox, "information", information)
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    youtube_panel = create_download_panel(context, site_family="youtube")
+    bilibili_panel = create_download_panel(context, site_family="bilibili")
+    youtube_panel.timer.stop()
+    bilibili_panel.timer.stop()
+    try:
+        youtube_panel.resize(940, 620)
+        youtube_panel.show()
+        app.processEvents()
+        assert youtube_panel.scroll_content.minimumSizeHint().width() <= 940
+        assert youtube_panel.youtube_performance_profile is not None
+        assert bilibili_panel.youtube_performance_profile is None
+        youtube_panel.youtube_performance_profile.setCurrentIndex(
+            youtube_panel.youtube_performance_profile.findData("high")
+        )
+        app.processEvents()
+
+        assert context.settings.youtube_performance_profile == "high"
+        assert context.settings.download_workers == 2
+        assert context.download_providers.youtube_performance.profile.profile_id == (
+            "high"
+        )
+        assert context.download_providers.youtube_performance.fragment_concurrency == 4
+        assert bilibili_panel.worker_count.currentData() == 2
+
+        youtube_panel.worker_count.setCurrentIndex(
+            youtube_panel.worker_count.findData(4)
+        )
+        app.processEvents()
+
+        assert context.settings.download_workers == 4
+        assert context.download_providers.youtube_performance.fragment_concurrency == 2
+        assert bilibili_panel.worker_count.currentData() == 4
+        document = json.loads(
+            (Path(context.paths.settings) / "settings.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert document["youtube_performance_profile"] == "high"
+        assert document["download_workers"] == 4
+
+        queued = DownloadTask(
+            "queued",
+            DownloadRequest("https://www.youtube.com/watch?v=x", tmp_path),
+        )
+        monkeypatch.setattr(
+            context.download_queue,
+            "snapshots",
+            lambda: (queued,),
+        )
+        youtube_panel.youtube_performance_profile.setCurrentIndex(
+            youtube_panel.youtube_performance_profile.findData("resource")
+        )
+        app.processEvents()
+
+        assert context.settings.youtube_performance_profile == "high"
+        assert youtube_panel.youtube_performance_profile.currentData() == "high"
+        information.assert_called_once()
+        assert "未結束" in information.call_args.args[2]
+    finally:
+        youtube_panel.close()
+        bilibili_panel.close()
+        youtube_panel.deleteLater()
+        bilibili_panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
 def test_search_source_is_inferred_only_from_exact_official_hosts() -> None:
     assert (
         search_source_for_url("https://www.youtube.com/watch?v=example")
@@ -1840,6 +1921,8 @@ def test_audio_preview_can_stop_and_rejects_late_result(
     app = QApplication.instance() or QApplication([])
     context = Bootstrap(portable=True).initialize()
     panel = create_search_panel(context)
+    assert panel.audio_player is None
+    assert panel.audio_output is None
     player = Mock()
     provider = Mock()
     preview_path = Path(tmp_path) / "preview.mp3"
@@ -1874,6 +1957,20 @@ def test_audio_preview_can_stop_and_rejects_late_result(
             _PreviewResponse(7, late_provider, late_path), ""
         )
         late_provider.cleanup_audio_preview.assert_called_once_with(late_path)
+        player.play.assert_not_called()
+
+        panel.setProperty("mediaManagerBackgroundIdle", True)
+        panel.generation = 9
+        panel.busy_action = "preview"
+        background_provider = Mock()
+        background_path = Path(tmp_path) / "background.mp3"
+        panel.show_audio_preview(
+            _PreviewResponse(9, background_provider, background_path), ""
+        )
+        background_provider.cleanup_audio_preview.assert_called_once_with(
+            background_path
+        )
+        assert "背景待機" in panel.status.text()
         player.play.assert_not_called()
     finally:
         panel.close()

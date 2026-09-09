@@ -37,6 +37,55 @@ def test_registry_routes_only_to_enabled_provider(tmp_path) -> None:
     assert registry.download(request, Mock(), Event()) == "result.mp4"
 
 
+def test_registry_replaces_untrusted_youtube_performance_options(tmp_path) -> None:
+    registry = DownloadProviderRegistry(
+        youtube_performance_profile="high",
+        download_workers=4,
+    )
+    youtube = provider()
+    registry.register(youtube, enabled=True)
+    request = DownloadRequest(
+        "https://youtube.com/watch?v=x",
+        tmp_path,
+        provider_options=(
+            ("embed_metadata", "true"),
+            ("_core_fragment_concurrency", "99"),
+        ),
+    )
+
+    registry.download(request, Mock(), Event())
+
+    forwarded = youtube.download.call_args.args[0]
+    options = dict(forwarded.provider_options)
+    assert options["embed_metadata"] == "true"
+    assert options["_core_performance_profile"] == "high"
+    assert options["_core_worker_count"] == "4"
+    assert options["_core_fragment_concurrency"] == "2"
+    assert options["_core_fragment_budget"] == "8"
+
+
+def test_registry_does_not_inject_youtube_options_into_other_providers(
+    tmp_path,
+) -> None:
+    registry = DownloadProviderRegistry(
+        youtube_performance_profile="high",
+        download_workers=4,
+    )
+    direct = provider("direct-http")
+    direct.supports.side_effect = lambda url: "example.com" in url
+    registry.register(direct, enabled=True)
+    request = DownloadRequest(
+        "https://example.com/video.mp4",
+        tmp_path,
+        provider_options=(("request_headers", "false"),),
+    )
+
+    registry.download(request, Mock(), Event())
+
+    forwarded = direct.download.call_args.args[0]
+    assert forwarded.provider_options == (("request_headers", "false"),)
+
+
 def test_registry_identifies_disabled_provider_owner() -> None:
     registry = DownloadProviderRegistry()
     registry.register(provider(), enabled=False)
@@ -148,6 +197,37 @@ def test_playlist_and_batch_limits_are_enforced_before_queueing(tmp_path) -> Non
     )
     with pytest.raises(DownloadCapabilityError, match="exceeds youtube limit"):
         registry.validate_batch(requests)
+
+
+def test_lazy_playlist_is_forwarded_only_to_youtube() -> None:
+    registry = DownloadProviderRegistry()
+    youtube = provider()
+    youtube.playlist.return_value = ()
+    registry.register(youtube, enabled=True)
+
+    registry.playlist(
+        "https://youtube.com/playlist?list=x",
+        limit=20,
+        lazy=True,
+    )
+
+    youtube.playlist.assert_called_once_with(
+        "https://youtube.com/playlist?list=x",
+        limit=20,
+        lazy=True,
+    )
+
+
+def test_lazy_playlist_rejects_non_youtube_and_invalid_flag() -> None:
+    registry = DownloadProviderRegistry()
+    direct = provider("direct-http")
+    direct.supports.side_effect = lambda url: "example.com" in url
+    registry.register(direct, enabled=True)
+
+    with pytest.raises(ValueError, match="only available for YouTube"):
+        registry.playlist("https://example.com/list", lazy=True)
+    with pytest.raises(ValueError, match="must be a boolean"):
+        registry.playlist("https://example.com/list", lazy=1)  # type: ignore[arg-type]
 
 
 def test_close_disables_and_closes_every_provider() -> None:

@@ -1,13 +1,40 @@
 # 目前專案狀態
 
-狀態日期：2026-09-08
+狀態日期：2026-09-09
 
 ## 結論
 
-MediaManager 目前工作來源為 Development `39.0.96`。`39.0.96` 移除第三方 MOD
-驗證警告中失效的硬編碼 `core 3.0`，改為回報實際參與相容性檢查的核心版本；
-GitHub Quality workflow 也統一使用具 60 秒測試逾時、受限收集範圍與外部隔離
-暫存目錄的 Repository runner，不再在工作樹建立 `.work/pytest-ci-*`。`39.0.95`
+MediaManager 目前工作來源為 Development `39.0.106`。`39.0.106` 讓配置比較器
+在 build 前先拒絕 Repository 內、既存或 link-like 證據路徑，並以 Windows
+kill-on-close Job Object 收容每個量測程序的完整程序樹；程序先 suspended、
+成功加入 Job 後才恢復，逾時或初始化失敗也會關閉 Job 並 reap。`39.0.105` 新增隔離的
+onefile／onedir PyInstaller 配置比較器；正式發行 build 會強制 onefile，實驗
+工具預設只輸出計畫，必須明確帶 `--execute` 才會在 Repository 外建立原型、
+記錄啟動與程序資源、核對完整樹 SHA-256 並執行複製資料夾 smoke。原型 build
+與 Before／After 比較目前尚未授權或執行，因此沒有封裝效能結論。`39.0.104` 新增預設關閉的
+YouTube 大型播放清單快速模式；只在使用者明確選取時逐筆解析前 500 項，並在
+UI 說明結果不是完整總數且不套用隨機／反向排序。未選取時與非 YouTube provider
+維持原 payload。`39.0.103` 新增由可信核心
+驗證的 YouTube 省資源、平衡、高速與自動下載效能設定；核心會依全域工作數
+配置有界片段併發並覆寫外來同名選項，所有已建立的下載頁同步顯示設定。
+有未結束工作時不允許改變 profile 或同時工作數，避免新舊配額重疊。
+`39.0.102` 讓 MEGA、
+Direct HTTP 與 Gopeed 工作表以資料簽章跳過相同快照，變動時在批次期間
+暫停中間 repaint；逐 cell 重用候選因基準較慢而撤回。`39.0.101` 將 YouTube、
+Bilibili、網站搜尋與播放清單的縮圖改由主視窗層級的單一有界服務共用，
+只請求目前可見列與前後緩衝；離開頁面取消該頁請求，返回後再補載。
+`39.0.100` 將非目前核心工作區與已啟用的選用工作區改為第一次開啟才匯入
+模組、建立介面，建立後保留使用者狀態。`39.0.99` 合併高頻的下載 RUNNING 進度通知，同一工作
+每 100 ms 最多將最新快照送往 UI 一次，
+但狀態轉換及終態仍立即送達；Qt Multimedia 播放元件也改為第一次
+有效預覽才建立，停止或關閉後釋放。`39.0.98` 將 version、verify、Provider 與
+Plugin 非圖形角色分流到重型 Bootstrap／可信 UI 匯入前，並新增隔離
+AppData、禁止網路與可見 UI 的啟動資源基準。`39.0.97` 新增低資源
+背景待機、右下角關閉行為選擇、系統匣還原／完整結束，以及預設關閉的 Windows
+登入後背景啟動。待機只暫停不可見 UI 的重複輪詢；下載、轉換、轉錄、排程與
+剪貼簿規則維持原服務生命週期。`39.0.96` 移除第三方 MOD 驗證警告中失效的
+硬編碼 `core 3.0`，並讓 GitHub Quality workflow 統一使用具 60 秒測試逾時、
+受限收集範圍與外部隔離暫存目錄的 Repository runner。`39.0.95`
 移除啟動時自動開啟的首次 MOD 設定與依賴環境模態視窗，改由主畫面的 MOD 管理
 與環境狀態按鈕明確開啟；啟動不會改變 MOD 狀態或安裝工具。`39.0.94` 保留 39.0.93
 H.265 Main10 NVENC preset 經本機品質比較較佳的 p7／HQ 參數，並在原子提交前
@@ -127,8 +154,10 @@ Unicode／大小寫等價計數，讓搜尋建議與相似音樂偏好加權使�
 [Testing `1.2.1`](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)
 仍由 Development `39.0.12` 建置且保持不可變。Testing `1.2.2` 已獲授權由
 Development `39.0.39` 的乾淨 source freeze 建置、建立新目錄與 prerelease；
-它維持未簽署 Testing 身分，不是 Stable。Development 40.0 仍為
-`NO PLAN / NO RELEASE`，Repository 也沒有可發布 Stable 候選。
+它維持未簽署 Testing 身分，不是 Stable。下一次 Development 更新已有
+[資源與 MOD 效能計畫](performance-mod-optimization-plan.md)，但版本、實作、build、
+Testing／Stable、push 與發布均尚未指派或授權。Development 40.0 仍為
+`NO RELEASE`，Repository 也沒有可發布 Stable 候選。
 
 ## 已完成範圍
 
@@ -537,6 +566,99 @@ Development `39.0.39` 的乾淨 source freeze 建置、建立新目錄與 prerel
   Quality audit 通過 Ruff `367` 個 Python 檔與文字污染 `476` 個受控檔案，MOD
   群組 `7 / 4`、網站矩陣 `12 / 34 / 49`、依賴鎖 `10`、版本文件 `4`、兩個
   Testing 版本與隔離 `compileall` 也都通過。
+- Development 39.0.102 將 MEGA 與 Direct HTTP 既有資料簽章／動態輪詢保留，
+  套用變動快照期間暫停中間 repaint，選取列仍依 task ID 保留。Gopeed 的
+  手動更新加入可見值 signature，相同 API 快照不動 UI；隱藏且無進行中工作的
+  MEGA／Direct HTTP 以 10 秒低頻檢查，頁面關閉停止 timer。同一來源、無網路、
+  不顯示 UI 的 200 列×50 次刷新以 2 warmup／7 samples 比較：整批重建與逐 cell
+  重用的 workload p50 為 `443.808 / 497.525 ms`，p95 為
+  `594.221 / 647.663 ms`；Private Bytes p50 為 `23,961,600 / 25,026,560`。
+  重用雖將 item／progress 建立數從 `40,000 / 10,000` 降至 `800 / 200`，但沒有
+  轉化成速度或記憶體優勢，因此依停止條件撤回，`QAbstractTableModel` 也未導入。
+  證據位於 Repository 外的 `table-39.0.102-20260909.json`。定向回歸為
+  `71 passed`，完整 Repository runner 為 `1627 passed, 7 skipped`；七項 skip
+  均是目前 Windows 帳號缺少建立測試用 link 權限。此合成表格 workload
+  不代表實際下載吞吐。
+- Development 39.0.101 將先前各工作區各自持有的縮圖 network manager 與
+  LRU cache 收斂為主視窗層級的單一可信服務；相同 URL 的同時請求會合併，
+  回應仍受 HTTPS／CDN 白名單、1 MiB、1600 萬像素、8 秒 timeout、32 個
+  pending 與 40 項快取上限保護。YouTube、Bilibili、網站搜尋及播放清單
+  先建立文字列，只對 viewport 可見列加前後 2 列發出縮圖請求，捲動時才
+  補載；離開分頁只取消該 client callback，其他頁與共用快取不受影響，返回
+  後會恢復可見列載入。背景待機會取消全部 pending 並清空可重建快取。
+  定向回歸為 `54 passed`，完整 Repository runner 為 `1624 passed, 7 skipped`；
+  七項 skip 均是目前 Windows 帳號缺少建立測試用 link 權限。尚未完成固定大量結果工作負載的 OS 層 Before／After
+  量測，因此只記錄預期降低重複連線、解碼與隱藏列記憶體壓力，不宣稱實測降幅。
+- Development 39.0.100 將主視窗啟動改為只建立目前 YouTube 工作區。
+  Bilibili、網站搜尋、本機媒體庫與已啟用的選用工作區只先建立輕量
+  分頁 shell，首次開啟才匯入各自模組並物化 panel；再次切換保留同一物件與
+  輸入。MOD 啟用／停用、直接下載 prefill 與關閉清理共用同一 manager，關閉
+  期間不會因分頁變動反向建立工作區。乾淨啟動隔離回歸證明九個延遲
+  工作區模組及 Qt Multimedia 均未匯入；選取 Bilibili 後只建立該頁並可重用。
+  基準以同一來源、2 warmup、7 samples 比較 lazy 與物化全部 11 個可見工作區：
+  elapsed p50 `1281.963 / 1605.220 ms`、private bytes `57,851,904 / 70,725,632`、
+  Qt 子物件 `555 / 1,946`、active repeat timer `1 / 6`。這是同來源工作負載
+  差異，不是舊版 Before／After；開啟所有頁面後固定成本仍會產生。證據儲存在
+  Repository 外的 `workspace-39.0.100-20260908.json`。基準、manager 與主視窗
+  定向回歸為 `14 passed`；完整 Repository runner 為 `1620 passed, 7 skipped`，
+  七項 skip 均是目前 Windows 帳號缺少建立測試用 link 權限，來源樹的
+  `.pyc`／`__pycache__` 仍為 `0`。
+- Development 39.0.99 新增 thread-safe latest-wins 下載通知合併器：第一個
+  RUNNING 狀態及後續狀態轉換立即送達，重複 RUNNING 進度只保留同一
+  工作的最新快照，並由 GUI thread 的 100 ms single-shot coarse timer 合併送出。
+  COMPLETED、FAILED 與 CANCELLED 不節流，送出前會捨棄過時進度；既有動態
+  快照輪詢仍作為低頻一致性校正。音訊、影片、格式工廠切點與分割預覽不再
+  於工作區建立時匯入或建立 Qt Multimedia player；只在通過世代、背景待機與
+  檔案驗證後才建立，並在停止或關閉時清除 source、解除輸出、排程回收。
+  隔離子程序回歸證明完整主視窗啟動後 `PySide6.QtMultimedia` 仍未匯入。
+  修改前合併器 regression-first 在收集時出現 `1 error`；完成後相關 UI、預覽、
+  下載、待機、分割與轉換套件為 `115 passed, 1 skipped`，skip 是 Windows 帳號
+  無法建立測試用 symlink；完整 Repository runner 為 `1618 passed, 7 skipped`，
+  七個 skip 均是目前 Windows 帳號缺少建立測試用 link 的權限。Quality audit 通過
+  Ruff `374` 個 Python 檔與文字
+  污染 `484` 個受控檔案。這些是結構與行為證據；未進行固定工作負載的
+  OS 層 CPU／記憶體 Before／After 量測，不宣稱已取得百分比改善。
+  完整測試首次復查發現 `plugin_host/__pycache__` 四個未追蹤 `.pyc`；根因是
+  來源 Host 的 Python `-I` 會忽略 runner 設定的 `PYTHONDONTWRITEBYTECODE`。
+  Provider 與 Plugin Host 命令現在本身加入 `-B`；兩個命令契約回歸加入後，
+  重跑完整套件仍為上述結果，來源樹 `.pyc` 與 `__pycache__` 均為 `0`。
+- Development 39.0.98 新增可重現的 Windows 啟動／Host 基準，使用獨立 AppData
+  與暫存根目錄，禁止 socket 連線及可信圖形 shell 匯入，記錄 elapsed、CPU、
+  private bytes、working set、peak working set 與 OS thread count；JSON 證據只
+  能寫入 Repository 外。入口本身不再於模組匯入時載入 Bootstrap 或
+  `trusted_ui.main_window`，version、verify、Provider 與 Plugin 先完成角色分流，
+  一般 GUI 才延遲載入可信 UI。相同 Windows 測量方式以 2 次 warmup、7 次樣本
+  比較：version elapsed p50 `243.229 → 87.643 ms`、private bytes
+  `29,646,848 → 13,975,552`；provider host elapsed p50
+  `246.544 → 142.293 ms`、private bytes `31,264,768 → 17,993,728`。
+  verify-only 因保留完整 Bootstrap，elapsed p50 `257.699 → 268.335 ms`，未取得
+  速度改善；private bytes `29,507,584 → 25,739,264`。定向入口與基準測試為
+  `15 passed`；完整 Repository runner 為 `1612 passed, 7 skipped`，skip 均為
+  既有 Windows link 權限限制。基準 probe 明確以 Repository `main.py` 作為應用
+  根目錄，避免 verify-only 在 `tools/` 下建立 MOD 鏡像；測試 runner 也禁止 pytest
+  子程序寫入 Python 位元碼快取。回復只需還原入口的 lazy import 與此基準工具，
+  不遷移設定或改變 Provider／Plugin protocol。
+- Development 39.0.97 新增背景閒置資源控制器：最小化或關閉至系統匣時暫停
+  主視窗下仍在執行的非單次 UI 計時器、暫停播放預覽並釋放可重建的圖片快取，
+  還原視窗時恢復原計時與播放狀態。Automation 剪貼簿改由 Qt 內容變更事件
+  觸發；沒有啟用規則時 monitor 不再每 5 秒喚醒。非目前且閒置的狀態表由
+  2.5 秒更新一次改為 10 秒，顯示資料未變時不重建 Automation 表格。下載、
+  轉換、轉錄與排程的背景服務不由待機控制器關閉。
+  右下角可選「縮到系統匣」或「完全結束」，系統匣選單提供還原與完整結束；
+  系統匣不可用時不隱藏視窗。Windows 登入啟動預設關閉，只有使用者切換設定
+  才保存設定並以可回復流程更新 HKCU Run 值；設定保存失敗時會回復原啟動項。
+  Portable 模式會保留相同的資料模式。新增
+  `--start-minimized` 只對圖形入口生效。回復方式是停用自動啟動並還原本次
+  source changes；不需遷移既有設定，缺少新欄位時沿用安全預設。Regression-first
+  基線為 `2 errors`，完成後基礎定向套件為 `59 passed`、資源調度六個套件為
+  `30 passed`；生命週期修正相關套件為 `94 passed, 1 skipped`，完整 Repository
+  runner 為 `1608 passed, 7 skipped`；skip 均為
+  既有 Windows link 權限限制。Quality audit
+  通過 Ruff `372` 個 Python 檔與文字污染 `482` 個受控檔案，兩個 Testing 版本、
+  隔離 `compileall` 與 `git diff --check` 也都通過。
+  後續生命週期查核另修正延遲最小化 callback 在視窗已還原後誤進待機的競態；
+  背景期間才完成的預覽準備會清理暫存並取消播放，格式工廠的切點預覽倒數則會
+  保留剩餘時間，不會在還原後失去停止期限。
 - Development 39.0.95 將啟動流程改為非模態：不再自動執行首次 MOD 設定
   `QDialog`，核心工具未達 4/4 時也不再排程環境視窗。主畫面原有的 MOD 管理與
   環境狀態按鈕保留完整手動入口，既有設定不被靜默修改。Regression-first 案例
@@ -697,7 +819,9 @@ Development `39.0.39` 的乾淨 source freeze 建置、建立新目錄與 prerel
 - 動畫瘋整合已自目前來源與 runtime 註冊移除；舊 UserData 與保留版本不改寫。
 - 已取消的 Stable 1.0 候選、舊 Testing 候選與未授權 build 工作目錄都不是
   可發布資產。
-- Development 40.0 與後續 roadmap 為 `NO PLAN / NO RELEASE`，不以空版本續號。
+- Development 40.0 仍為 `NO RELEASE / VERSION UNASSIGNED`，不以規劃文件建立
+  空版本。下一次
+  Development 更新只保留一份有效的資源與 MOD 效能計畫，尚未形成發行候選。
 
 ## 目前 Testing 工作
 
@@ -736,6 +860,7 @@ Development `39.0.39` 的乾淨 source freeze 建置、建立新目錄與 prerel
 
 ## 歷史與回復
 
-目前樹不保留逐版 roadmap 與重複 release journal。過去決策仍可從 Git 歷史、
+目前樹只保留仍有效的下一次更新計畫，不保留已結案逐版 roadmap 與重複 release
+journal。過去決策仍可從 Git 歷史、
 不可變 `Version/` 產物及 GitHub Releases 的 checksum／metadata 追查。不得為了
 縮小 Repository 而刪除公開附件、改寫 tag、重寫 Git 歷史或清除 UserData。

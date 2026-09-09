@@ -28,6 +28,26 @@ def test_mod_and_new_rules_are_disabled_by_default(tmp_path: Path) -> None:
         automation.close()
 
 
+def test_monitor_has_no_periodic_wakeup_without_enabled_rules(
+    tmp_path: Path,
+) -> None:
+    automation = service(tmp_path, lambda _rule, _candidate: "task")
+    try:
+        assert automation._monitor_timeout() is None
+        rule_id = automation.create_rule(
+            name="Optional", kind="clipboard"
+        )
+        assert automation._monitor_timeout() is None
+
+        automation.set_rule_enabled(rule_id, True, now=1000)
+        assert automation._monitor_timeout() == automation.poll_seconds
+
+        automation.set_rule_enabled(rule_id, False)
+        assert automation._monitor_timeout() is None
+    finally:
+        automation.close()
+
+
 def test_schedule_is_bounded_and_duplicate_slots_are_deterministic(tmp_path: Path) -> None:
     dispatched = []
     automation = service(tmp_path, lambda rule, candidate: dispatched.append(candidate) or candidate.candidate_key)

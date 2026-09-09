@@ -14,6 +14,7 @@ from core.downloads.preparation import human_bytes
 from core.localization import normalized_core_locale
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.download_panel import download_refresh_interval, safe_task_output_path
+from trusted_ui.table_refresh import suspended_table_updates
 
 
 _TEXT = {
@@ -61,8 +62,8 @@ def create_direct_http_workspace(context: object, parent: object = None) -> obje
         QLineEdit,
         QMessageBox,
         QPlainTextEdit,
-        QProgressBar,
         QPushButton,
+        QProgressBar,
         QTableWidget,
         QTableWidgetItem,
         QVBoxLayout,
@@ -398,7 +399,6 @@ def create_direct_http_workspace(context: object, parent: object = None) -> obje
             selected = self.selected_task()
             selected_id = selected.task_id if selected else ""
             self.render_signature = signature
-            self.table.setRowCount(len(tasks))
             states = {
                 DownloadState.QUEUED: "等待中",
                 DownloadState.RUNNING: "下載中",
@@ -408,20 +408,34 @@ def create_direct_http_workspace(context: object, parent: object = None) -> obje
                 DownloadState.FAILED: "失敗",
                 DownloadState.CANCELLED: "已取消",
             }
-            for row, task in enumerate(tasks):
-                title = task.title or task.request.output_filename or task.request.url
-                item = QTableWidgetItem(title)
-                item.setData(Qt.ItemDataRole.UserRole, task.task_id)
-                self.table.setItem(row, 0, item)
-                self.table.setItem(row, 1, QTableWidgetItem(states[task.state]))
-                progress = QProgressBar()
-                progress.setRange(0, 1000)
-                progress.setValue(round(task.progress * 10))
-                progress.setFormat(f"{task.progress:.1f}%")
-                self.table.setCellWidget(row, 2, progress)
-                self.table.setItem(row, 3, QTableWidgetItem(task.speed or "—"))
-                if task.task_id == selected_id:
-                    self.table.selectRow(row)
+            with suspended_table_updates(self.table):
+                self.table.setRowCount(len(tasks))
+                for row, task in enumerate(tasks):
+                    title = (
+                        task.title
+                        or task.request.output_filename
+                        or task.request.url
+                    )
+                    item = QTableWidgetItem(title)
+                    item.setData(Qt.ItemDataRole.UserRole, task.task_id)
+                    self.table.setItem(row, 0, item)
+                    self.table.setItem(
+                        row,
+                        1,
+                        QTableWidgetItem(states[task.state]),
+                    )
+                    progress = QProgressBar()
+                    progress.setRange(0, 1000)
+                    progress.setValue(round(task.progress * 10))
+                    progress.setFormat(f"{task.progress:.1f}%")
+                    self.table.setCellWidget(row, 2, progress)
+                    self.table.setItem(
+                        row,
+                        3,
+                        QTableWidgetItem(task.speed or "—"),
+                    )
+                    if task.task_id == selected_id:
+                        self.table.selectRow(row)
             self.update_task_actions()
 
         def update_task_actions(self) -> None:

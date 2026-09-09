@@ -25,6 +25,20 @@ def test_frozen_host_command_uses_canonical_executable_entrypoint(
     assert "-m" not in command
 
 
+def test_source_plugin_host_disables_bytecode_cache(tmp_path: Path) -> None:
+    command = HostLauncher._command(
+        "example.plugin", tmp_path, "plugin.py", "n" * 24
+    )
+
+    assert command[:5] == [
+        sys.executable,
+        "-B",
+        "-I",
+        "-m",
+        "plugin_host.main",
+    ]
+
+
 def test_source_plugin_host_requires_valid_handshake(tmp_path: Path) -> None:
     root = tmp_path / "example.plugin"
     root.mkdir()

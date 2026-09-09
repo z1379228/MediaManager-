@@ -7,21 +7,35 @@ import os
 import sys
 from pathlib import Path
 
-from core.bootstrap.bootstrap import Bootstrap
-from core.version import display_version
-from trusted_ui.main_window import run_main_window
-
-
 _FROZEN_CLI_OUTPUT_FLAGS = frozenset({"--version", "--verify-only", "--headless"})
 
 
+def _create_bootstrap(*, portable: bool) -> object:
+    from core.bootstrap.bootstrap import Bootstrap
+
+    return Bootstrap(portable=portable)
+
+
+def _run_graphical_shell(context: object, *, start_minimized: bool) -> int:
+    from trusted_ui.main_window import run_main_window
+
+    return run_main_window(context, start_minimized=start_minimized)
+
+
 def build_parser() -> argparse.ArgumentParser:
+    from core.version import display_version
+
     parser = argparse.ArgumentParser(prog="MediaManager")
     parser.add_argument(
         "--version", action="version", version=f"MediaManager {display_version()}"
     )
     parser.add_argument("--portable", action="store_true", help="store runtime data beside the application")
     parser.add_argument("--headless", action="store_true", help="do not start the graphical security UI")
+    parser.add_argument(
+        "--start-minimized",
+        action="store_true",
+        help="start in background idle mode when the system tray is available",
+    )
     parser.add_argument("--verify-only", action="store_true", help="verify core integrity and exit")
     parser.add_argument("--provider-host", help=argparse.SUPPRESS)
     parser.add_argument("--provider-root", help=argparse.SUPPRESS)
@@ -69,7 +83,7 @@ def _run(raw_argv: list[str]) -> int:
             application_root,
             provider_root=Path(args.provider_root),
         )
-    bootstrap = Bootstrap(portable=args.portable)
+    bootstrap = _create_bootstrap(portable=args.portable)
     if args.verify_only:
         security = bootstrap.verify_only()
         print(f"MediaManager security mode: {security.mode}")
@@ -81,7 +95,10 @@ def _run(raw_argv: list[str]) -> int:
         if args.headless:
             print(f"MediaManager ready ({context.security.mode})")
             return 2 if context.security.mode == "BLOCKED" else 0
-        return run_main_window(context)
+        return _run_graphical_shell(
+            context,
+            start_minimized=args.start_minimized,
+        )
     finally:
         context.lifecycle.shutdown()
 

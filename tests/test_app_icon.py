@@ -37,3 +37,13 @@ def test_pyinstaller_spec_embeds_runtime_and_executable_icons() -> None:
 
     assert "('trusted_ui/assets/app-icon.png', 'trusted_ui/assets')" in spec
     assert "icon='assets/app-icon.ico'" in spec
+
+
+def test_pyinstaller_spec_has_fail_closed_package_layout_switch() -> None:
+    root = Path(__file__).resolve().parents[1]
+    spec = (root / "MediaManager.spec").read_text(encoding="utf-8")
+
+    assert "MEDIAMANAGER_PYINSTALLER_LAYOUT" in spec
+    assert "{'onefile', 'onedir'}" in spec
+    assert "exclude_binaries=True" in spec
+    assert "COLLECT(" in spec

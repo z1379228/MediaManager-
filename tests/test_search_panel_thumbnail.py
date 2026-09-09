@@ -101,3 +101,53 @@ def test_federated_results_show_source_and_partial_failure(monkeypatch) -> None:
     panel.close()
     panel.deleteLater()
     app.processEvents()
+
+
+def test_search_panel_only_requests_visible_thumbnail_window(monkeypatch) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    panel = create_search_panel(_Context(_Discovery()))
+    loaded: list[str] = []
+    panel.thumbnail_loader.load = lambda url, _callback: loaded.append(url)
+    results = tuple(
+        DiscoveryItemV1(
+            f"video-{index}",
+            f"https://www.youtube.com/watch?v=video-{index}",
+            f"Result {index}",
+            "Artist",
+            120,
+            "zh-TW",
+            "music",
+            f"https://i.ytimg.com/vi/video-{index}/mqdefault.jpg",
+        )
+        for index in range(80)
+    )
+
+    try:
+        panel.resize(900, 620)
+        panel.show()
+        app.processEvents()
+        panel.show_results(results, "")
+        app.processEvents()
+
+        initial_count = len(loaded)
+        assert 0 < initial_count < len(results)
+
+        panel.table.verticalScrollBar().setValue(
+            panel.table.verticalScrollBar().maximum()
+        )
+        app.processEvents()
+        assert initial_count < len(loaded) < len(results)
+
+        panel.thumbnail_loader.cancel_pending()
+        assert panel.thumbnail_requests == set()
+        panel.thumbnail_loader.resume()
+        assert len(loaded) > initial_count
+    finally:
+        panel.shutdown()
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()

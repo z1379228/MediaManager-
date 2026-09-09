@@ -49,6 +49,11 @@ from core.settings import (
     SettingsWriteBlockedError,
     normalized_download_workers,
 )
+from core.downloads.performance_profiles import (
+    normalized_youtube_performance_profile,
+    resolve_youtube_performance,
+    youtube_performance_profiles,
+)
 from trusted_ui.batch_import_dialog import show_batch_import_dialog
 from trusted_ui.bilibili_workspace import (
     bilibili_url_kind_label,
@@ -80,6 +85,27 @@ from trusted_ui.youtube_workspace import (
 ACTIVE_REFRESH_INTERVAL_MS = 500
 IDLE_REFRESH_INTERVAL_MS = 1500
 HIDDEN_REFRESH_INTERVAL_MS = 2500
+HIDDEN_IDLE_REFRESH_INTERVAL_MS = 10_000
+
+
+def has_unfinished_downloads(tasks: tuple[DownloadTask, ...]) -> bool:
+    return any(
+        task.state
+        in {
+            DownloadState.QUEUED,
+            DownloadState.RUNNING,
+            DownloadState.RETRYING,
+            DownloadState.PAUSED,
+        }
+        for task in tasks
+    )
+
+
+def context_youtube_performance_profile(context: object) -> str:
+    settings = getattr(context, "settings", None)
+    return normalized_youtube_performance_profile(
+        getattr(settings, "youtube_performance_profile", None)
+    )
 
 
 def site_workspace_text(site_family: str, locale: object) -> dict[str, str]:
@@ -112,9 +138,7 @@ def download_refresh_interval(
 ) -> int:
     """Choose a responsive interval without polling an idle or hidden UI heavily."""
 
-    if not visible:
-        return HIDDEN_REFRESH_INTERVAL_MS
-    if any(
+    active = any(
         task.state
         in {
             DownloadState.QUEUED,
@@ -122,7 +146,14 @@ def download_refresh_interval(
             DownloadState.RETRYING,
         }
         for task in tasks
-    ):
+    )
+    if not visible:
+        return (
+            HIDDEN_REFRESH_INTERVAL_MS
+            if active
+            else HIDDEN_IDLE_REFRESH_INTERVAL_MS
+        )
+    if active:
         return ACTIVE_REFRESH_INTERVAL_MS
     return IDLE_REFRESH_INTERVAL_MS
 
@@ -300,6 +331,7 @@ def create_download_panel(
             self.playlist_bridge = PlaylistBridge()
             self.playlist_bridge.finished.connect(self.show_playlist_results)
             self.playlist_busy = False
+            self.playlist_result_lazy = False
             self.info_busy = False
             self.pending_recovery_request: DownloadRequest | None = None
             self.confirmed_split_plan = None
@@ -335,6 +367,8 @@ def create_download_panel(
             )
             self.render_signature: tuple[object, ...] | None = None
             self.rendered_task_ids: tuple[str, ...] = ()
+            self.youtube_performance_profile = None
+            self.youtube_performance_hint = None
             shell = QVBoxLayout(self)
             shell.setContentsMargins(0, 0, 0, 0)
             self.scroll_area = QScrollArea()
@@ -407,6 +441,29 @@ def create_download_panel(
             self.enabled.toggled.connect(self.toggle_provider)
             top_controls.addWidget(self.enabled)
             top_controls.addStretch()
+            if site_family == "youtube":
+                performance_label = QLabel("下載效能")
+                performance_label.setObjectName("fieldLabel")
+                top_controls.addWidget(performance_label)
+                self.youtube_performance_profile = QComboBox()
+                self.youtube_performance_profile.setAccessibleName(
+                    "YouTube 下載效能設定"
+                )
+                for profile in youtube_performance_profiles():
+                    self.youtube_performance_profile.addItem(
+                        profile.display_name,
+                        profile.profile_id,
+                    )
+                selected_profile = normalized_youtube_performance_profile(
+                    context_youtube_performance_profile(context)
+                )
+                self.youtube_performance_profile.setCurrentIndex(
+                    self.youtube_performance_profile.findData(selected_profile)
+                )
+                self.youtube_performance_profile.currentIndexChanged.connect(
+                    self.change_youtube_performance_profile
+                )
+                top_controls.addWidget(self.youtube_performance_profile)
             worker_label = QLabel("同時工作")
             worker_label.setObjectName("fieldLabel")
             top_controls.addWidget(worker_label)
@@ -425,6 +482,12 @@ def create_download_panel(
             )
             top_controls.addWidget(self.worker_count)
             input_layout.addLayout(top_controls)
+            if site_family == "youtube":
+                self.youtube_performance_hint = QLabel()
+                self.youtube_performance_hint.setObjectName("sectionSubtitle")
+                self.youtube_performance_hint.setWordWrap(True)
+                input_layout.addWidget(self.youtube_performance_hint)
+                self.update_youtube_performance_hint()
 
             output_row = QHBoxLayout()
             output_label = QLabel("輸出")
@@ -487,6 +550,16 @@ def create_download_panel(
                 site_family == "bilibili"
             )
             playlist_filter_row.addWidget(self.bilibili_playlist_filter, 1)
+            self.youtube_lazy_playlist = QCheckBox("大型清單快速模式")
+            self.youtube_lazy_playlist.setAccessibleName(
+                "YouTube 大型播放清單快速模式"
+            )
+            self.youtube_lazy_playlist.setToolTip(
+                "逐筆解析並載入前 500 項；不預先提供完整總數，"
+                "且不支援隨機或反向排序。"
+            )
+            self.youtube_lazy_playlist.setVisible(site_family == "youtube")
+            playlist_filter_row.addWidget(self.youtube_lazy_playlist)
             input_layout.addLayout(playlist_filter_row)
 
             self.official_bridge_notice = QWidget(self)
@@ -944,6 +1017,10 @@ def create_download_panel(
                     "builtin_mod.changed", self.handle_builtin_mod_changed
                 )
                 events.subscribe("ui.language.changed", self.apply_site_language)
+                events.subscribe(
+                    "downloads.performance.changed",
+                    self.handle_download_performance_changed,
+                )
             self.update_available_presets()
             self.update_available_subtitles()
             if self.saved_profile is not None:
@@ -1400,6 +1477,9 @@ def create_download_panel(
             self.expand_playlist.setEnabled(
                 provider_enabled and playlist_ready and not self.playlist_busy
             )
+            self.youtube_lazy_playlist.setEnabled(
+                provider_enabled and playlist_ready and not self.playlist_busy
+            )
             self.read_info.setEnabled(
                 provider_enabled and info_ready and not self.info_busy
             )
@@ -1788,12 +1868,23 @@ def create_download_panel(
                 self.update_site_options()
                 return
             self.playlist_busy = True
+            lazy_playlist = (
+                self.site_family == "youtube"
+                and self.youtube_lazy_playlist.isChecked()
+            )
+            self.playlist_result_lazy = lazy_playlist
             self.update_site_options()
-            self.expand_playlist.setText("正在展開…")
+            self.expand_playlist.setText(
+                "快速展開中…" if lazy_playlist else "正在展開…"
+            )
 
             def worker() -> None:
                 try:
-                    entries = context.download_providers.playlist(urls[0], limit=500)
+                    entries = context.download_providers.playlist(
+                        urls[0],
+                        limit=500,
+                        lazy=lazy_playlist,
+                    )
                     self.playlist_bridge.finished.emit(entries, "")
                 except Exception as error:
                     self.playlist_bridge.finished.emit(None, str(error))
@@ -1819,6 +1910,11 @@ def create_download_panel(
                 )
                 return
             original_count = len(entries)
+            if self.site_family == "youtube" and self.playlist_result_lazy:
+                self.preview.setText(
+                    f"大型清單快速模式已載入前 {original_count} 項；"
+                    "這不是完整總數，且未套用隨機或反向排序。"
+                )
             if self.site_family == "bilibili":
                 entries = filter_bilibili_playlist_entries(
                     entries, self.bilibili_playlist_filter.text()
@@ -2732,9 +2828,30 @@ def create_download_panel(
             self.refresh()
 
         def change_worker_count(self, *_: object) -> None:
-            workers = normalized_download_workers(self.worker_count.currentData())
+            requested_workers = normalized_download_workers(
+                self.worker_count.currentData()
+            )
             previous_setting = context.settings.download_workers
             previous_control = normalized_download_workers(previous_setting)
+            if (
+                requested_workers != previous_control
+                and has_unfinished_downloads(context.download_queue.snapshots())
+            ):
+                self.set_performance_controls(
+                    context_youtube_performance_profile(context),
+                    previous_control,
+                )
+                QMessageBox.information(
+                    self,
+                    "下載進行中",
+                    "請先完成或取消未結束的下載，再變更同時工作數。",
+                )
+                return
+            performance = resolve_youtube_performance(
+                context_youtube_performance_profile(context),
+                requested_workers,
+            )
+            workers = performance.worker_count
             try:
                 saved = SettingsService(
                     Path(context.paths.settings) / "settings.json"
@@ -2760,6 +2877,161 @@ def create_download_panel(
                 return
             context.settings.download_workers = saved.download_workers
             context.download_queue.set_worker_count(saved.download_workers)
+            configured = getattr(
+                context.download_providers,
+                "configure_youtube_performance",
+                None,
+            )
+            if callable(configured):
+                configured(
+                    context_youtube_performance_profile(context),
+                    saved.download_workers,
+                )
+            self.publish_download_performance()
+
+        def change_youtube_performance_profile(self, *_: object) -> None:
+            control = self.youtube_performance_profile
+            if control is None:
+                return
+            previous_profile = normalized_youtube_performance_profile(
+                context_youtube_performance_profile(context)
+            )
+            selected_profile = normalized_youtube_performance_profile(
+                control.currentData()
+            )
+            if selected_profile == previous_profile:
+                self.update_youtube_performance_hint()
+                return
+            if has_unfinished_downloads(context.download_queue.snapshots()):
+                self.set_performance_controls(
+                    previous_profile,
+                    context.settings.download_workers,
+                )
+                QMessageBox.information(
+                    self,
+                    "下載進行中",
+                    "請先完成或取消未結束的下載，再切換下載效能設定。",
+                )
+                return
+            selected = resolve_youtube_performance(selected_profile, None).profile
+            performance = resolve_youtube_performance(
+                selected_profile,
+                selected.recommended_workers,
+            )
+            try:
+                saved = SettingsService(
+                    Path(context.paths.settings) / "settings.json"
+                ).patch(
+                    youtube_performance_profile=selected_profile,
+                    download_workers=performance.worker_count,
+                )
+            except OSError as error:
+                self.set_performance_controls(
+                    previous_profile,
+                    context.settings.download_workers,
+                )
+                detail = (
+                    "設定檔目前受安全保護，下載效能設定已復原。"
+                    if isinstance(error, SettingsWriteBlockedError)
+                    else "設定檔目前無法寫入，下載效能設定已復原。"
+                )
+                QMessageBox.warning(
+                    self,
+                    "無法儲存下載效能設定",
+                    f"{detail}\n{error}",
+                )
+                return
+            context.settings.youtube_performance_profile = (
+                saved.youtube_performance_profile
+            )
+            context.settings.download_workers = saved.download_workers
+            context.download_queue.set_worker_count(saved.download_workers)
+            configured = getattr(
+                context.download_providers,
+                "configure_youtube_performance",
+                None,
+            )
+            if callable(configured):
+                configured(
+                    saved.youtube_performance_profile,
+                    saved.download_workers,
+                )
+            self.publish_download_performance()
+
+        def set_performance_controls(
+            self,
+            profile_id: object,
+            worker_count: object,
+        ) -> None:
+            performance = resolve_youtube_performance(profile_id, worker_count)
+            self.worker_count.setToolTip(
+                "同時工作數由所有下載頁共用；"
+                f"YouTube {performance.profile.display_name}設定最多允許 "
+                f"{performance.profile.maximum_workers} 個。"
+            )
+            self.worker_count.blockSignals(True)
+            try:
+                self.worker_count.setCurrentIndex(
+                    self.worker_count.findData(performance.worker_count)
+                )
+            finally:
+                self.worker_count.blockSignals(False)
+            if self.youtube_performance_profile is not None:
+                self.youtube_performance_profile.blockSignals(True)
+                try:
+                    self.youtube_performance_profile.setCurrentIndex(
+                        self.youtube_performance_profile.findData(
+                            performance.profile.profile_id
+                        )
+                    )
+                finally:
+                    self.youtube_performance_profile.blockSignals(False)
+            self.update_youtube_performance_hint()
+
+        def update_youtube_performance_hint(self) -> None:
+            if self.youtube_performance_hint is None:
+                return
+            profile_id = (
+                self.youtube_performance_profile.currentData()
+                if self.youtube_performance_profile is not None
+                else context_youtube_performance_profile(context)
+            )
+            performance = resolve_youtube_performance(
+                profile_id,
+                self.worker_count.currentData(),
+            )
+            profile = performance.profile
+            self.youtube_performance_hint.setText(
+                f"{profile.description} 每個 YouTube 工作使用 "
+                f"{performance.fragment_concurrency} 個片段連線；"
+                f"目前上限 {performance.maximum_fragment_concurrency}。"
+                "同時工作數是所有下載頁共用的全域設定。"
+            )
+
+        def publish_download_performance(self) -> None:
+            self.set_performance_controls(
+                context_youtube_performance_profile(context),
+                context.settings.download_workers,
+            )
+            if self.events is not None:
+                self.events.publish(
+                    "downloads.performance.changed",
+                    {
+                        "profile": context_youtube_performance_profile(context),
+                        "workers": context.settings.download_workers,
+                    },
+                )
+
+        def handle_download_performance_changed(self, payload: object) -> None:
+            if not isinstance(payload, dict):
+                return
+            self.set_performance_controls(
+                payload.get(
+                    "profile",
+                    context_youtube_performance_profile(context),
+                ),
+                payload.get("workers", context.settings.download_workers),
+            )
 
         def cancel_selected(self) -> None:
             task_ids = self.selected_task_ids()
@@ -2853,6 +3125,10 @@ def create_download_panel(
                 self.events.unsubscribe(
                     "ui.language.changed", self.apply_site_language
                 )
+                self.events.unsubscribe(
+                    "downloads.performance.changed",
+                    self.handle_download_performance_changed,
+                )
             if self.youtube_workspace is not None:
                 self.youtube_workspace.shutdown()
             if self.bilibili_workspace is not None:
@@ -2860,7 +3136,7 @@ def create_download_panel(
             if self.media_preview_controls is not None:
                 self.media_preview_controls.shutdown()
             if self.thumbnail_loader is not None:
-                self.thumbnail_loader.cancel_pending()
+                self.thumbnail_loader.shutdown()
             super().closeEvent(event)
 
     return DownloadPanel()

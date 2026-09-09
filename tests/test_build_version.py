@@ -408,6 +408,10 @@ def test_build_only_preserves_receipt_bound_artifacts(
 
     def fake_run(command, **_kwargs):
         if Path(command[0]).name.lower() == "pyinstaller.exe":
+            assert (
+                _kwargs["env"][build_version.PYINSTALLER_LAYOUT_ENVIRONMENT]
+                == "onefile"
+            )
             paths.executable_output.mkdir(parents=True, exist_ok=True)
             (paths.executable_output / "MediaManager.exe").write_bytes(b"unsigned")
         else:

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import replace
 from pathlib import Path
+import threading
 from typing import Iterable
 
 from core.downloads.models import DownloadState, DownloadTask
@@ -19,6 +21,55 @@ class DownloadBatchSummary:
     @property
     def total(self) -> int:
         return self.completed + self.failed + self.cancelled
+
+
+@dataclass(frozen=True, slots=True)
+class DownloadNotificationDecision:
+    immediate: DownloadTask | None
+    schedule_flush: bool = False
+
+
+class DownloadNotificationCoalescer:
+    """Keep only the newest high-frequency RUNNING snapshot per task."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._states: dict[str, DownloadState] = {}
+        self._pending: dict[str, DownloadTask] = {}
+        self._flush_scheduled = False
+
+    def submit(self, task: DownloadTask) -> DownloadNotificationDecision:
+        snapshot = replace(task)
+        with self._lock:
+            previous_state = self._states.get(snapshot.task_id)
+            terminal = snapshot.state in {
+                DownloadState.COMPLETED,
+                DownloadState.FAILED,
+                DownloadState.CANCELLED,
+            }
+            state_transition = previous_state is not snapshot.state
+            if terminal:
+                self._states.pop(snapshot.task_id, None)
+                self._pending.pop(snapshot.task_id, None)
+                return DownloadNotificationDecision(snapshot)
+            self._states[snapshot.task_id] = snapshot.state
+            if snapshot.state is not DownloadState.RUNNING or state_transition:
+                self._pending.pop(snapshot.task_id, None)
+                return DownloadNotificationDecision(snapshot)
+            self._pending[snapshot.task_id] = snapshot
+            schedule_flush = not self._flush_scheduled
+            self._flush_scheduled = True
+            return DownloadNotificationDecision(
+                None,
+                schedule_flush=schedule_flush,
+            )
+
+    def flush(self) -> tuple[DownloadTask, ...]:
+        with self._lock:
+            snapshots = tuple(self._pending.values())
+            self._pending.clear()
+            self._flush_scheduled = False
+            return snapshots
 
 
 class DownloadCompletionTracker:

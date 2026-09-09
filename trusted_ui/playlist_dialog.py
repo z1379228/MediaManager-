@@ -7,6 +7,7 @@ import threading
 
 from contracts.playlist_v1 import PlaylistEntryV1
 from core.downloads.playlist_transfer import export_playlist_entries
+from trusted_ui.idle_state import is_background_idle
 
 
 def filtered_playlist_entries(
@@ -31,8 +32,6 @@ def show_playlist_dialog(
 ) -> tuple[PlaylistEntryV1, ...] | None:
     from PySide6.QtCore import QObject, QSize, Qt, QUrl, Signal
     from PySide6.QtGui import QColor, QIcon
-    from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
-    from PySide6.QtMultimediaWidgets import QVideoWidget
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QDialog,
@@ -50,7 +49,10 @@ def show_playlist_dialog(
     )
 
     from trusted_ui.theme import COLORS
-    from trusted_ui.thumbnail_loader import create_thumbnail_loader
+    from trusted_ui.thumbnail_loader import (
+        create_thumbnail_loader,
+        visible_thumbnail_rows,
+    )
 
     class PreviewBridge(QObject):
         finished = Signal(int, object, str, str)
@@ -146,6 +148,8 @@ def show_playlist_dialog(
     checked: set[str] = set()
     visible_entries: tuple[PlaylistEntryV1, ...] = entries
     thumbnail_generation = [0]
+    thumbnail_requests: set[tuple[int, int, str]] = set()
+    thumbnail_loader.on_cancel(thumbnail_requests.clear)
     preview_generation = [0]
     preview_busy = [False]
     preview_path: list[str | None] = [None]
@@ -159,10 +163,9 @@ def show_playlist_dialog(
     closing = [False]
     bridge = PreviewBridge(dialog)
     video_bridge = PreviewBridge(dialog)
-    player = QMediaPlayer(dialog)
-    audio = QAudioOutput(dialog)
-    audio.setVolume(0.7)
-    player.setAudioOutput(audio)
+    audio_player: list[object | None] = [None]
+    audio_output: list[object | None] = [None]
+    audio_end_status: list[object | None] = [None]
 
     def duration_text(duration: float | None) -> str:
         if duration is None:
@@ -232,10 +235,27 @@ def show_playlist_dialog(
         item.setText("" if pixmap is not None else "—")
         item.setIcon(QIcon(pixmap) if pixmap is not None else QIcon())
 
+    def load_visible_thumbnails() -> None:
+        if closing[0]:
+            return
+        generation = thumbnail_generation[0]
+        for row in visible_thumbnail_rows(table, len(visible_entries)):
+            entry = visible_entries[row]
+            url = entry.thumbnail_url
+            key = (generation, row, url)
+            if not url or key in thumbnail_requests:
+                continue
+            thumbnail_requests.add(key)
+            thumbnail_loader.load(
+                url,
+                lambda pixmap, generation=generation, row=row, entry=entry: (
+                    show_thumbnail(generation, row, entry, pixmap)
+                ),
+            )
+
     def populate() -> None:
         nonlocal visible_entries
         thumbnail_generation[0] += 1
-        generation = thumbnail_generation[0]
         thumbnail_loader.cancel_pending()
         table.blockSignals(True)
         visible_entries = filtered_playlist_entries(entries, search.text())
@@ -274,14 +294,8 @@ def show_playlist_dialog(
                 item.setToolTip(item.text())
                 table.setItem(row, column, item)
             table.setRowHeight(row, 62)
-            if entry.thumbnail_url:
-                thumbnail_loader.load(
-                    entry.thumbnail_url,
-                    lambda pixmap, generation=generation, row=row, entry=entry: show_thumbnail(
-                        generation, row, entry, pixmap
-                    ),
-                )
         table.blockSignals(False)
+        load_visible_thumbnails()
         if visible_entries:
             table.selectRow(0)
         update_summary()
@@ -313,8 +327,17 @@ def show_playlist_dialog(
         owner, path = preview_owner[0], preview_path[0]
         preview_owner[0] = None
         preview_path[0] = None
-        player.stop()
-        player.setSource(QUrl())
+        player, output = audio_player[0], audio_output[0]
+        audio_player[0] = None
+        audio_output[0] = None
+        audio_end_status[0] = None
+        if player is not None:
+            player.stop()
+            player.setSource(QUrl())
+            player.setAudioOutput(None)
+            player.deleteLater()
+        if output is not None:
+            output.deleteLater()
         if owner is not None and path is not None:
             try:
                 owner.cleanup_audio_preview(path)
@@ -371,21 +394,41 @@ def show_playlist_dialog(
             preview_status.setText(f"試聽失敗：{error or '沒有可播放的音訊'}")
             update_preview_state()
             return
+        if is_background_idle(dialog):
+            try:
+                owner.cleanup_audio_preview(path)
+            except OSError:
+                pass
+            preview_status.setText("背景待機中，已取消尚未開始的試聽")
+            update_preview_state()
+            return
         preview_owner[0] = owner
         preview_path[0] = path
+        from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+
+        output = QAudioOutput(dialog)
+        output.setVolume(0.7)
+        player = QMediaPlayer(dialog)
+        player.setAudioOutput(output)
+        player.mediaStatusChanged.connect(handle_media_status)
+        player.errorOccurred.connect(handle_media_error)
+        audio_player[0] = player
+        audio_output[0] = output
+        audio_end_status[0] = QMediaPlayer.MediaStatus.EndOfMedia
         player.setSource(QUrl.fromLocalFile(path))
         player.play()
         preview_status.setText("正在試聽 30 秒；可按停止")
         update_preview_state()
 
     def handle_media_status(status: object) -> None:
-        if status == QMediaPlayer.MediaStatus.EndOfMedia and preview_path[0]:
+        if status == audio_end_status[0] and preview_path[0]:
             cleanup_preview()
             preview_status.setText("30 秒試聽已結束")
             update_preview_state()
 
     def handle_media_error(*_error: object) -> None:
-        if not preview_path[0]:
+        player = audio_player[0]
+        if not preview_path[0] or player is None:
             return
         message = player.errorString() or "無法播放音訊"
         cleanup_preview()
@@ -403,8 +446,13 @@ def show_playlist_dialog(
         if player_instance is not None:
             player_instance.stop()
             player_instance.setSource(QUrl())
+            player_instance.setAudioOutput(None)
+            player_instance.setVideoOutput(None)
+            player_instance.deleteLater()
         if child is not None and child.isVisible():
             child.close()
+        if child is not None:
+            child.deleteLater()
         if owner is not None and path is not None:
             try:
                 owner.cleanup_video_preview(path)
@@ -471,8 +519,19 @@ def show_playlist_dialog(
             )
             update_preview_state()
             return
+        if is_background_idle(dialog):
+            try:
+                owner.cleanup_video_preview(path)
+            except OSError:
+                pass
+            video_preview_status.setText("背景待機中，已取消尚未開始的影片預覽")
+            update_preview_state()
+            return
         video_preview_owner[0] = owner
         video_preview_path[0] = path
+        from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+        from PySide6.QtMultimediaWidgets import QVideoWidget
+
         child = QDialog(dialog)
         child.setWindowTitle("播放清單影片預覽（最多 60 秒）")
         child.resize(720, 480)
@@ -523,11 +582,15 @@ def show_playlist_dialog(
         preview_generation[0] += 1
         video_preview_generation[0] += 1
         thumbnail_generation[0] += 1
-        thumbnail_loader.cancel_pending()
+        thumbnail_loader.shutdown()
         cleanup_preview()
         cleanup_video_preview()
 
     search.textChanged.connect(populate)
+    table.verticalScrollBar().valueChanged.connect(
+        lambda *_: load_visible_thumbnails()
+    )
+    thumbnail_loader.on_resume(load_visible_thumbnails)
     table.itemChanged.connect(checkbox_changed)
     table.currentCellChanged.connect(lambda *_args: update_preview_state())
     select_visible.clicked.connect(lambda: set_checked("select"))
@@ -540,8 +603,6 @@ def show_playlist_dialog(
     video_preview_button.clicked.connect(prepare_video_preview)
     stop_video_preview_button.clicked.connect(stop_video_preview)
     video_bridge.finished.connect(show_video_preview)
-    player.mediaStatusChanged.connect(handle_media_status)
-    player.errorOccurred.connect(handle_media_error)
     dialog.finished.connect(shutdown)
     populate()
 

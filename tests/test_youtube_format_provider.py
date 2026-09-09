@@ -90,6 +90,64 @@ def test_video_preset_and_subtitles_map_to_bounded_ytdlp_options(
     assert options["continuedl"] is True
     assert options["nopart"] is False
     assert options["overwrites"] is False
+    assert options["concurrent_fragment_downloads"] == 1
+
+
+def test_core_performance_contract_sets_fragment_concurrency(
+    tmp_path: Path, monkeypatch
+) -> None:
+    captured = []
+    fake_ytdlp(monkeypatch, captured)
+    load_provider().download(
+        request(
+            tmp_path,
+            subtitle_mode="none",
+            subtitle_languages=[],
+            provider_options={
+                "_core_performance_schema": "1",
+                "_core_performance_profile": "high",
+                "_core_worker_count": "4",
+                "_core_fragment_concurrency": "2",
+                "_core_fragment_budget": "8",
+            },
+        )
+    )
+
+    assert captured[0]["concurrent_fragment_downloads"] == 2
+
+
+def test_provider_rejects_incomplete_core_performance_contract(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="contract is incomplete"):
+        load_provider().download(
+            request(
+                tmp_path,
+                subtitle_mode="none",
+                subtitle_languages=[],
+                provider_options={"_core_performance_profile": "high"},
+            )
+        )
+
+
+def test_provider_rejects_zero_worker_core_performance_contract(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="allocation is invalid"):
+        load_provider().download(
+            request(
+                tmp_path,
+                subtitle_mode="none",
+                subtitle_languages=[],
+                provider_options={
+                    "_core_performance_schema": "1",
+                    "_core_performance_profile": "balanced",
+                    "_core_worker_count": "0",
+                    "_core_fragment_concurrency": "2",
+                    "_core_fragment_budget": "4",
+                },
+            )
+        )
 
 
 def test_mp3_preset_uses_audio_postprocessor(tmp_path: Path, monkeypatch) -> None:
@@ -367,10 +425,11 @@ def test_provider_rejects_incompatible_or_audio_container(
 
 def test_playlist_keeps_only_official_youtube_thumbnails(monkeypatch) -> None:
     package = ModuleType("yt_dlp")
+    captured: list[dict[str, object]] = []
 
     class YoutubeDL:
-        def __init__(self, _options):
-            pass
+        def __init__(self, options):
+            captured.append(options)
 
         def __enter__(self):
             return self
@@ -406,3 +465,22 @@ def test_playlist_keeps_only_official_youtube_thumbnails(monkeypatch) -> None:
 
     assert entries[0]["thumbnail_url"].startswith("https://i.ytimg.com/")
     assert entries[1]["thumbnail_url"] == ""
+    assert "lazy_playlist" not in captured[0]
+
+    load_provider().playlist(
+        {
+            "url": "https://music.youtube.com/playlist?list=example",
+            "lazy": True,
+        }
+    )
+    assert captured[1]["lazy_playlist"] is True
+
+
+def test_playlist_rejects_non_boolean_lazy_mode() -> None:
+    with pytest.raises(ValueError, match="lazy mode is invalid"):
+        load_provider().playlist(
+            {
+                "url": "https://music.youtube.com/playlist?list=example",
+                "lazy": "true",
+            }
+        )

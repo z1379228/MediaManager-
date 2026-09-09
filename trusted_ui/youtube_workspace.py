@@ -31,7 +31,10 @@ from trusted_ui.search_paging import (
     merge_search_results,
     provider_next_cursor,
 )
-from trusted_ui.thumbnail_loader import create_thumbnail_loader
+from trusted_ui.thumbnail_loader import (
+    create_thumbnail_loader,
+    visible_thumbnail_rows,
+)
 
 
 YOUTUBE_SEARCH_PROVIDER_ID = "youtube-search"
@@ -186,7 +189,10 @@ def create_youtube_workspace(
             self.result_mode = "search"
             self.selected_result_urls: set[str] = set()
             self.repopulating_results = False
+            self.thumbnail_requests: set[tuple[int, int, str]] = set()
             self.thumbnail_loader = create_thumbnail_loader(self)
+            self.thumbnail_loader.on_cancel(self.thumbnail_requests.clear)
+            self.thumbnail_loader.on_resume(self.load_visible_thumbnails)
             self.bridge = SearchBridge()
             self.bridge.finished.connect(self.show_results)
 
@@ -331,6 +337,9 @@ def create_youtube_workspace(
             header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
             self.table.itemSelectionChanged.connect(self.handle_selection_changed)
             self.table.itemDoubleClicked.connect(lambda *_: self.add_selected())
+            self.table.verticalScrollBar().valueChanged.connect(
+                lambda *_: self.load_visible_thumbnails()
+            )
             body_layout.addWidget(self.table)
 
             self.preview_controls = create_media_preview_controls(
@@ -982,7 +991,6 @@ def create_youtube_workspace(
 
         def populate_results(self) -> None:
             self.thumbnail_loader.cancel_pending()
-            generation = self.active_generation
             self.repopulating_results = True
             try:
                 self.table.setRowCount(len(self.results))
@@ -1006,16 +1014,28 @@ def create_youtube_workspace(
                     source = QTableWidgetItem(youtube_host_label(item.url))
                     source.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     self.table.setItem(row, 4, source)
-                    if item.thumbnail_url:
-                        self.thumbnail_loader.load(
-                            item.thumbnail_url,
-                            lambda pixmap, generation=generation, row=row, item=item: (
-                                self.show_thumbnail(generation, row, item, pixmap)
-                            ),
-                        )
             finally:
                 self.repopulating_results = False
+            self.load_visible_thumbnails()
             self.update_action_state()
+
+        def load_visible_thumbnails(self) -> None:
+            if self.closing:
+                return
+            generation = self.active_generation
+            for row in visible_thumbnail_rows(self.table, len(self.results)):
+                item = self.results[row]
+                url = item.thumbnail_url
+                key = (generation, row, url)
+                if not url or key in self.thumbnail_requests:
+                    continue
+                self.thumbnail_requests.add(key)
+                self.thumbnail_loader.load(
+                    url,
+                    lambda pixmap, generation=generation, row=row, item=item: (
+                        self.show_thumbnail(generation, row, item, pixmap)
+                    ),
+                )
 
         def show_thumbnail(
             self,

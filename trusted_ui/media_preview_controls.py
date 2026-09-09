@@ -6,6 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import threading
 
+from trusted_ui.idle_state import is_background_idle
+
 
 @dataclass(frozen=True, slots=True)
 class PreviewSource:
@@ -27,8 +29,6 @@ def create_media_preview_controls(
     """Create one bounded preview controller without exposing MOD-owned UI."""
 
     from PySide6.QtCore import QObject, QUrl, Signal
-    from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
-    from PySide6.QtMultimediaWidgets import QVideoWidget
     from PySide6.QtWidgets import (
         QDialog,
         QHBoxLayout,
@@ -54,16 +54,11 @@ def create_media_preview_controls(
             self.video_path = ""
             self.video_dialog: object | None = None
             self.video_player: object | None = None
+            self.audio_player: object | None = None
+            self.audio_output: object | None = None
+            self.audio_end_status: object | None = None
             self.bridge = PreviewBridge(self)
             self.bridge.finished.connect(self.show_prepared_preview)
-            self.audio_player = QMediaPlayer(self)
-            self.audio_output = QAudioOutput(self)
-            self.audio_output.setVolume(0.7)
-            self.audio_player.setAudioOutput(self.audio_output)
-            self.audio_player.mediaStatusChanged.connect(
-                self.handle_audio_status
-            )
-            self.audio_player.errorOccurred.connect(self.handle_audio_error)
 
             row = QHBoxLayout(self)
             row.setContentsMargins(0, 0, 0, 0)
@@ -93,6 +88,22 @@ def create_media_preview_controls(
             row.addWidget(self.stop_video_button)
             row.addWidget(self.status, 1)
             self.refresh()
+
+        def ensure_audio_player(self) -> object:
+            if self.audio_player is not None:
+                return self.audio_player
+            from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+
+            audio_output = QAudioOutput(self)
+            audio_output.setVolume(0.7)
+            player = QMediaPlayer(self)
+            player.setAudioOutput(audio_output)
+            player.mediaStatusChanged.connect(self.handle_audio_status)
+            player.errorOccurred.connect(self.handle_audio_error)
+            self.audio_output = audio_output
+            self.audio_player = player
+            self.audio_end_status = QMediaPlayer.MediaStatus.EndOfMedia
+            return player
 
         @staticmethod
         def available(check: Callable[[], bool]) -> bool:
@@ -145,8 +156,17 @@ def create_media_preview_controls(
             owner, path = self.audio_owner, self.audio_path
             self.audio_owner = None
             self.audio_path = ""
-            self.audio_player.stop()
-            self.audio_player.setSource(QUrl())
+            player, audio_output = self.audio_player, self.audio_output
+            self.audio_player = None
+            self.audio_output = None
+            self.audio_end_status = None
+            if player is not None:
+                player.stop()
+                player.setSource(QUrl())
+                player.setAudioOutput(None)
+                player.deleteLater()
+            if audio_output is not None:
+                audio_output.deleteLater()
             if owner is not None and path:
                 try:
                     owner.cleanup_audio_preview(path)
@@ -164,8 +184,13 @@ def create_media_preview_controls(
             if player is not None:
                 player.stop()
                 player.setSource(QUrl())
+                player.setAudioOutput(None)
+                player.setVideoOutput(None)
+                player.deleteLater()
             if child is not None and child.isVisible():
                 child.close()
+            if child is not None:
+                child.deleteLater()
             if owner is not None and path:
                 try:
                     owner.cleanup_video_preview(path)
@@ -282,11 +307,24 @@ def create_media_preview_controls(
             path: str,
             error: str,
         ) -> None:
-            if self.closing or generation != self.generation:
+            if (
+                self.closing
+                or generation != self.generation
+                or is_background_idle(self)
+            ):
                 if owner is not None and path:
                     cleanup = getattr(owner, f"cleanup_{kind}_preview", None)
                     if callable(cleanup):
-                        cleanup(path)
+                        try:
+                            cleanup(path)
+                        except OSError:
+                            pass
+                if not self.closing and generation == self.generation:
+                    self.busy_kind = ""
+                    self.refresh()
+                    self.status.setText(
+                        "背景待機中，已取消尚未開始的預覽。"
+                    )
                 return
             self.busy_kind = ""
             if error or owner is None or not path:
@@ -299,10 +337,14 @@ def create_media_preview_controls(
             if kind == "audio":
                 self.audio_owner = owner
                 self.audio_path = path
-                self.audio_player.setSource(QUrl.fromLocalFile(path))
-                self.audio_player.play()
+                player = self.ensure_audio_player()
+                player.setSource(QUrl.fromLocalFile(path))
+                player.play()
                 self.status.setText("正在試聽 30 秒；可按停止。")
             else:
+                from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+                from PySide6.QtMultimediaWidgets import QVideoWidget
+
                 self.video_owner = owner
                 self.video_path = path
                 child = QDialog(self)
@@ -332,7 +374,7 @@ def create_media_preview_controls(
 
         def handle_audio_status(self, status: object) -> None:
             if (
-                status == QMediaPlayer.MediaStatus.EndOfMedia
+                status == self.audio_end_status
                 and self.audio_path
             ):
                 self.cleanup_audio()
@@ -340,9 +382,10 @@ def create_media_preview_controls(
                 self.status.setText("30 秒試聽已結束。")
 
         def handle_audio_error(self, *_error: object) -> None:
-            if not self.audio_path:
+            player = self.audio_player
+            if not self.audio_path or player is None:
                 return
-            message = self.audio_player.errorString() or "無法播放音訊"
+            message = player.errorString() or "無法播放音訊"
             self.cleanup_audio()
             self.refresh()
             self.status.setText(f"音訊播放失敗：{message}")

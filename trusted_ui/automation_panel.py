@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
+from trusted_ui.table_refresh import task_table_interval, visible_rows_signature
+
 
 def create_automation_panel(context: object, parent: object = None) -> object:
     from PySide6.QtCore import Qt, QTimer
@@ -17,7 +19,14 @@ def create_automation_panel(context: object, parent: object = None) -> object:
     service = context.automation
     if service is None:
         raise RuntimeError("Automation service is unavailable")
-    panel = QWidget(parent)
+    class AutomationPanel(QWidget):
+        def showEvent(self, event: object) -> None:
+            super().showEvent(event)
+            refresh_panel = getattr(self, "refresh", None)
+            if callable(refresh_panel):
+                refresh_panel()
+
+    panel = AutomationPanel(parent)
     page = QVBoxLayout(panel)
     page.setContentsMargins(2, 4, 2, 2)
     page.setSpacing(12)
@@ -203,11 +212,53 @@ def create_automation_panel(context: object, parent: object = None) -> object:
 
     def refresh() -> None:
         rule_rows = service.list_rules()
-        rules.setRowCount(len(rule_rows))
         rule_names = {rule.rule_id: rule.name for rule in rule_rows}
-        for row, rule in enumerate(rule_rows):
-            next_run = datetime.fromtimestamp(rule.next_run).strftime("%Y-%m-%d %H:%M") if rule.next_run else "—"
-            values = ("啟用" if rule.enabled else "關閉", rule.name, rule.kind, rule.source or "剪貼簿 HTTPS", str(rule.preset.get("action", "")), next_run, rule.last_error or "—")
+        rule_values = tuple(
+            (
+                "啟用" if rule.enabled else "關閉",
+                rule.name,
+                rule.kind,
+                rule.source or "剪貼簿 HTTPS",
+                str(rule.preset.get("action", "")),
+                datetime.fromtimestamp(rule.next_run).strftime("%Y-%m-%d %H:%M")
+                if rule.next_run
+                else "—",
+                rule.last_error or "—",
+            )
+            for rule in rule_rows
+        )
+        candidate_rows = service.list_candidates(limit=200)
+        candidate_values = tuple(
+            (
+                candidate.state,
+                rule_names.get(candidate.rule_id, candidate.rule_id),
+                candidate.source,
+                datetime.fromtimestamp(candidate.discovered_at).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
+                str(candidate.attempts),
+                candidate.error or candidate.dispatch_token or "—",
+            )
+            for candidate in candidate_rows
+        )
+        interval = task_table_interval(
+            active=any(
+                candidate.state in {"PENDING", "CLAIMED"}
+                for candidate in candidate_rows
+            ),
+            visible=panel.isVisible(),
+        )
+        if timer.interval() != interval:
+            timer.setInterval(interval)
+        signature = (
+            visible_rows_signature(rule_values),
+            visible_rows_signature(candidate_values),
+        )
+        if signature == panel.render_signature:
+            return
+        panel.render_signature = signature
+        rules.setRowCount(len(rule_rows))
+        for row, (rule, values) in enumerate(zip(rule_rows, rule_values)):
             for column, value in enumerate(values):
                 cell = QTableWidgetItem(value)
                 if column == 0:
@@ -215,10 +266,10 @@ def create_automation_panel(context: object, parent: object = None) -> object:
                 table_value = value
                 cell.setToolTip(table_value)
                 rules.setItem(row, column, cell)
-        candidate_rows = service.list_candidates(limit=200)
         candidates.setRowCount(len(candidate_rows))
-        for row, candidate in enumerate(candidate_rows):
-            values = (candidate.state, rule_names.get(candidate.rule_id, candidate.rule_id), candidate.source, datetime.fromtimestamp(candidate.discovered_at).strftime("%Y-%m-%d %H:%M:%S"), str(candidate.attempts), candidate.error or candidate.dispatch_token or "—")
+        for row, (candidate, values) in enumerate(
+            zip(candidate_rows, candidate_values)
+        ):
             for column, value in enumerate(values):
                 cell = QTableWidgetItem(value)
                 if column == 0:
@@ -226,10 +277,19 @@ def create_automation_panel(context: object, parent: object = None) -> object:
                 cell.setToolTip(value)
                 candidates.setItem(row, column, cell)
 
-    def poll() -> None:
-        if any(rule.enabled and rule.kind == "clipboard" for rule in service.list_rules()):
-            service.observe_clipboard(QApplication.clipboard().text())
-        refresh()
+    clipboard = QApplication.clipboard()
+
+    def observe_clipboard_change() -> None:
+        inserted = service.observe_clipboard(clipboard.text())
+        if inserted and panel.isVisible():
+            refresh()
+
+    def shutdown() -> None:
+        timer.stop()
+        try:
+            clipboard.dataChanged.disconnect(observe_clipboard_change)
+        except (RuntimeError, TypeError):
+            pass
 
     kind.currentIndexChanged.connect(update_kind)
     browse_source.clicked.connect(choose_source_folder)
@@ -240,10 +300,14 @@ def create_automation_panel(context: object, parent: object = None) -> object:
     retry.clicked.connect(retry_candidate)
     timer = QTimer(panel)
     timer.setInterval(2_000)
-    timer.timeout.connect(poll)
+    timer.timeout.connect(refresh)
     timer.start()
+    clipboard.dataChanged.connect(observe_clipboard_change)
+    panel.render_signature = None
     panel.timer = timer
-    panel.shutdown = timer.stop
+    panel.refresh = refresh
+    panel.observe_clipboard_change = observe_clipboard_change
+    panel.shutdown = shutdown
     update_kind()
     refresh()
     return panel

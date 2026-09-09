@@ -1650,7 +1650,258 @@ prerelease 與全部附件 digest 均已驗證；Testing 1.2.1 的目錄、tag �
 - 回復方式是還原此 source commit；Testing `1.2.1`、`1.2.2` 與本機 Testing
   `1.2.3` 產物保持不可變。本次不 build、不簽署、不建立 Stable 或發布附件。
 
+## 39.0.97（低資源背景待機與可選 Windows 自動啟動）
+
+- 新增背景閒置資源控制器。視窗最小化或縮到系統匣時，暫停不可見介面的非
+  單次輪詢計時器、暫停播放預覽並釋放可重建圖片快取；還原時依原間隔重啟
+  計時器及原本播放中的預覽。背景下載、轉換、轉錄與排程服務不受影響。
+- Automation 剪貼簿觀察改用 Qt 內容變更事件，不再由固定 2 秒計時器讀取；
+  沒有任何啟用規則時，Automation monitor 會等待規則變更事件，不再每 5 秒
+  喚醒。非目前分頁且沒有工作的下載、轉換、轉錄與 Automation 狀態表，更新
+  間隔由 2.5 秒延長為 10 秒；資料簽章未改變時不重建 Automation 表格。
+- 主視窗右下角新增「關閉：縮到系統匣／完全結束」選項，預設縮到系統匣；
+  系統匣提供還原與完整結束。系統匣不可用時不建立無法取回的隱藏視窗，而是
+  安全退回完整結束。
+- 「設定」選單新增預設關閉的 Windows 登入後背景啟動。只有使用者明確切換時
+  才更新目前使用者的 HKCU Run 值；命令使用可信本機路徑與 Windows 引數引用，
+  不經 shell。設定檔保存失敗時會回復原 Registry 值；其他平台不顯示可用開關。
+- 新增 `--start-minimized` 圖形啟動參數；系統匣不可用時仍顯示主視窗。新增設定
+  欄位有向後相容預設，不需要資料遷移，也不在乾淨啟動時寫入 Registry。
+- 延遲執行的最小化 callback 會重新確認目前視窗狀態，快速還原後不會誤停 UI
+  timers。背景期間才完成的音訊／影片預覽會清理暫存並取消播放；格式工廠的
+  10 秒切點預覽倒數在背景暫停並保留剩餘時間，還原後不會無期限播放。
+- Regression-first 基線因缺少待機與啟動登錄模組而在收集階段出現 `2 errors`；
+  完成核心、入口與主視窗整合後，設定、待機、Windows 啟動、入口與主視窗五個
+  定向套件加上版本契約為 `59 passed`；資源調度相關六個套件為 `30 passed`。
+  待機、預覽、UI 與轉換生命週期套件為 `94 passed, 1 skipped`；完整 Repository
+  runner 為 `1608 passed, 7 skipped`。七個 skip 都是目前
+  Windows 帳號無法建立測試用
+  symlink／link 的既有環境限制。Quality audit 通過 Ruff `372` 個 Python 檔與
+  文字污染 `482` 個受控檔案；版本文件、兩個 Testing 版本、Repository 外隔離
+  `compileall` 與 `git diff --check` 均通過。
+- Expected Benefit：沒有工作需要顯示時可減少 UI 定時重繪／查詢與可重建圖片
+  快取占用。依設定間隔，單一非目前且閒置的狀態表由每秒 0.4 次降為 0.1 次
+  callback（75%）；沒有規則的 Automation monitor 與背景剪貼簿則由週期喚醒
+  改為事件喚醒。這是排程結構差異，不等同於實測 CPU 或記憶體降幅；尚未以
+  固定硬體與 workload 進行 OS 層級量測。
+- 本次只修改 Development source；不 stage、不 commit、不 build、不 push，
+  Testing `1.2.1`、`1.2.2` 與本機 `1.2.3` 產物保持不可變。
+
+## 39.0.98（非圖形入口早期分流與啟動資源基準）
+
+- `main.py` 不再於模組匯入時載入 Bootstrap 或可信圖形 shell。version、verify、
+  Provider 與 Plugin 先解析並分流；只有一般 GUI 入口在核心初始化後才載入
+  `trusted_ui.main_window`。既有 frozen CLI stdio、Provider／Plugin protocol、
+  headless 與 `--start-minimized` 行為維持不變。
+- 新增 `tools.startup_baseline`。它以獨立程序量測 version、verify-only、內建
+  Provider host 與最小外部 Plugin host，隔離 AppData／TEMP、阻止 socket 連線、
+  禁止載入圖形 shell，並輸出 elapsed、CPU、private bytes、working set、peak
+  working set 與 OS thread count。JSON 證據路徑必須位於 Repository 外且不得
+  覆寫既有檔案；每次受控暫存都有 ownership marker 並於完成後移除。
+- Probe 將 `sys.argv[0]` 指向真正的 Repository `main.py`，不讓 verify-only 把
+  `tools/` 誤判為應用根目錄並建立內建 MOD 鏡像；測試 runner 傳給 pytest 的
+  隔離環境新增 `PYTHONDONTWRITEBYTECODE=1`，完整測試後不再留下來源樹 `.pyc`。
+- 同一 Windows 基準方法使用 2 次 warmup 與 7 次樣本。version elapsed p50
+  `243.229 → 87.643 ms`（約 -64.0%），private bytes p50
+  `29,646,848 → 13,975,552`（約 -52.9%）；provider host elapsed p50
+  `246.544 → 142.293 ms`（約 -42.3%），private bytes p50
+  `31,264,768 → 17,993,728`（約 -42.4%）。verify-only 保留完整 Bootstrap，
+  elapsed p50 `257.699 → 268.335 ms`，不宣稱速度改善；private bytes p50
+  `29,507,584 → 25,739,264`（約 -12.8%）。短樣本只代表本機同條件比較。
+- 入口與基準定向回歸為 `15 passed`；完整 Repository runner 為
+  `1612 passed, 7 skipped`，skip 均為既有 Windows link 權限限制。Quality audit
+  通過 Ruff `374` 個 Python 檔與文字污染 `484` 個受控檔案。本次不 build、
+  不 stage、不 commit、不 push、不建立或更新 Testing／Stable。
+
+## 39.0.99（下載進度合併與媒體播放延遲建立）
+
+- 新增 thread-safe `DownloadNotificationCoalescer`。第一個 RUNNING 狀態、
+  QUEUED／RETRYING／PAUSED 等狀態轉換及 COMPLETED／FAILED／CANCELLED
+  終態立即送往 GUI thread；同一工作重複的 RUNNING 進度只保留最新
+  快照，由 100 ms single-shot coarse timer 最多每秒合併送出十次。
+- 終態到達時會先捨棄尚未送出的舊進度，避免 UI 在完成後倒退；下載
+  表格原有的動態快照輪詢保留為低頻一致性校正。這不改變下載佇列、
+  provider protocol、取消或重試語意。
+- YouTube 預覽控制、搜尋工作區、播放清單、格式工廠切點預覽與音訊
+  分割對話不再在建立工作區或對話時匯入／建立 Qt Multimedia player。
+  player 只在使用者要求預覽且世代、前景待機狀態與本機檔案均通過
+  檢查後建立。停止或關閉會清除 source、解除 audio／video output，並交由
+  Qt 回收 player 與 output。
+- 背景待機控制器只在 `PySide6.QtMultimedia` 已由實際預覽載入時才搜尋
+  並暫停 player，不會因進入待機而額外載入媒體 runtime。隔離子程序
+  回歸證明完整主視窗建立後 `PySide6.QtMultimedia` 仍不在 `sys.modules`。
+- 下載合併器 regression-first 修正前因尚未存在而在收集階段出現
+  `1 error`。修正後下載、預覽、待機、主視窗、分割、播放清單與轉換套件
+  合計 `115 passed, 1 skipped`，完整 Repository runner 為
+  `1618 passed, 7 skipped`；skip 均是目前 Windows 帳號無法建立測試用
+  link。Quality audit 通過 Ruff `374` 個 Python 檔與文字污染 `484`
+  個受控檔案，`git diff --check` 通過。
+- 完整回歸的第一次污染復查發現 `plugin_host/__pycache__` 四個未追蹤
+  `.pyc`。Root Cause 是來源模式的 Host 命令使用 Python `-I`，而隔離模式
+  會忽略 runner 提供的 `PYTHONDONTWRITEBYTECODE`。非 frozen Provider 與 Plugin Host
+  命令改為明確使用 `-B -I`；frozen EXE 角色、IPC 與最小環境不變。
+  兩項命令契約測試補齊後重跑完整套件，來源樹 `.pyc`／`__pycache__`
+  均為 `0`。
+- Expected Benefit：不使用預覽時避免媒體 runtime 與 player 常駐，進度高頻
+  callback 不再直接對應同數量的 UI signal。本輪未用固定預覽／下載
+  workload 進行 OS 層 CPU 與記憶體 Before／After 量測，不宣稱已實測降幅。
+- 回復可將主視窗訂閱切回原始 `changed.emit`、將 player 建立移回工作區
+  factory；不需設定或資料遷移。本次不 build、不 stage、不 commit、不 push，
+  不建立或更新 Testing／Stable。
+
+## 39.0.100（工作區延遲物化與 GUI 資源基準）
+
+- 主視窗啟動時只建立目前 YouTube 工作區。Bilibili、網站搜尋、本機媒體庫
+  與已啟用的選用工作區先以可存取的輕量分頁 shell 呈現；使用者第一次
+  開啟才匯入對應 UI 模組並建立 panel，後續切換保留同一 panel 及輸入。
+- `OptionalWorkspaceManager` 現在同時管理 placeholder 與 materialized panel。
+  MOD 啟用／停用、分頁選取、download prefill 與視窗關閉均使用同一物化／
+  清理路徑；建立後再關閉會先呼叫 panel `shutdown`，未開啟的 shell 不會誤建立。
+- 乾淨啟動的隔離子程序檢查證明 `search_panel`、`library_panel`、格式工廠、
+  Gopeed／P2P、Speech to Text、Automation、MEGA、Direct HTTP 與官方社群工具
+  等九個模組均未匯入，`PySide6.QtMultimedia` 也仍未匯入。選取 Bilibili
+  後只會物化該頁，來回切換不會重建。
+- `tools.startup_baseline` 新增 `gui-lazy` 與 `gui-materialized` 角色，
+  記錄 Qt 子物件、active repeat timer、分頁、物化工作區與延遲模組數量。
+  相同 39.0.100 來源使用 2 次 warmup、7 次樣本，lazy／物化全部 11 個可見
+  工作區的 p50 為：elapsed `1281.963 / 1605.220 ms`、CPU time
+  `1015.625 / 1375.000 ms`、private bytes `57,851,904 / 70,725,632`、working set
+  `87,191,552 / 99,905,536`、Qt objects `555 / 1,946`、active repeat timers `1 / 6`、
+  OS threads `8 / 9`。分頁項目均為 12，lazy 下的 materialized workspace 與
+  loaded deferred module 均為 0。
+- 上述數據是同一新來源的 lazy／all-materialized 工作負載比較，不是
+  39.0.99／39.0.100 歷史 Before／After；使用者開啟所有工作區後，被延後的
+  固定成本仍會產生。外部證據為 `workspace-39.0.100-20260908.json`。
+  基準、manager 與主視窗定向回歸為 `14 passed`；完整 Repository runner 為
+  `1620 passed, 7 skipped`，skip 均是 Windows 帳號無法建立測試用 link。完整測試後
+  來源樹 `.pyc`／`__pycache__` 均為 `0`。
+- 回復可讓 manager 不提供 placeholder factory，回到同步建立；不需設定或資料
+  遷移。本次不 build、不 stage、不 commit、不 push，不建立或更新
+  Testing／Stable。
+
+## 39.0.101（共用可見列縮圖服務）
+
+- 將 YouTube、Bilibili、網站搜尋及播放清單原本各自建立的 network manager
+  與縮圖 LRU cache 收斂為主視窗層級的單一可信服務；相同 URL 的同時請求
+  只進行一次網路傳輸，再分派給仍有效的 client callback。
+- 保留既有 HTTPS／官方 CDN allowlist、1 MiB 回應、1600 萬像素、8 秒 timeout、
+  32 個 pending、40 項 LRU cache 與 96×54 顯示尺寸限制。單一頁面取消或關閉
+  不會清空其他頁仍在使用的請求與共用快取；背景待機仍會取消全部 pending
+  並釋放可重建快取。
+- 四個結果清單會先建立必要文字列，只對 viewport 可見範圍加前後 2 列載入
+  縮圖；捲動時補載，切離頁面時取消該頁 pending，返回時重新請求尚未完成的
+  可見列。已完成的縮圖直接命中共用 cache。
+- 共用服務生命週期、client 隔離取消、切頁恢復、可見列邊界，以及 YouTube、
+  Bilibili、網站搜尋、播放清單和主視窗延遲建立的定向回歸為 `54 passed`。
+  完整 Repository runner 為 `1624 passed, 7 skipped`，七項 skip 均是目前
+  Windows 帳號缺少建立測試用 link 權限。尚未使用固定大量結果資料集完成 OS 層 CPU／記憶體 Before／After 量測，
+  因此本節只記錄預期效益，不宣稱已量得效能提升。
+- 回復可將四個頁面改回建立時逐列呼叫 loader，並移除主視窗切頁取消／恢復；
+  不需要設定或資料遷移。本次不 build、不 stage、不 commit、不 push，不建立
+  或更新 Testing／Stable。
+
+## 39.0.102（工作表快照與 repaint 合併）
+
+- MEGA 與 Direct HTTP 保留既有 task snapshot signature 與依可見性／工作狀態
+  調整的輪詢頻率；相同快照不重畫，變動快照在套用期間暫停 widget updates，
+  完成後一次恢復 repaint。task ID 仍保存在可信 item data，選取列跨刷新保留。
+- Gopeed 工作表加入可見欄位 signature；相同 API 結果直接跳過 UI 變更並
+  保留選取工作。Gopeed 仍只在使用者明確按下
+  重新整理或執行操作後讀取 localhost API，沒有新增背景 timer。
+- 同一來源、無網路、不可見 UI 的 200 列×50 次刷新以 2 warmup／7 samples
+  比較整批重建與逐 cell 重用：workload p50 `443.808 / 497.525 ms`、p95
+  `594.221 / 647.663 ms`、Private Bytes p50 `23,961,600 / 25,026,560`。
+  重用候選雖降低物件建立次數，卻未改善速度或記憶體，故已撤回；
+  `QAbstractTableModel` 未提前導入。外部證據為
+  `table-39.0.102-20260909.json`。定向回歸為 `71 passed`，完整 Repository
+  runner 為 `1627 passed, 7 skipped`；skip 均是 Windows 測試用 link 權限
+  限制。此合成 workload 不代表實際下載吞吐。
+- 回復可移除 Gopeed signature 與三個批次 repaint 區段；不需要設定或資料
+  遷移。本次不 build、不 stage、不 commit、不 push，不建立或更新
+  Testing／Stable。
+
+## 39.0.103（核心 YouTube 效能 profile）
+
+- 新增版本化的 YouTube 下載效能設定：省資源、平衡、高速與自動。設定只保存
+  穩定 enum；未知值回復平衡，既有使用者預設維持 2 個同時工作。
+- 可信核心依 profile 與全域工作數計算片段配置，移除請求內任何同名保留欄位後
+  再注入 schema、profile、工作數、單工作片段數與全域片段配額。內建 YouTube
+  provider 會再次驗證完整配置，才映射至 yt-dlp
+  `concurrent_fragment_downloads`；其他 provider 不受注入影響。
+- YouTube 工作區新增可存取的效能選擇與配置摘要；工作數仍是所有下載頁共用，
+  變更後透過可信事件同步。存在排隊、執行、重試或暫停工作時拒絕切換，避免
+  執行中舊配置與新配置重疊。
+- 省資源建議 1 個工作、最多 2 個且全域片段上限 2；平衡與自動上限 4；高速
+  上限 8。保留 yt-dlp 自動 buffer，不使用實驗性 HTTP chunk 或網站限速規避。
+- 940×620 非互動版面、設定保存／失敗回復、跨頁同步、核心覆寫、provider
+  失敗關閉、啟動正規化及內建雜湊的定向回歸為 `68 passed`。完整回歸第一次發現兩個舊測試
+  context 缺少新欄位，UI 改為向後相容地回退平衡後，3 項重查通過，完整
+  Repository runner 為 `1643 passed, 7 skipped`；skip 均為 Windows 測試用 link
+  權限限制。未進行真實網路吞吐量 Before／After，因此不宣稱下載速度或資源
+  用量已實測改善。
+- 回復可移除效能 combo、設定欄位與 registry 注入，provider 會回到 yt-dlp
+  預設單片段並行；設定檔 schema 不需遷移，舊程式會把新欄位視為未知欄位保留。
+  本次不 build、不 stage、不 commit、不 push，不建立或更新 Testing／Stable。
+
+## 39.0.104（大型 YouTube 播放清單快速模式）
+
+- YouTube 下載工作區新增預設關閉、具可存取名稱與限制提示的「大型清單快速
+  模式」。只有辨識為單一 YouTube 播放清單且目前沒有展開工作時可以選取。
+- 使用者選取後，可信核心只對 YouTube 轉送 `lazy=true`；subprocess payload
+  未選取時不新增欄位，非 YouTube provider 會拒絕此模式，第三方既有契約不會
+  被靜默擴張。內建 provider 僅接受真正布林值並映射到 yt-dlp
+  `lazy_playlist=True`。
+- 既有核心能力上限仍是 500 項。結果返回後 UI 明示載入的是前 N 項而非完整
+  總數，且沒有套用隨機或反向排序；資料仍整批驗證為 Playlist v1 tuple 後才
+  顯示，不宣稱逐列串流。
+- 播放清單核心、subprocess、provider、UI 及內建雜湊定向回歸為 `99 passed`；
+  完整 Repository runner 為 `1649 passed, 7 skipped`。七項 skip 都是目前
+  Windows 帳號缺少建立測試用 link 權限，沒有功能測試失敗。未對真實大型
+  播放清單進行 Before／After 網路量測，不宣稱已實測節省時間或記憶體。
+- 回復可移除 UI checkbox、registry／subprocess 的可選 `lazy` 參數及 provider
+  映射；預設非 lazy 路徑與儲存格式不需遷移。本次不 build、不 stage、不
+  commit、不 push，不建立或更新 Testing／Stable。
+
+## 39.0.105（隔離的 onefile／onedir 配置比較器）
+
+- PyInstaller spec 新增嚴格的 `onefile`／`onedir` 配置切換；未知值直接失敗。
+  既有 `tools.build_version` 不信任繼承環境，會明確覆寫為 onefile，因此這項
+  實驗能力不會靜默改變 Development／Testing／Stable 的既有發行配置。
+- 新增 `tools.package_layout_experiment`。未帶 `--execute` 時只輸出
+  `BUILD_NOT_EXECUTED` 計畫，不建立目錄或執行 PyInstaller；明確執行時仍要求
+  乾淨 commit，並把 build、使用者資料、複製資料夾與證據限制在 Repository 外。
+- 比較器為兩種配置執行 version、verify-only 與無有效請求的 YouTube Provider
+  Host；記錄冷啟動、p50／p95 elapsed、CPU time、Private Bytes、Working Set、
+  peak Working Set、thread count、build time、完整性雜湊耗時、檔案數與磁碟大小。
+  原型量測後會逐檔核對 SHA-256、複製到另一資料夾重跑 smoke，且確認啟動過程
+  沒有修改原始或複製的 artifact tree。
+- 配置、既有 build、Windows 真實 child process 量測、版本同步與實驗工具定向
+  回歸為 `57 passed`；完整 Repository runner 為 `1657 passed, 7 skipped`。
+  七項 skip 都是目前 Windows 帳號缺少建立測試用 link 權限，沒有功能測試失敗。
+  本輪沒有 build、沒有 onefile／onedir 實測結果，也不改變正式 Portable ZIP。
+- 回復可移除實驗工具與測試、spec 的配置分支及 build 工具的固定 onefile
+  環境覆寫；既有版本目錄、設定及使用者資料不需遷移。本次不 stage、不 commit、
+  不 build、不 push、不建立 Testing／Stable。
+
+## 39.0.106（配置比較器輸出預檢與程序樹收容）
+
+- 修正配置比較器到兩種 PyInstaller build 完成後，才拒絕位於 Repository、既存
+  或經 link／junction 的 JSON 證據路徑。現在 `--execute` 會在任何 build 前完成
+  第一次預檢，實驗結束寫入前再驗一次，兼顧提早失敗與 TOCTOU 防護。
+- Windows version、verify-only 與 Provider Host 測量程序改為 suspended 建立，
+  先加入限制 16 個 active process、2 GiB 單程序記憶體且 kill-on-close 的 Job
+  Object，再恢復執行。指派、恢復、量測或逾時失敗會先關閉 Job 以終止子程序，
+  再 kill／reap 直接程序，避免比較器留下背景程序。
+- 輸出預檢、Job 指派先於恢復、真實 Windows child metrics、非預期 exit 與 dry-run
+  連同版本及入口的定向回歸為 `32 passed`；完整 Repository runner 為
+  `1659 passed, 7 skipped`。七項 skip 都是目前 Windows 帳號缺少建立測試用
+  link 權限，沒有功能測試失敗。本輪沒有 build、stage、commit、push，也沒有
+  封裝效能數據。
+- 回復可移除輸出預檢與測量程序的 Job Object 包裝；不涉及版本產物、設定或
+  使用者資料遷移。
+
 ## 40.0
 
-沒有獨立 material delta，狀態為 `ABSORBED / NO RELEASE / NO PLAN`。不得為維持
+沒有獨立 material delta，狀態為
+`ABSORBED / NO RELEASE / VERSION UNASSIGNED`。不得為維持
 版本號建立空版本；若日後出現可重現缺口，需另建計畫並重新取得相應授權。

@@ -25,6 +25,10 @@ from core.discovery.service import DiscoveryService
 from core.downloads.capabilities import builtin_download_capability
 from core.downloads.builtin_integrity import BUILTIN_PROVIDER_HASHES
 from core.downloads.provider_registry import DownloadProviderRegistry
+from core.downloads.performance_profiles import (
+    normalized_youtube_performance_profile,
+    resolve_youtube_performance,
+)
 from core.downloads.queue import DownloadQueue
 from core.downloads.subprocess_provider import SubprocessDownloadProvider
 from core.events.event_bus import EventBus
@@ -218,6 +222,16 @@ class Bootstrap:
         settings.download_workers = normalized_download_workers(
             settings.download_workers
         )
+        settings.youtube_performance_profile = (
+            normalized_youtube_performance_profile(
+                settings.youtube_performance_profile
+            )
+        )
+        startup_performance = resolve_youtube_performance(
+            settings.youtube_performance_profile,
+            settings.download_workers,
+        )
+        settings.download_workers = startup_performance.worker_count
         self.state.advance(StartupPhase.SETTINGS_READY, "settings loaded")
         logger = configure_logging(paths.logs, settings.log_level)
         audit = AuditLog(paths.logs / "audit.jsonl")
@@ -237,7 +251,11 @@ class Bootstrap:
             paths.cache / "artwork",
         )
         download_providers = DownloadProviderRegistry(
-            paths.mod / "provider-state.json"
+            paths.mod / "provider-state.json",
+            youtube_performance_profile=(
+                settings.youtube_performance_profile
+            ),
+            download_workers=settings.download_workers,
         )
         features = FeatureModRegistry(paths.mod / "feature-state.json")
         conversion: ConversionService | None = None
