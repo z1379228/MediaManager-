@@ -1,4 +1,6 @@
 from pathlib import Path
+import hashlib
+import shutil
 import subprocess
 import sys
 
@@ -43,6 +45,39 @@ def test_snapshot_identity_detects_copied_tree_changes(tmp_path: Path) -> None:
     assert package_layout_experiment.artifact_identity(after) != identity
 
 
+def test_runtime_materialization_allows_only_pinned_builtin_files(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "artifact"
+    root.mkdir()
+    (root / "MediaManager.exe").write_bytes(b"exe")
+    before = package_layout_experiment.snapshot_tree(root)
+    provider = root / "mod" / "builtin" / "demo" / "provider.py"
+    provider.parent.mkdir(parents=True)
+    provider.write_bytes(b"provider")
+    digest = hashlib.sha256(b"provider").hexdigest()
+
+    result = package_layout_experiment.validate_runtime_materialization(
+        before,
+        package_layout_experiment.snapshot_tree(root),
+        {"demo": {"provider.py": digest}},
+    )
+
+    assert result == {
+        "passed": True,
+        "added_files": 1,
+        "added_bytes": len(b"provider"),
+    }
+
+    (root / "unexpected.txt").write_text("unexpected", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="unexpected artifact files"):
+        package_layout_experiment.validate_runtime_materialization(
+            before,
+            package_layout_experiment.snapshot_tree(root),
+            {"demo": {"provider.py": digest}},
+        )
+
+
 def test_experiment_builds_both_layouts_and_verifies_copy(
     tmp_path: Path,
 ) -> None:
@@ -74,6 +109,22 @@ def test_experiment_builds_both_layouts_and_verifies_copy(
         command: tuple[str, ...],
         **kwargs: object,
     ) -> dict[str, object]:
+        if "--verify-only" in command:
+            artifact = Path(str(kwargs["cwd"]))
+            source_root = (
+                Path(package_layout_experiment.__file__).parents[1]
+                / "mod"
+                / "builtin"
+            )
+            for provider_id, files in (
+                package_layout_experiment.BUILTIN_PROVIDER_HASHES.items()
+            ):
+                for relative in files:
+                    source = source_root / provider_id / relative
+                    target = artifact / "mod" / "builtin" / provider_id / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    if not target.exists():
+                        shutil.copy2(source, target)
         expected = kwargs["expected_codes"]
         assert isinstance(expected, frozenset)
         returncode = next(iter(expected))
@@ -103,6 +154,16 @@ def test_experiment_builds_both_layouts_and_verifies_copy(
     assert report["result"] == "PACKAGE_LAYOUT_EXPERIMENT_RECORDED"
     assert report["layouts"]["onefile"]["artifact"]["files"] == 1
     assert report["layouts"]["onedir"]["artifact"]["files"] == 2
+    expected_files = sum(
+        len(files)
+        for files in package_layout_experiment.BUILTIN_PROVIDER_HASHES.values()
+    )
+    assert (
+        report["layouts"]["onefile"]["measurement_materialization"][
+            "added_files"
+        ]
+        == expected_files
+    )
     assert report["layouts"]["onedir"]["copied_folder_smoke"]["passed"] is True
     assert report["artifacts_retained"] is False
     assert not tuple((tmp_path / "experiments").glob("g39-*"))

@@ -23,6 +23,7 @@ import sys
 import time
 from typing import Any
 
+from core.downloads.builtin_integrity import BUILTIN_PROVIDER_HASHES
 from core.version import CORE_VERSION
 from core.downloads.windows_job import ProviderJob
 from tools.build_version import (
@@ -178,6 +179,51 @@ def artifact_identity(entries: Sequence[FileEntry]) -> ArtifactIdentity:
         digest.update(bytes.fromhex(entry.sha256))
         total += entry.size
     return ArtifactIdentity(len(entries), total, digest.hexdigest())
+
+
+def validate_runtime_materialization(
+    before: Sequence[FileEntry],
+    after: Sequence[FileEntry],
+    expected_hashes: Mapping[str, Mapping[str, str]] = BUILTIN_PROVIDER_HASHES,
+) -> dict[str, Any]:
+    """Allow only the pinned built-in MODs materialized on first verification."""
+
+    before_by_path = {entry.path: entry for entry in before}
+    after_by_path = {entry.path: entry for entry in after}
+    expected = {
+        f"mod/builtin/{provider_id}/{relative}": digest
+        for provider_id, files in expected_hashes.items()
+        for relative, digest in files.items()
+    }
+    changed_existing = {
+        path
+        for path, entry in before_by_path.items()
+        if after_by_path.get(path) != entry
+    }
+    missing_expected = set(expected).difference(after_by_path)
+    unexpected = set(after_by_path).difference(before_by_path, expected)
+    mismatched = {
+        path
+        for path, digest in expected.items()
+        if path in after_by_path and after_by_path[path].sha256 != digest
+    }
+    if changed_existing:
+        raise RuntimeError("artifact content changed during runtime verification")
+    if missing_expected:
+        raise RuntimeError("runtime verification did not materialize every built-in MOD")
+    if unexpected:
+        raise RuntimeError("runtime verification created unexpected artifact files")
+    if mismatched:
+        raise RuntimeError("runtime verification materialized an invalid built-in MOD")
+    added = [
+        after_by_path[path]
+        for path in sorted(set(after_by_path).difference(before_by_path))
+    ]
+    return {
+        "passed": True,
+        "added_files": len(added),
+        "added_bytes": sum(entry.size for entry in added),
+    }
 
 
 def _runtime_environment(root: Path) -> dict[str, str]:
@@ -569,13 +615,21 @@ def run_layout_experiment(
                 (time.perf_counter_ns() - integrity_started) / 1_000_000,
                 3,
             )
+            measured_root = attempt / "measurement-artifacts" / layout
+            shutil.copytree(artifact_root, measured_root, symlinks=True)
+            if snapshot_tree(measured_root) != before:
+                raise RuntimeError(f"{layout} measurement copy hash mismatch")
             measured = _measure_layout(
-                executable,
+                measured_root / "MediaManager.exe",
                 repository,
                 attempt / "runtime" / layout / "original",
                 warmups=warmups,
                 iterations=iterations,
                 sample_runner=sample_runner,
+            )
+            measured_materialization = validate_runtime_materialization(
+                before,
+                snapshot_tree(measured_root),
             )
             if snapshot_tree(artifact_root) != before:
                 raise RuntimeError(f"{layout} artifact changed during measurement")
@@ -602,19 +656,23 @@ def run_layout_experiment(
                 )
                 for role in BENCHMARK_ROLES
             }
-            if snapshot_tree(copied_root) != copied:
-                raise RuntimeError(
-                    f"{layout} copied artifact changed during smoke"
-                )
+            copied_materialization = validate_runtime_materialization(
+                copied,
+                snapshot_tree(copied_root),
+            )
+            if snapshot_tree(artifact_root) != before:
+                raise RuntimeError(f"{layout} source artifact changed during smoke")
             layouts[layout] = {
                 "build_elapsed_ms": build_elapsed_ms,
                 "artifact": asdict(identity),
                 "integrity_elapsed_ms": integrity_elapsed_ms,
                 "measurement": measured,
+                "measurement_materialization": measured_materialization,
                 "copied_folder_smoke": {
                     "passed": True,
                     "copy_elapsed_ms": copy_elapsed_ms,
                     "manifest_matches": True,
+                    "materialization": copied_materialization,
                     "roles": copied_smoke,
                 },
             }
