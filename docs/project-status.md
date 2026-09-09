@@ -8,10 +8,14 @@ MediaManager 目前工作來源為 Development `39.0.106`。`39.0.106` 讓配置
 在 build 前先拒絕 Repository 內、既存或 link-like 證據路徑，並以 Windows
 kill-on-close Job Object 收容每個量測程序的完整程序樹；程序先 suspended、
 成功加入 Job 後才恢復，逾時或初始化失敗也會關閉 Job 並 reap。`39.0.105` 新增隔離的
-onefile／onedir PyInstaller 配置比較器；正式發行 build 會強制 onefile，實驗
-工具預設只輸出計畫，必須明確帶 `--execute` 才會在 Repository 外建立原型、
-記錄啟動與程序資源、核對完整樹 SHA-256 並執行複製資料夾 smoke。原型 build
-與 Before／After 比較目前尚未授權或執行，因此沒有封裝效能結論。`39.0.104` 新增預設關閉的
+onefile／onedir PyInstaller 配置比較器；正式發行 build 仍強制 onefile。隔離實驗
+已由乾淨 commit 使用 2 次 warmup、7 次樣本完成：onedir 的 version、verify-only
+與 Provider Host p50 分別為 `341.116`、`523.244`、`421.681 ms`，onefile 為
+`2238.396`、`2355.176`、`2257.093 ms`；兩者 SHA-256、複製資料夾 smoke 與
+89 個釘選內建 MOD 的首次物化均通過。代價是 artifact 從 1 個約 93 MiB 檔案變成
+445 個、約 211 MiB。onefile 資源數據目前只可靠涵蓋 launcher 父程序，因此尚不以
+CPU／記憶體結果決定發行 layout；原型已清除，也沒有改動 Testing／Stable。
+`39.0.104` 新增預設關閉的
 YouTube 大型播放清單快速模式；只在使用者明確選取時逐筆解析前 500 項，並在
 UI 說明結果不是完整總數且不套用隨機／反向排序。未選取時與非 YouTube provider
 維持原 payload。`39.0.103` 新增由可信核心

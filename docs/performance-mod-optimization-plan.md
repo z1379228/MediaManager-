@@ -2,9 +2,9 @@
 
 狀態：`IN PROGRESS — Development 39.0.106`
 查核日期：2026-09-09
-版本：39.0.106 已完成階段 A、階段 B、階段 C，以及階段 D 的安全實驗工具；
-階段 D 原型 build 與比較尚未執行。
-本計畫不授權 build、Testing／Stable、簽署、push 或發布。
+版本：39.0.106 已完成階段 A、階段 B、階段 C，以及階段 D 的安全實驗工具與
+onefile／onedir 隔離原型比較；暖 discovery Host 仍需真實搜尋 workload 才能決定。
+本次只有開發實驗 build，不建立 Testing／Stable、不簽署、不 push、不發布。
 
 ## 目標與優先順序
 
@@ -163,7 +163,7 @@ link 權限限制。
 
 ### 階段 D：條件實驗，不預設交付
 
-1. **安全工具完成（39.0.105～39.0.106），實驗未執行**：PyInstaller spec 支援明確
+1. **完成（39.0.105～39.0.106）**：PyInstaller spec 支援明確
    onefile／onedir 實驗切換，正式 `build_version` 則強制 onefile，不接受繼承
    環境改變發行配置。`tools.package_layout_experiment` 預設只輸出無副作用計畫，
    必須帶 `--execute` 才會在 Repository 外建立兩種原型；量測冷啟動、第二次
@@ -172,7 +172,9 @@ link 權限限制。
    乾淨 commit，證據路徑也不得位於 Repository。
    39.0.106 再將證據路徑預檢移到 build 前，寫入前仍二次驗證；Windows child
    以 suspended 狀態建立，加入 kill-on-close Job Object 後才恢復，逾時與設定
-   失敗都會終止並 reap 完整程序樹。
+   失敗都會終止並 reap 完整程序樹。第一次真實 build 發現 `verify-only` 會把
+   89 個已釘選內建 MOD 物化到執行檔旁，舊檢查誤判為 artifact 竄改；回歸修正
+   改在兩個獨立副本中量測，只允許這 89 個檔案新增，原始 artifact 全程唯讀。
 2. 若完成早期分流與 onedir 後，YouTube 搜尋／分析仍有明顯可重現的固定 Host
    成本，再實驗短期暖 discovery Host。下載與 FFmpeg 繼續使用獨立程序。
 
@@ -203,10 +205,20 @@ link 權限限制。
 權限，沒有功能測試失敗。本輪未執行 PyInstaller，仍沒有 onefile／onedir
 Before／After 數據。
 
-39.0.106 的輸出預檢、Job Object 收容、版本與入口定向回歸為 `32 passed`；完整
-Repository runner 為 `1659 passed, 7 skipped`。七項 skip 都是目前 Windows
-帳號缺少建立測試用 link 權限，沒有功能測試失敗。安全補強沒有執行
-PyInstaller 或保留任何原型。
+39.0.106 的完整隔離實驗使用 2 次 warmup、7 次樣本。onefile／onedir 的 cold
+version 為 `2415.406 / 521.547 ms`；version p50／p95 為
+`2238.396 / 2436.356 ms` 與 `341.116 / 348.725 ms`，verify-only 為
+`2355.176 / 2396.625 ms` 與 `523.244 / 665.158 ms`，Provider Host 為
+`2257.093 / 2294.564 ms` 與 `421.681 / 434.545 ms`。onedir 在本機啟動路徑明顯
+較快，但 artifact 由 1 個 `97,493,836` bytes 檔案增加為 445 個、總計
+`221,740,815` bytes；兩者完整樹 SHA-256、複製資料夾 smoke 與 89 個釘選 MOD
+物化都通過。現有 onefile 資源取樣只可靠涵蓋 PyInstaller launcher 父程序，
+因此 CPU、Private Bytes 與 Working Set 不作跨 layout 結論；正式改用 onedir 前
+仍需補齊 GUI 與完整程序樹資源量測。證據位於
+`<Repository 外的 benchmark 目錄>\package-layout-39.0.106-20260909.json`。
+物化誤判修正定向回歸為 `10 passed`；完整 Repository runner 為
+`1660 passed, 7 skipped`。七項 skip 都是目前 Windows 帳號缺少建立測試用 link
+權限，沒有功能測試失敗；實驗原型已自動清除。
 
 ## 官方研究依據
 

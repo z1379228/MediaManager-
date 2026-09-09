@@ -1892,11 +1892,19 @@ prerelease 與全部附件 digest 均已驗證；Testing 1.2.1 的目錄、tag �
   先加入限制 16 個 active process、2 GiB 單程序記憶體且 kill-on-close 的 Job
   Object，再恢復執行。指派、恢復、量測或逾時失敗會先關閉 Job 以終止子程序，
   再 kill／reap 直接程序，避免比較器留下背景程序。
-- 輸出預檢、Job 指派先於恢復、真實 Windows child metrics、非預期 exit 與 dry-run
-  連同版本及入口的定向回歸為 `32 passed`；完整 Repository runner 為
-  `1659 passed, 7 skipped`。七項 skip 都是目前 Windows 帳號缺少建立測試用
-  link 權限，沒有功能測試失敗。本輪沒有 build、stage、commit、push，也沒有
-  封裝效能數據。
+- 真實 onefile build 首次暴露 `verify-only` 預期物化 89 個釘選內建 MOD 會被舊
+  artifact 檢查誤判為竄改。比較器改在獨立量測與 copied-folder 副本中執行，
+  只接受核心清單內且 SHA-256 相符的 89 個新增檔案；原始 build artifact 必須
+  維持不變。修正定向回歸為 `10 passed`。
+- 使用 2 次 warmup、7 次樣本的完整實驗中，onefile／onedir 的 version p50 為
+  `2238.396 / 341.116 ms`，verify-only 為 `2355.176 / 523.244 ms`，Provider Host
+  為 `2257.093 / 421.681 ms`。兩者完整樹雜湊與 copied-folder smoke 均通過；
+  onedir 代價是從 1 個 `97,493,836` bytes 檔案增加為 445 個、總計
+  `221,740,815` bytes。onefile 的 CPU／記憶體取樣只可靠涵蓋 launcher 父程序，
+  不作跨 layout 資源結論，也不在本次改變正式發行配置。
+- 完整 Repository runner 為 `1660 passed, 7 skipped`。七項 skip 都是目前
+  Windows 帳號缺少建立測試用 link 權限，沒有功能測試失敗。實驗 JSON 保存於
+  Repository 外，臨時原型已清除；沒有 push、發布或建立 Testing／Stable。
 - 回復可移除輸出預檢與測量程序的 Job Object 包裝；不涉及版本產物、設定或
   使用者資料遷移。
 
