@@ -16,10 +16,12 @@ from contracts.playlist_v1 import PlaylistEntryV1
 from contracts.discovery_v1 import DiscoveryItemV1
 from core.downloads.archive import DuplicateDownloadError
 from core.downloads.batch_import import (
-    BatchImportIssue,
+    BatchImportEntry,
     BatchImportResult,
     build_import_requests,
     parse_batch_import,
+    parse_download_intake_text,
+    prepare_download_intake,
 )
 from core.downloads.models import (
     DownloadRequest,
@@ -42,6 +44,7 @@ from core.downloads.preparation import (
     suggest_output_filename,
 )
 from core.downloads.split_batch import build_split_requests
+from core.drop_intake import DropIntake
 from core.mod_groups import BuiltinModGroupError, load_builtin_mod_group
 from core.site_routing import classify_site_url
 from core.settings import (
@@ -63,10 +66,12 @@ from trusted_ui.bilibili_workspace import (
 )
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.download_profiles import DomainDownloadProfile, DownloadProfileStore
+from trusted_ui.drop_intake import install_drop_intake, issue_summary
 from trusted_ui.empty_state import create_empty_state
 from trusted_ui.playlist_dialog import show_playlist_dialog
 from trusted_ui.recovery_dialog import show_recovery_dialog
 from trusted_ui.split_dialog import show_split_dialog
+from trusted_ui.table_refresh import limit_resize_contents_work
 from trusted_ui.theme import COLORS
 from trusted_ui.thumbnail_loader import create_thumbnail_loader
 from trusted_ui.media_preview_controls import (
@@ -441,29 +446,31 @@ def create_download_panel(
             self.enabled.toggled.connect(self.toggle_provider)
             top_controls.addWidget(self.enabled)
             top_controls.addStretch()
-            if site_family == "youtube":
-                performance_label = QLabel("下載效能")
-                performance_label.setObjectName("fieldLabel")
-                top_controls.addWidget(performance_label)
-                self.youtube_performance_profile = QComboBox()
-                self.youtube_performance_profile.setAccessibleName(
-                    "YouTube 下載效能設定"
+            performance_label = QLabel("資源模式")
+            performance_label.setObjectName("fieldLabel")
+            top_controls.addWidget(performance_label)
+            self.youtube_performance_profile = QComboBox()
+            self.youtube_performance_profile.setAccessibleName(
+                "全域下載資源模式"
+            )
+            self.youtube_performance_profile.setToolTip(
+                "所有下載頁共用；切換時同步調整全域工作數與 YouTube 片段額度"
+            )
+            for profile in youtube_performance_profiles():
+                self.youtube_performance_profile.addItem(
+                    profile.display_name,
+                    profile.profile_id,
                 )
-                for profile in youtube_performance_profiles():
-                    self.youtube_performance_profile.addItem(
-                        profile.display_name,
-                        profile.profile_id,
-                    )
-                selected_profile = normalized_youtube_performance_profile(
-                    context_youtube_performance_profile(context)
-                )
-                self.youtube_performance_profile.setCurrentIndex(
-                    self.youtube_performance_profile.findData(selected_profile)
-                )
-                self.youtube_performance_profile.currentIndexChanged.connect(
-                    self.change_youtube_performance_profile
-                )
-                top_controls.addWidget(self.youtube_performance_profile)
+            selected_profile = normalized_youtube_performance_profile(
+                context_youtube_performance_profile(context)
+            )
+            self.youtube_performance_profile.setCurrentIndex(
+                self.youtube_performance_profile.findData(selected_profile)
+            )
+            self.youtube_performance_profile.currentIndexChanged.connect(
+                self.change_youtube_performance_profile
+            )
+            top_controls.addWidget(self.youtube_performance_profile)
             worker_label = QLabel("同時工作")
             worker_label.setObjectName("fieldLabel")
             top_controls.addWidget(worker_label)
@@ -482,12 +489,11 @@ def create_download_panel(
             )
             top_controls.addWidget(self.worker_count)
             input_layout.addLayout(top_controls)
-            if site_family == "youtube":
-                self.youtube_performance_hint = QLabel()
-                self.youtube_performance_hint.setObjectName("sectionSubtitle")
-                self.youtube_performance_hint.setWordWrap(True)
-                input_layout.addWidget(self.youtube_performance_hint)
-                self.update_youtube_performance_hint()
+            self.youtube_performance_hint = QLabel()
+            self.youtube_performance_hint.setObjectName("sectionSubtitle")
+            self.youtube_performance_hint.setWordWrap(True)
+            input_layout.addWidget(self.youtube_performance_hint)
+            self.update_youtube_performance_hint()
 
             output_row = QHBoxLayout()
             output_label = QLabel("輸出")
@@ -506,9 +512,9 @@ def create_download_panel(
             self.urls_label.setObjectName("fieldLabel")
             urls_heading.addWidget(self.urls_label)
             urls_heading.addStretch()
-            import_urls = QPushButton("匯入 TXT / CSV…")
+            import_urls = QPushButton("從 TXT / CSV 匯入…")
             import_urls.setObjectName("ghost")
-            import_urls.setToolTip("最多 500 列、2 MiB，匯入前會先顯示檢查結果")
+            import_urls.setToolTip("送入下載收件匣檢查；最多 500 列、2 MiB")
             import_urls.clicked.connect(self.import_batch_file)
             urls_heading.addWidget(import_urls)
             self.import_playlist = QPushButton("匯入播放清單 ID…")
@@ -524,6 +530,13 @@ def create_download_panel(
             self.urls.setPlaceholderText(self.workspace_text["placeholder"])
             self.urls.setMaximumHeight(104)
             self.urls.textChanged.connect(self.update_site_options)
+            self.drop_intake_filter = install_drop_intake(
+                self.urls,
+                self.apply_drop_intake,
+                on_error=lambda message: self.preview.setText(
+                    f"拖放內容無法使用：{message}"
+                ),
+            )
             input_layout.addWidget(self.urls)
             self.url_classification = QLabel()
             self.url_classification.setObjectName("urlClassification")
@@ -665,8 +678,9 @@ def create_download_panel(
             ):
                 widget.setVisible(segment_controls_visible)
             options.addStretch()
-            self.add_download = QPushButton("加入下載佇列")
+            self.add_download = QPushButton("檢查並加入")
             self.add_download.setObjectName("primary")
+            self.add_download.setToolTip("先在下載收件匣檢查，再進行最後下載確認")
             self.add_download.clicked.connect(self.add_batch)
             options.addWidget(self.add_download)
             input_layout.addLayout(options)
@@ -912,6 +926,7 @@ def create_download_panel(
             self.table.setShowGrid(False)
             self.table.verticalHeader().hide()
             header = self.table.horizontalHeader()
+            limit_resize_contents_work(header)
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
             header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
@@ -2338,6 +2353,64 @@ def create_download_panel(
                 container = "mkv"
             return mode, container
 
+        def review_download_inbox(
+            self,
+            parsed: BatchImportResult,
+            *,
+            source_label: str,
+        ) -> tuple[BatchImportEntry, ...] | None:
+            """Apply workspace/provider policy before showing one trusted inbox."""
+
+            preview = prepare_download_intake(
+                parsed,
+                accepts_url=self.accepts_url,
+                provider_for=context.download_providers.provider_for,
+                site_label=site_label,
+            )
+            return show_batch_import_dialog(
+                preview,
+                self,
+                source_label=source_label,
+            )
+
+        def apply_drop_intake(self, intake: DropIntake) -> None:
+            """Route one validated drop through the existing download inbox."""
+
+            if intake.media_files:
+                self.preview.setText(
+                    "本機媒體請拖到格式工廠；下載欄位只接受網址或一個 TXT／CSV 清單。"
+                )
+                return
+            if intake.batch_files and intake.urls:
+                self.preview.setText(
+                    "請分開拖放網址與 TXT／CSV 清單，避免混合兩種匯入流程。"
+                )
+                return
+            if len(intake.batch_files) > 1:
+                self.preview.setText("一次只能拖入一個 TXT／CSV 清單。")
+                return
+            if intake.batch_files:
+                self.import_batch_path(intake.batch_files[0])
+                return
+            if intake.urls:
+                merged = merge_download_urls(
+                    self.urls.toPlainText(),
+                    intake.urls,
+                )
+                self.urls.setPlainText("\n".join(merged))
+                self.update_site_options()
+                rejected = issue_summary(intake)
+                self.preview.setText(
+                    f"已拖入 {len(intake.urls)} 個網址；請檢查後再加入。"
+                    + (f" 未採用：{rejected}" if rejected else "")
+                )
+                self.urls.setFocus()
+                return
+            rejected = issue_summary(intake)
+            self.preview.setText(
+                f"拖放內容沒有可用項目{f'：{rejected}' if rejected else '。'}"
+            )
+
         def import_batch_file(self) -> None:
             if not self.any_download_provider_enabled():
                 QMessageBox.information(
@@ -2352,38 +2425,26 @@ def create_download_panel(
             )
             if not filename:
                 return
+            self.import_batch_path(Path(filename))
+
+        def import_batch_path(self, path: Path) -> None:
+            """Import one already selected or dropped list through one path."""
+
+            if not self.any_download_provider_enabled():
+                QMessageBox.information(
+                    self, "下載 MOD", "請先啟用至少一個下載 MOD。"
+                )
+                return
             try:
-                parsed = parse_batch_import(Path(filename))
+                parsed = parse_batch_import(path)
             except (OSError, ValueError) as error:
                 QMessageBox.warning(self, "無法匯入清單", str(error))
                 return
 
-            supported = []
-            issues = list(parsed.issues)
-            for entry in parsed.entries:
-                if not self.accepts_url(entry.url):
-                    issues.append(
-                        BatchImportIssue(
-                            entry.row_number,
-                            entry.url,
-                            f"此清單只接受 {site_label} 網址",
-                        )
-                    )
-                    continue
-                try:
-                    context.download_providers.provider_for(entry.url)
-                except RuntimeError:
-                    issues.append(
-                        BatchImportIssue(
-                            entry.row_number,
-                            entry.url,
-                            "目前沒有已啟用的下載 MOD 支援此網址",
-                        )
-                    )
-                else:
-                    supported.append(entry)
-            preview = BatchImportResult(tuple(supported), tuple(issues))
-            selected = show_batch_import_dialog(preview, self)
+            selected = self.review_download_inbox(
+                parsed,
+                source_label=path.name,
+            )
             if selected is None:
                 return
             if not selected:
@@ -2424,8 +2485,8 @@ def create_download_panel(
                 return
             self.urls.clear()
             self.preview.setText(
-                f"已從 {Path(filename).name} 加入 {len(requests)} 項；"
-                f"檢查時略過 {len(preview.issues)} 項。"
+                f"已從 {path.name} 加入 {len(requests)} 項；"
+                f"收件匣已完成檢查。"
             )
             self.refresh()
 
@@ -2435,16 +2496,32 @@ def create_download_panel(
                     self, "下載 MOD", "請先啟用至少一個下載 MOD。"
                 )
                 return
-            urls = [
-                line.strip()
-                for line in self.urls.toPlainText().splitlines()
-                if line.strip()
-            ]
-            if not urls:
+            try:
+                parsed = parse_download_intake_text(self.urls.toPlainText())
+            except ValueError as error:
+                QMessageBox.warning(self, "無法檢查收件匣", str(error))
+                return
+            if not parsed.entries and not parsed.issues:
                 QMessageBox.information(self, "批量下載", "請至少輸入一個網址。")
                 return
-            if self.reject_wrong_site_urls(urls):
+            if parsed.entries and self.reject_wrong_site_urls(
+                [entry.url for entry in parsed.entries]
+            ):
                 return
+            selected = self.review_download_inbox(
+                parsed,
+                source_label="手動輸入",
+            )
+            if selected is None:
+                return
+            if not selected:
+                QMessageBox.information(
+                    self,
+                    "下載收件匣",
+                    "沒有選取可加入下載佇列的項目。",
+                )
+                return
+            urls = [entry.url for entry in selected]
             try:
                 subtitle_mode, subtitle_languages = self.selected_media_options()
                 timed_comment_mode, container_preset = (
@@ -2964,10 +3041,17 @@ def create_download_panel(
             worker_count: object,
         ) -> None:
             performance = resolve_youtube_performance(profile_id, worker_count)
+            automatic = performance.profile.profile_id == "auto"
+            self.worker_count.setEnabled(not automatic)
             self.worker_count.setToolTip(
-                "同時工作數由所有下載頁共用；"
-                f"YouTube {performance.profile.display_name}設定最多允許 "
-                f"{performance.profile.maximum_workers} 個。"
+                (
+                    "自動模式已依本機容量鎖定同時工作數；"
+                    "切換到手動資源模式後才可調整。"
+                    if automatic
+                    else "同時工作數由所有下載頁共用；"
+                    f"{performance.profile.display_name}模式最多允許 "
+                    f"{performance.profile.maximum_workers} 個。"
+                )
             )
             self.worker_count.blockSignals(True)
             try:
@@ -3001,11 +3085,22 @@ def create_download_panel(
                 self.worker_count.currentData(),
             )
             profile = performance.profile
+            automatic_detail = (
+                f" 自動判定：{performance.effective_profile.display_name}；"
+                f"固定 {performance.worker_count} 個同時工作。"
+                if profile.profile_id == "auto"
+                else ""
+            )
+            if self.site_family == "youtube":
+                detail = (
+                    f" 每個 YouTube 工作使用 "
+                    f"{performance.fragment_concurrency} 個片段連線；"
+                    f"目前全域片段上限 {performance.maximum_fragment_concurrency}。"
+                )
+            else:
+                detail = " YouTube 工作會另外套用相同模式的固定片段額度。"
             self.youtube_performance_hint.setText(
-                f"{profile.description} 每個 YouTube 工作使用 "
-                f"{performance.fragment_concurrency} 個片段連線；"
-                f"目前上限 {performance.maximum_fragment_concurrency}。"
-                "同時工作數是所有下載頁共用的全域設定。"
+                profile.description + automatic_detail + detail
             )
 
         def publish_download_performance(self) -> None:

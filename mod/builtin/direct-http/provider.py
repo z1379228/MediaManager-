@@ -18,6 +18,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 PROVIDER_ID = "direct-http"
 DISPLAY_NAME = "Direct HTTP"
 MAX_FILE_BYTES = 64 * 1024**3
+_STREAM_CHUNK_BYTES = 1024 * 1024
 _SUFFIXES = frozenset(
     {
         ".7z", ".bz2", ".csv", ".epub", ".flac", ".gz", ".iso",
@@ -244,12 +245,12 @@ def download(request: dict[str, Any]) -> str:
         digest = hashlib.sha256()
         if append:
             with partial.open("rb") as existing:
-                while chunk := existing.read(1024 * 1024):
+                while chunk := existing.read(_STREAM_CHUNK_BYTES):
                     digest.update(chunk)
         mode = "ab" if append else "wb"
         downloaded = offset
         with partial.open(mode) as destination:
-            while chunk := response.read(1024 * 1024):
+            while chunk := response.read(_STREAM_CHUNK_BYTES):
                 downloaded += len(chunk)
                 if downloaded > MAX_FILE_BYTES:
                     raise ValueError("direct-file output exceeds the 64 GiB limit")

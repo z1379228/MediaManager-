@@ -5,6 +5,7 @@ from __future__ import annotations
 from contracts.recovery_v1 import RecoveryCandidateV1
 from core.downloads.archive import DuplicateDownloadError
 from core.downloads.models import DownloadRequest
+from trusted_ui.table_refresh import limit_resize_contents_work
 
 
 def build_replacement_request(
@@ -68,6 +69,7 @@ def show_recovery_dialog(
     table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
     table.verticalHeader().hide()
     header = table.horizontalHeader()
+    limit_resize_contents_work(header)
     header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
     header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
     header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)

@@ -70,7 +70,7 @@ def test_download_worker_count_reverts_when_settings_are_read_only(
         context.lifecycle.shutdown()
 
 
-def test_youtube_performance_profile_is_persisted_and_shared(
+def test_download_resource_profile_is_persisted_and_shared_across_sites(
     tmp_path, monkeypatch
 ) -> None:
     pytest.importorskip("PySide6")
@@ -94,35 +94,48 @@ def test_youtube_performance_profile_is_persisted_and_shared(
         app.processEvents()
         assert youtube_panel.scroll_content.minimumSizeHint().width() <= 940
         assert youtube_panel.youtube_performance_profile is not None
-        assert bilibili_panel.youtube_performance_profile is None
+        assert bilibili_panel.youtube_performance_profile is not None
+        assert youtube_panel.youtube_performance_profile.accessibleName() == (
+            "全域下載資源模式"
+        )
+        auto_index = youtube_panel.youtube_performance_profile.findData("auto")
+        youtube_panel.youtube_performance_profile.setCurrentIndex(auto_index)
+        app.processEvents()
+        assert not youtube_panel.worker_count.isEnabled()
+        assert "自動判定" in youtube_panel.youtube_performance_hint.text()
+
         youtube_panel.youtube_performance_profile.setCurrentIndex(
             youtube_panel.youtube_performance_profile.findData("high")
         )
         app.processEvents()
+        assert youtube_panel.worker_count.isEnabled()
 
         assert context.settings.youtube_performance_profile == "high"
-        assert context.settings.download_workers == 2
+        assert context.settings.download_workers == 4
         assert context.download_providers.youtube_performance.profile.profile_id == (
             "high"
         )
-        assert context.download_providers.youtube_performance.fragment_concurrency == 4
-        assert bilibili_panel.worker_count.currentData() == 2
+        assert context.download_providers.youtube_performance.fragment_concurrency == 2
+        assert bilibili_panel.worker_count.currentData() == 4
+        assert bilibili_panel.youtube_performance_profile.currentData() == "high"
 
-        youtube_panel.worker_count.setCurrentIndex(
-            youtube_panel.worker_count.findData(4)
+        bilibili_panel.youtube_performance_profile.setCurrentIndex(
+            bilibili_panel.youtube_performance_profile.findData("resource")
         )
         app.processEvents()
 
-        assert context.settings.download_workers == 4
+        assert context.settings.youtube_performance_profile == "resource"
+        assert context.settings.download_workers == 1
         assert context.download_providers.youtube_performance.fragment_concurrency == 2
-        assert bilibili_panel.worker_count.currentData() == 4
+        assert youtube_panel.worker_count.currentData() == 1
+        assert youtube_panel.youtube_performance_profile.currentData() == "resource"
         document = json.loads(
             (Path(context.paths.settings) / "settings.json").read_text(
                 encoding="utf-8"
             )
         )
-        assert document["youtube_performance_profile"] == "high"
-        assert document["download_workers"] == 4
+        assert document["youtube_performance_profile"] == "resource"
+        assert document["download_workers"] == 1
 
         queued = DownloadTask(
             "queued",
@@ -134,12 +147,12 @@ def test_youtube_performance_profile_is_persisted_and_shared(
             lambda: (queued,),
         )
         youtube_panel.youtube_performance_profile.setCurrentIndex(
-            youtube_panel.youtube_performance_profile.findData("resource")
+            youtube_panel.youtube_performance_profile.findData("high")
         )
         app.processEvents()
 
-        assert context.settings.youtube_performance_profile == "high"
-        assert youtube_panel.youtube_performance_profile.currentData() == "high"
+        assert context.settings.youtube_performance_profile == "resource"
+        assert youtube_panel.youtube_performance_profile.currentData() == "resource"
         information.assert_called_once()
         assert "未結束" in information.call_args.args[2]
     finally:
@@ -259,11 +272,18 @@ def test_youtube_search_result_can_be_added_as_single_download(
 
     from PySide6.QtWidgets import QApplication, QMessageBox, QTabWidget
 
+    import trusted_ui.download_panel as download_panel_module
+
     app = QApplication.instance() or QApplication([])
     monkeypatch.setattr(
         QMessageBox,
         "question",
         Mock(return_value=QMessageBox.StandardButton.Yes),
+    )
+    monkeypatch.setattr(
+        download_panel_module,
+        "show_batch_import_dialog",
+        lambda result, _parent, *, source_label: result.entries,
     )
     context = Bootstrap(portable=True).initialize(start_background=False)
     panel = create_download_panel(context, site_family="youtube")
@@ -784,6 +804,79 @@ def test_youtube_workspace_rejects_meta_and_spoofed_urls(
         app.processEvents()
         assert panel.official_bridge_notice.isHidden()
         assert not panel.add_download.isEnabled()
+    finally:
+        if panel is not None:
+            panel.close()
+            panel.deleteLater()
+        app.processEvents()
+
+
+def test_manual_download_uses_trusted_inbox_before_queueing(monkeypatch) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    import trusted_ui.download_panel as download_panel_module
+
+    app = QApplication.instance() or QApplication([])
+    download_providers = Mock()
+    download_providers.statuses.return_value = (
+        ProviderStatus("youtube", "YouTube", True),
+    )
+    download_providers.is_enabled.return_value = True
+    download_providers.provider_for.return_value = object()
+    download_queue = Mock()
+    download_queue.snapshots.return_value = ()
+    discovery = Mock()
+    discovery.statuses.return_value = ()
+    discovery.is_enabled.return_value = False
+    context = SimpleNamespace(
+        download_providers=download_providers,
+        download_queue=download_queue,
+        discovery=discovery,
+        settings=SimpleNamespace(download_workers=1),
+        paths=SimpleNamespace(
+            downloads=Path("Downloads"),
+            settings=Path("settings"),
+        ),
+        events=None,
+    )
+    captured: dict[str, object] = {}
+
+    def accept_inbox(result, _parent, *, source_label):
+        captured["result"] = result
+        captured["source_label"] = source_label
+        return result.entries
+
+    monkeypatch.setattr(
+        download_panel_module,
+        "show_batch_import_dialog",
+        accept_inbox,
+    )
+    panel = None
+    try:
+        panel = create_download_panel(context)
+        panel.timer.stop()
+        panel.confirm_requests = Mock(return_value=True)
+        panel.urls.setPlainText("https://www.youtube.com/watch?v=example")
+        app.processEvents()
+
+        panel.add_batch()
+
+        assert captured["source_label"] == "手動輸入"
+        reviewed = captured["result"]
+        assert len(reviewed.entries) == 1
+        assert reviewed.entries[0].url.endswith("watch?v=example")
+        download_providers.provider_for.assert_called_with(
+            "https://www.youtube.com/watch?v=example"
+        )
+        panel.confirm_requests.assert_called_once()
+        download_queue.add_batch.assert_called_once()
+        queued = download_queue.add_batch.call_args.args[0]
+        assert [request.url for request in queued] == [
+            "https://www.youtube.com/watch?v=example"
+        ]
     finally:
         if panel is not None:
             panel.close()

@@ -40,6 +40,11 @@ from trusted_ui.search_paging import (
     MAX_WORKSPACE_SEARCH_RESULTS,
     merge_federated_search_pages,
 )
+from trusted_ui.table_refresh import (
+    limit_resize_contents_work,
+    suspended_resize_to_contents,
+    suspended_table_updates,
+)
 
 
 _SEARCH_CONTENT_TYPE_LABELS = {
@@ -710,6 +715,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.table.setShowGrid(False)
             self.table.verticalHeader().hide()
             header = self.table.horizontalHeader()
+            limit_resize_contents_work(header)
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
             self.table.setColumnWidth(0, 112)
             header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -1494,6 +1500,29 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 self.results = tuple(results) if isinstance(results, tuple) else ()
                 self.status.setText(f"找到 {len(self.results)} 筆結果")
             self.refresh_search_sources()
+            with (
+                suspended_table_updates(self.table),
+                suspended_resize_to_contents(self.table.horizontalHeader()),
+            ):
+                self.populate_result_rows()
+            self.load_visible_thumbnails()
+            if (
+                history_query
+                and isinstance(results, FederatedSearchResult)
+                and not results.failures
+            ):
+                def record_search_history() -> None:
+                    try:
+                        context.discovery.record_history("search", history_query)
+                    except Exception:
+                        pass
+
+                threading.Thread(target=record_search_history, daemon=True).start()
+            self.update_action_state()
+
+        def populate_result_rows(self) -> None:
+            """Apply one coherent result snapshot while repainting is suspended."""
+
             self.table.setRowCount(len(self.results))
             self.result_stack.setCurrentWidget(
                 self.table if self.results else self.result_empty
@@ -1559,20 +1588,6 @@ def create_search_panel(context: object, parent: object = None) -> object:
                     score.setToolTip("、".join(ranking.reasons) or "無直接文字符合")
                 score.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(row, 6, score)
-            self.load_visible_thumbnails()
-            if (
-                history_query
-                and isinstance(results, FederatedSearchResult)
-                and not results.failures
-            ):
-                def record_search_history() -> None:
-                    try:
-                        context.discovery.record_history("search", history_query)
-                    except Exception:
-                        pass
-
-                threading.Thread(target=record_search_history, daemon=True).start()
-            self.update_action_state()
 
         def load_visible_thumbnails(self) -> None:
             if self.closing:

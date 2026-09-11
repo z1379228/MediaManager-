@@ -209,6 +209,7 @@ class DiscoveryService:
     def __init__(self, state_path: Path) -> None:
         self._registry = DownloadProviderRegistry(state_path)
         self._providers: dict[str, SearchProvider] = {}
+        self._manual_search_provider_ids: set[str] = set()
         self._search_adapters = SearchAdapterRegistry()
         self._search_health: dict[str, _SearchHealth] = {}
         self._search_cursor_key = secrets.token_bytes(32)
@@ -235,8 +236,20 @@ class DiscoveryService:
         )
         if capability.provider_id != provider.provider_id:
             raise ValueError("search capability provider mismatch")
+        declared_visibility = getattr(provider, "search_visibility", "federated")
+        visibility = (
+            declared_visibility
+            if isinstance(declared_visibility, str)
+            else "federated"
+        )
+        if visibility not in {"federated", "manual"}:
+            raise ValueError("search provider visibility is invalid")
         self._registry.register(provider, enabled=enabled)  # type: ignore[arg-type]
         self._providers[provider.provider_id] = provider
+        if visibility == "manual":
+            self._manual_search_provider_ids.add(provider.provider_id)
+        else:
+            self._manual_search_provider_ids.discard(provider.provider_id)
 
         def adapter(query: SearchQueryV2) -> SearchPageV2:
             search_page = (
@@ -260,8 +273,19 @@ class DiscoveryService:
 
         self._search_adapters.register(capability, adapter)
 
-    def search_capabilities(self) -> tuple[SearchCapabilityV2, ...]:
-        return self._search_adapters.capabilities()
+    def search_capabilities(
+        self,
+        *,
+        include_manual: bool = False,
+    ) -> tuple[SearchCapabilityV2, ...]:
+        capabilities = self._search_adapters.capabilities()
+        if include_manual:
+            return capabilities
+        return tuple(
+            capability
+            for capability in capabilities
+            if capability.provider_id not in self._manual_search_provider_ids
+        )
 
     def search_source_statuses(self) -> tuple[SearchSourceStatus, ...]:
         search_ids = {

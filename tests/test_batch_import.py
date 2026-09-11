@@ -11,6 +11,8 @@ from core.downloads.batch_import import (
     BatchImportResult,
     build_import_requests,
     parse_batch_import,
+    parse_download_intake_text,
+    prepare_download_intake,
 )
 
 
@@ -93,6 +95,57 @@ def test_import_rejects_more_than_500_data_rows(tmp_path: Path) -> None:
         parse_batch_import(source)
 
 
+def test_download_intake_text_uses_the_same_bounded_url_validation() -> None:
+    result = parse_download_intake_text(
+        "# pasted links\n"
+        "https://example.com/one\n"
+        "https://user:secret@example.com/private\n"
+        "not-a-url\n"
+        "https://example.com/one\n"
+    )
+
+    assert result.entries == (
+        BatchImportEntry(2, "https://example.com/one"),
+    )
+    assert [issue.row_number for issue in result.issues] == [3, 4, 5]
+    assert "credentials" in result.issues[0].reason
+    assert "HTTP or HTTPS" in result.issues[1].reason
+    assert "duplicate" in result.issues[2].reason
+
+
+def test_download_intake_text_rejects_unbounded_payloads() -> None:
+    with pytest.raises(ValueError, match="2 MiB"):
+        parse_download_intake_text("x" * (MAX_BATCH_IMPORT_BYTES + 1))
+
+
+def test_download_intake_filters_workspace_and_disabled_providers() -> None:
+    parsed = BatchImportResult(
+        (
+            BatchImportEntry(1, "https://example.com/ready"),
+            BatchImportEntry(2, "https://wrong.example/video"),
+            BatchImportEntry(3, "https://example.com/disabled"),
+        ),
+        (BatchImportIssue(4, "invalid", "URL is malformed"),),
+    )
+
+    def provider_for(url: str) -> object:
+        if url.endswith("/disabled"):
+            raise RuntimeError("Example MOD 尚未啟用")
+        return object()
+
+    result = prepare_download_intake(
+        parsed,
+        accepts_url=lambda url: "wrong.example" not in url,
+        provider_for=provider_for,
+        site_label="Example",
+    )
+
+    assert result.entries == parsed.entries[:1]
+    assert [issue.row_number for issue in result.issues] == [4, 2, 3]
+    assert "Example 網址" in result.issues[1].reason
+    assert result.issues[2].reason == "Example MOD 尚未啟用"
+
+
 def test_build_import_requests_keeps_options_and_metadata(tmp_path: Path) -> None:
     requests = build_import_requests(
         (
@@ -124,11 +177,18 @@ def test_build_import_requests_keeps_options_and_metadata(tmp_path: Path) -> Non
     assert request.container_preset == "mkv"
 
 
-def test_batch_import_dialog_renders_offscreen(monkeypatch) -> None:
+def test_batch_import_dialog_renders_as_download_inbox_offscreen(monkeypatch) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QApplication, QDialog, QPushButton, QTableWidget
+    from PySide6.QtWidgets import (
+        QApplication,
+        QDialog,
+        QDialogButtonBox,
+        QLabel,
+        QPushButton,
+        QTableWidget,
+    )
 
     from trusted_ui.batch_import_dialog import show_batch_import_dialog
 
@@ -137,14 +197,26 @@ def test_batch_import_dialog_renders_offscreen(monkeypatch) -> None:
         table = dialog.findChild(QTableWidget)
         select_all = dialog.findChild(QPushButton, "batchImportSelectAll")
         clear_all = dialog.findChild(QPushButton, "batchImportClearAll")
+        source = dialog.findChild(QLabel, "downloadInboxSource")
+        summary = dialog.findChild(QLabel, "downloadInboxSummary")
+        buttons = dialog.findChild(QDialogButtonBox)
+        confirm = buttons.button(QDialogButtonBox.StandardButton.Ok)
         assert table is not None
+        assert dialog.windowTitle() == "下載收件匣"
+        assert source is not None and source.text() == "手動輸入"
+        assert summary is not None and "有效 1" in summary.text()
+        assert "略過 1" in summary.text()
+        assert confirm.text() == "確認並加入佇列"
+        assert confirm.objectName() == "primary"
         assert select_all is not None and select_all.text() == "全選有效項目"
         assert clear_all is not None and clear_all.text() == "全部取消"
         assert table.item(0, 0).checkState() == Qt.CheckState.Checked
         clear_all.click()
         assert table.item(0, 0).checkState() == Qt.CheckState.Unchecked
+        assert not confirm.isEnabled()
         select_all.click()
         assert table.item(0, 0).checkState() == Qt.CheckState.Checked
+        assert confirm.isEnabled()
         return QDialog.DialogCode.Rejected
 
     monkeypatch.setattr(QDialog, "exec", inspect_dialog)
@@ -154,5 +226,5 @@ def test_batch_import_dialog_renders_offscreen(monkeypatch) -> None:
         ),
         (BatchImportIssue(2, "invalid", "URL is malformed"),),
     )
-    assert show_batch_import_dialog(result) is None
+    assert show_batch_import_dialog(result, source_label="手動輸入") is None
     app.processEvents()

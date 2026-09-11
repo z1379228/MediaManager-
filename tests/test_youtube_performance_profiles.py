@@ -4,11 +4,46 @@ import pytest
 
 from core.downloads.performance_profiles import (
     DEFAULT_YOUTUBE_PERFORMANCE_PROFILE,
+    SystemResourceSnapshot,
     YOUTUBE_PERFORMANCE_OPTION_KEYS,
+    automatic_youtube_performance_profile,
     normalized_youtube_performance_profile,
     resolve_youtube_performance,
     youtube_performance_profiles,
 )
+
+
+@pytest.mark.parametrize(
+    ("processors", "memory_gib", "expected"),
+    (
+        (4, 4, "resource"),
+        (8, 8, "balanced"),
+        (12, 16, "high"),
+        (24, 32, "high"),
+    ),
+)
+def test_automatic_profile_uses_conservative_hardware_tiers(
+    processors: int,
+    memory_gib: int,
+    expected: str,
+) -> None:
+    resources = SystemResourceSnapshot(processors, memory_gib * 1024**3)
+
+    assert automatic_youtube_performance_profile(resources) == expected
+
+
+@pytest.mark.parametrize(
+    "resources",
+    (
+        SystemResourceSnapshot(None, 16 * 1024**3),
+        SystemResourceSnapshot(12, None),
+        SystemResourceSnapshot(None, None),
+    ),
+)
+def test_automatic_profile_stays_balanced_when_capacity_is_incomplete(
+    resources: SystemResourceSnapshot,
+) -> None:
+    assert automatic_youtube_performance_profile(resources) == "balanced"
 
 
 def test_profiles_have_stable_unique_ids_and_bounded_allocations() -> None:
@@ -31,7 +66,7 @@ def test_profiles_have_stable_unique_ids_and_bounded_allocations() -> None:
             assert 1 <= resolved.fragment_concurrency <= 4
             assert (
                 resolved.maximum_fragment_concurrency
-                <= profile.fragment_budget
+                <= resolved.effective_profile.fragment_budget
             )
 
 
@@ -53,11 +88,41 @@ def test_resource_profile_clamps_global_workers() -> None:
     )
 
 
-def test_auto_profile_uses_remaining_fragment_budget() -> None:
-    one_worker = resolve_youtube_performance("auto", 1)
-    four_workers = resolve_youtube_performance("auto", 4)
+def test_high_profile_uses_all_bounded_global_workers_by_default() -> None:
+    resolved = resolve_youtube_performance("high", None)
 
-    assert one_worker.fragment_concurrency == 4
-    assert four_workers.fragment_concurrency == 1
-    assert one_worker.maximum_fragment_concurrency == 4
-    assert four_workers.maximum_fragment_concurrency == 4
+    assert resolved.worker_count == 4
+    assert resolved.fragment_concurrency == 2
+    assert resolved.maximum_fragment_concurrency == 8
+
+
+def test_auto_profile_uses_remaining_fragment_budget() -> None:
+    resources = SystemResourceSnapshot(8, 8 * 1024**3)
+    one_worker = resolve_youtube_performance(
+        "auto", 1, system_resources=resources
+    )
+    four_workers = resolve_youtube_performance(
+        "auto", 4, system_resources=resources
+    )
+
+    assert one_worker.worker_count == 2
+    assert four_workers.worker_count == 2
+    assert one_worker.fragment_concurrency == 2
+    assert four_workers.fragment_concurrency == 2
+    assert one_worker.effective_profile.profile_id == "balanced"
+    assert four_workers.effective_profile.profile_id == "balanced"
+
+
+def test_auto_profile_exposes_effective_provider_contract() -> None:
+    resolved = resolve_youtube_performance(
+        "auto",
+        1,
+        system_resources=SystemResourceSnapshot(16, 32 * 1024**3),
+    )
+
+    options = dict(resolved.provider_options())
+    assert resolved.profile.profile_id == "auto"
+    assert resolved.effective_profile.profile_id == "high"
+    assert resolved.worker_count == 4
+    assert options["_core_performance_profile"] == "high"
+    assert options["_core_fragment_budget"] == "8"

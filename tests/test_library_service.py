@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 from pathlib import Path
+import sqlite3
+from threading import Event
 
 import pytest
 
-from core.library import ArtworkCache, LibraryService
+from core.library import ArtworkCache, DuplicateScanCancelled, LibraryService
 from core.media_library import scan_media
 
 
@@ -35,6 +39,41 @@ def test_scan_is_bounded_and_does_not_follow_symlink(tmp_path: Path) -> None:
     assert "hidden.mp3" not in {item.name for item in scan_media(root)}
 
 
+def test_existing_library_schema_adds_full_hash_cache_column(tmp_path: Path) -> None:
+    database = tmp_path / "data" / "library.sqlite3"
+    database.parent.mkdir(parents=True)
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """
+            CREATE TABLE items (
+                item_id TEXT PRIMARY KEY,
+                path TEXT NOT NULL UNIQUE,
+                media_type TEXT NOT NULL,
+                size INTEGER NOT NULL,
+                modified REAL NOT NULL,
+                available INTEGER NOT NULL DEFAULT 1,
+                fingerprint TEXT,
+                title TEXT NOT NULL DEFAULT '',
+                artist TEXT NOT NULL DEFAULT '',
+                tags_json TEXT NOT NULL DEFAULT '[]',
+                play_count INTEGER NOT NULL DEFAULT 0,
+                last_played REAL,
+                artwork_path TEXT
+            )
+            """
+        )
+
+    service = LibraryService(database, tmp_path / "art")
+    try:
+        columns = {
+            row[1]
+            for row in service._connection.execute("PRAGMA table_info(items)")
+        }
+        assert "content_sha256" in columns
+    finally:
+        service.close()
+
+
 def test_library_preserves_metadata_when_file_becomes_unavailable(
     library: LibraryService, tmp_path: Path
 ) -> None:
@@ -57,7 +96,7 @@ def test_library_preserves_metadata_when_file_becomes_unavailable(
     assert retained.last_played == 123.0
 
 
-def test_duplicate_review_uses_partial_fingerprints(
+def test_duplicate_review_confirms_partial_candidates_with_full_sha256(
     library: LibraryService, tmp_path: Path
 ) -> None:
     root = tmp_path / "music"
@@ -70,7 +109,83 @@ def test_duplicate_review_uses_partial_fingerprints(
     groups = library.duplicate_groups()
     assert len(groups) == 1
     assert {item.name for item in groups[0].items} == {"a.mp3", "b.mp3"}
+    assert groups[0].sha256 == hashlib.sha256(content).hexdigest()
     assert all(path.exists() for path in (root / "a.mp3", root / "b.mp3"))
+
+
+def test_full_hash_rejects_same_size_and_same_edge_false_positive(
+    library: LibraryService,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "music"
+    root.mkdir()
+    edge = b"e" * (1024 * 1024)
+    first = edge + b"a" * (1024 * 1024) + edge
+    second = edge + b"b" * (1024 * 1024) + edge
+    (root / "a.mp3").write_bytes(first)
+    (root / "b.mp3").write_bytes(first)
+    (root / "partial-collision.mp3").write_bytes(second)
+    library.scan(root)
+
+    groups = library.duplicate_groups()
+
+    assert len(groups) == 1
+    assert {item.name for item in groups[0].items} == {"a.mp3", "b.mp3"}
+
+
+def test_duplicate_review_invalidates_hashes_changed_since_last_scan(
+    library: LibraryService,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "music"
+    root.mkdir()
+    content = b"same-data" * 100
+    first = root / "a.mp3"
+    second = root / "b.mp3"
+    first.write_bytes(content)
+    second.write_bytes(content)
+    library.scan(root)
+    assert len(library.duplicate_groups()) == 1
+
+    # Keep the indexed size but change the content and timestamp without asking
+    # the user to run another library scan first.
+    second.write_bytes(b"other-dat" * 100)
+    original = library.search()[1]
+    second.touch()
+    if second.stat().st_mtime == original.modified:
+        second.touch()
+        stat = second.stat()
+        second_time = stat.st_mtime + 1.0
+        os.utime(second, (second_time, second_time))
+
+    assert library.duplicate_groups() == ()
+    refreshed = next(item for item in library.search() if item.path == second)
+    assert refreshed.modified == second.stat().st_mtime
+    assert refreshed.fingerprint is not None
+    assert refreshed.content_sha256 is None
+
+
+def test_duplicate_confirmation_is_cancellable(
+    library: LibraryService,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "music"
+    root.mkdir()
+    content = b"same" * (1024 * 1024)
+    (root / "a.mp3").write_bytes(content)
+    (root / "b.mp3").write_bytes(content)
+    library.scan(root)
+    cancel = Event()
+    progress: list[tuple[int, int]] = []
+
+    def observe(completed: int, total: int) -> None:
+        progress.append((completed, total))
+        cancel.set()
+
+    with pytest.raises(DuplicateScanCancelled):
+        library.duplicate_groups(cancel_event=cancel, progress=observe)
+
+    assert progress
 
 
 def test_static_and_smart_playlists_round_trip(

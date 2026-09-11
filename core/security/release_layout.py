@@ -15,6 +15,8 @@ SOURCE_RELEASE_FILES = (
     "mod/builtin/automation/policy.json",
     "mod/builtin/media-convert/feature.json",
     "mod/builtin/media-convert/presets.json",
+    "mod/builtin/musicbrainz-metadata/provider.py",
+    "mod/builtin/musicbrainz-metadata/provider.json",
     "mod/builtin/speech-to-text/adapter.json",
     "mod/builtin/speech-to-text/feature.json",
     "mod/builtin/bilibili/danmaku_ass.py",

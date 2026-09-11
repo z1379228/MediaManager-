@@ -77,6 +77,11 @@ BUILTIN_MOD_CATALOG = (
         "網站搜尋 → 搜尋 MOD", True, parent_provider_id="bilibili",
     ),
     BuiltinModDescriptor(
+        "musicbrainz-metadata", "MusicBrainz Metadata", "discovery",
+        "手動查詢公開錄音中繼資料並預覽套用",
+        "本機媒體庫 → 管理", True,
+    ),
+    BuiltinModDescriptor(
         "bilibili-danmaku", "Bilibili Danmaku", "feature",
         "依需求保留 XML、轉換 ASS 或封裝 MKV",
         "Bilibili 下載工作區", True,

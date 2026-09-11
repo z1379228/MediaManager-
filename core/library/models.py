@@ -15,6 +15,7 @@ class LibraryItem:
     modified: float
     available: bool
     fingerprint: str | None = None
+    content_sha256: str | None = None
     title: str = ""
     artist: str = ""
     tags: tuple[str, ...] = ()
@@ -33,9 +34,15 @@ class LibraryItem:
 
 @dataclass(frozen=True, slots=True)
 class DuplicateGroup:
-    fingerprint: str
+    sha256: str
     size: int
     items: tuple[LibraryItem, ...]
+
+    @property
+    def fingerprint(self) -> str:
+        """Backward-compatible name; confirmed groups now use the full hash."""
+
+        return self.sha256
 
 
 @dataclass(frozen=True, slots=True)

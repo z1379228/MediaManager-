@@ -182,3 +182,31 @@ def test_optional_workspace_can_defer_panel_until_selected() -> None:
     enabled["one"] = False
     manager.sync({"provider_id": "one"})
     assert panel.shutdown_calls == 1
+
+
+def test_optional_workspace_assigns_stable_id_when_widget_supports_properties(
+) -> None:
+    from PySide6.QtWidgets import QApplication, QTabWidget, QWidget
+
+    app = QApplication.instance() or QApplication([])
+    tabs = QTabWidget()
+    manager = OptionalWorkspaceManager(
+        tabs,
+        (
+            OptionalWorkspaceSpec(
+                "media-convert",
+                lambda: True,
+                lambda: True,
+                QWidget,
+                lambda _panel: "格式工廠",
+                "本機媒體工具",
+            ),
+        ),
+    )
+
+    manager.sync()
+
+    assert manager.panels["media-convert"].property("workspaceId") == "media-convert"
+    manager.close_all()
+    tabs.deleteLater()
+    app.processEvents()

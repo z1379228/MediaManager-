@@ -7,6 +7,21 @@
       "estimate_ratio": 1.02,
       "args": ["-map", "0", "-c", "copy"]
     },
+    "stream-copy-matroska": {
+      "strategy": "選取音訊／字幕軌串流複製（不重新編碼）",
+      "extensions": [".mka", ".mks"],
+      "estimate_ratio": 0.2,
+      "selectable_stream_types": ["audio", "subtitle"],
+      "args": [
+        "-map", "0:@STREAM_INDEX@",
+        "-c", "copy",
+        "-f", "matroska"
+      ],
+      "output_contract": {
+        "format_names": ["matroska"],
+        "preserve_selected_packets": true
+      }
+    },
     "split-copy": {
       "strategy": "依時間切割並優先串流複製",
       "extensions": [".mkv", ".mp4", ".mov", ".webm", ".m4a", ".mp3", ".flac"],
@@ -31,6 +46,63 @@
       "extensions": [".mp4", ".mkv"],
       "estimate_ratio": 0.45,
       "args": ["-map", "0:v:0", "-map", "0:a?", "-c:v", "libx265", "-preset", "medium", "-crf", "28", "-c:a", "aac", "-b:a", "160k"]
+    },
+    "video-h264-target-size": {
+      "strategy": "H.264 兩階段目標容量轉檔（3% 容器餘裕／第一音軌 AAC 192 kbps）",
+      "extensions": [".mp4", ".mkv"],
+      "estimate_ratio": 1.0,
+      "target_size_audio_bitrate_kbps": 192,
+      "first_pass_args": ["-map", "0:v:0", "-c:v", "libx264", "-preset", "slow", "-b:v", "@VIDEO_BITRATE@", "-pass", "1", "-passlogfile", "@PASSLOG@", "-an", "-f", "null", "@NULL_OUTPUT@"],
+      "args": ["-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "slow", "-b:v", "@VIDEO_BITRATE@", "-pass", "2", "-passlogfile", "@PASSLOG@", "-c:a", "aac", "-b:a", "192k"]
+    },
+    "video-h264-qsv": {
+      "strategy": "H.264 Intel Quick Sync 硬體編碼（無自動回退）",
+      "extensions": [".mp4", ".mkv"],
+      "estimate_ratio": 0.65,
+      "required_encoder": "h264_qsv",
+      "args": ["-map", "0:v:0", "-map", "0:a?", "-c:v", "h264_qsv", "-preset", "medium", "-global_quality", "23", "-c:a", "aac", "-b:a", "192k"]
+    },
+    "video-hevc-qsv": {
+      "strategy": "H.265 Intel Quick Sync 硬體編碼（無自動回退）",
+      "extensions": [".mp4", ".mkv"],
+      "estimate_ratio": 0.48,
+      "required_encoder": "hevc_qsv",
+      "args": ["-map", "0:v:0", "-map", "0:a?", "-c:v", "hevc_qsv", "-preset", "medium", "-global_quality", "27", "-c:a", "aac", "-b:a", "192k"]
+    },
+    "video-h264-amf": {
+      "strategy": "H.264 AMD AMF 硬體編碼（無自動回退）",
+      "extensions": [".mp4", ".mkv"],
+      "estimate_ratio": 0.65,
+      "required_encoder": "h264_amf",
+      "args": ["-map", "0:v:0", "-map", "0:a?", "-c:v", "h264_amf", "-quality", "quality", "-rc", "qvbr", "-qvbr_quality_level", "23", "-c:a", "aac", "-b:a", "192k"]
+    },
+    "video-hevc-amf": {
+      "strategy": "H.265 AMD AMF 硬體編碼（無自動回退）",
+      "extensions": [".mp4", ".mkv"],
+      "estimate_ratio": 0.48,
+      "required_encoder": "hevc_amf",
+      "args": ["-map", "0:v:0", "-map", "0:a?", "-c:v", "hevc_amf", "-quality", "quality", "-rc", "qvbr", "-qvbr_quality_level", "27", "-c:a", "aac", "-b:a", "192k"]
+    },
+    "video-av1-nvenc": {
+      "strategy": "AV1 NVIDIA NVENC 高品質硬體編碼（無自動回退）",
+      "extensions": [".mp4", ".mkv"],
+      "estimate_ratio": 0.38,
+      "required_encoder": "av1_nvenc",
+      "args": ["-map", "0:v:0", "-map", "0:a?", "-c:v", "av1_nvenc", "-preset", "p6", "-tune", "hq", "-rc", "vbr", "-cq", "30", "-b:v", "0", "-c:a", "aac", "-b:a", "192k"]
+    },
+    "video-av1-qsv": {
+      "strategy": "AV1 Intel Quick Sync 硬體編碼（無自動回退）",
+      "extensions": [".mp4", ".mkv"],
+      "estimate_ratio": 0.38,
+      "required_encoder": "av1_qsv",
+      "args": ["-map", "0:v:0", "-map", "0:a?", "-c:v", "av1_qsv", "-preset", "slow", "-global_quality", "30", "-c:a", "aac", "-b:a", "192k"]
+    },
+    "video-av1-amf": {
+      "strategy": "AV1 AMD AMF 高品質硬體編碼（無自動回退）",
+      "extensions": [".mp4", ".mkv"],
+      "estimate_ratio": 0.38,
+      "required_encoder": "av1_amf",
+      "args": ["-map", "0:v:0", "-map", "0:a?", "-c:v", "av1_amf", "-quality", "quality", "-rc", "qvbr", "-qvbr_quality_level", "30", "-c:a", "aac", "-b:a", "192k"]
     },
     "hevc10-nvenc-opus-copy": {
       "strategy": "H.265 Main10 NVENC p7／VBR 300 kbps／Opus Passthru／MKV（保留來源 FPS 與解析度、無濾鏡）",
@@ -103,6 +175,17 @@
       "estimate_ratio": 0.55,
       "args": ["-vn", "-c:a", "flac"]
     },
+    "audio-loudnorm-flac": {
+      "strategy": "EBU R128 音量標準化／FLAC 品質優先（會處理音訊樣本）",
+      "extensions": [".flac"],
+      "estimate_ratio": 0.55,
+      "required_encoder": "flac",
+      "required_filter": "loudnorm",
+      "output_contract": {
+        "audio_codec": "flac"
+      },
+      "args": ["-vn", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:a", "flac"]
+    },
     "audio-aac": {
       "strategy": "AAC 192 kbps（M4A）",
       "extensions": [".m4a"],
@@ -114,6 +197,17 @@
       "extensions": [".opus"],
       "estimate_ratio": 0.1,
       "args": ["-vn", "-c:a", "libopus", "-b:a", "128k"]
+    },
+    "audio-loudnorm-opus": {
+      "strategy": "EBU R128 音量標準化／Opus 160 kbps 容量優先（會重新編碼）",
+      "extensions": [".opus"],
+      "estimate_ratio": 0.12,
+      "required_encoder": "libopus",
+      "required_filter": "loudnorm",
+      "output_contract": {
+        "audio_codec": "opus"
+      },
+      "args": ["-vn", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:a", "libopus", "-b:a", "160k"]
     },
     "audio-wav": {
       "strategy": "WAV PCM 16-bit",

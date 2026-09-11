@@ -15,6 +15,7 @@ import time
 import uuid
 
 from core.transcription.models import (
+    TranscriptionCapabilities,
     TranscriptionPlan,
     TranscriptionRequest,
     TranscriptionState,
@@ -26,6 +27,12 @@ MODEL_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 MAX_MODEL_BYTES = 8 * 1024**3
 FORMATS = frozenset({"txt", "srt", "vtt"})
+MODEL_KINDS = frozenset({"speech", "vad"})
+MAX_ADAPTER_HELP_BYTES = 128 * 1024
+ADAPTER_HELP_TIMEOUT_SECONDS = 8.0
+SUBPROCESS_CREATION_FLAGS = (
+    getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +41,7 @@ class SpeechModel:
     path: Path
     sha256: str
     size: int
+    kind: str = "speech"
 
 
 class SpeechModelManager:
@@ -43,46 +51,70 @@ class SpeechModelManager:
         self.manifest = self.root / "models.json"
         self._lock = RLock()
 
-    def import_model(self, source: Path, model_id: str, expected_sha256: str) -> SpeechModel:
+    def import_model(
+        self,
+        source: Path,
+        model_id: str,
+        expected_sha256: str,
+        *,
+        kind: str = "speech",
+        cancel_event: Event | None = None,
+    ) -> SpeechModel:
         model_id = model_id.strip().casefold()
         digest = expected_sha256.strip().casefold()
+        kind = kind.strip().casefold()
         source = source.expanduser().resolve()
         if not MODEL_ID.fullmatch(model_id):
             raise ValueError("model id must use lowercase letters, numbers, dot, dash or underscore")
         if not SHA256.fullmatch(digest):
             raise ValueError("model SHA-256 must contain 64 hexadecimal characters")
+        if kind not in MODEL_KINDS:
+            raise ValueError("model kind must be speech or vad")
         if source.is_symlink() or not source.is_file():
             raise ValueError("model source must be a regular file")
         size = source.stat().st_size
         if not 1 <= size <= MAX_MODEL_BYTES:
             raise ValueError("model file size is outside the allowed range")
-        actual = self._hash(source)
+        actual = self._hash(source, cancel_event=cancel_event)
         if actual != digest:
             raise ValueError("model SHA-256 mismatch")
         target = self.root / f"{model_id}.bin"
         with self._lock:
             if target.exists():
                 existing = self.get(model_id)
-                if existing.sha256 == digest:
+                if existing.sha256 == digest and existing.kind == kind:
                     return existing
                 raise FileExistsError(target)
             temporary = self.root / f".{model_id}.{uuid.uuid4().hex}.tmp"
             try:
-                shutil.copyfile(source, temporary)
-                if self._hash(temporary) != digest:
+                copied_digest = self._copy_with_hash(
+                    source,
+                    temporary,
+                    cancel_event=cancel_event,
+                )
+                if copied_digest != digest:
                     raise ValueError("copied model SHA-256 mismatch")
+                self._ensure_not_cancelled(cancel_event)
                 os.replace(temporary, target)
                 document = self._document()
-                document[model_id] = {"sha256": digest, "size": size}
+                document[model_id] = {
+                    "sha256": digest,
+                    "size": size,
+                    "kind": kind,
+                }
                 self._write(document)
             except Exception:
                 temporary.unlink(missing_ok=True)
                 if target.exists() and model_id not in self._document():
                     target.unlink(missing_ok=True)
                 raise
-        return SpeechModel(model_id, target, digest, size)
+        return SpeechModel(model_id, target, digest, size, kind)
 
-    def list_models(self) -> tuple[SpeechModel, ...]:
+    def list_models(self, kind: str | None = None) -> tuple[SpeechModel, ...]:
+        if kind is not None:
+            kind = kind.strip().casefold()
+            if kind not in MODEL_KINDS:
+                raise ValueError("model kind must be speech or vad")
         with self._lock:
             document = self._document()
         models = []
@@ -91,11 +123,19 @@ class SpeechModelManager:
                 model = self.get(model_id, verify_hash=False)
             except (KeyError, OSError, ValueError):
                 continue
-            if model.sha256 == metadata.get("sha256"):
+            if model.sha256 == metadata.get("sha256") and (
+                kind is None or model.kind == kind
+            ):
                 models.append(model)
         return tuple(models)
 
-    def get(self, model_id: str, *, verify_hash: bool = True) -> SpeechModel:
+    def get(
+        self,
+        model_id: str,
+        *,
+        verify_hash: bool = True,
+        kind: str | None = None,
+    ) -> SpeechModel:
         document = self._document()
         metadata = document.get(model_id)
         path = self.root / f"{model_id}.bin"
@@ -103,11 +143,16 @@ class SpeechModelManager:
             raise KeyError(model_id)
         digest = str(metadata.get("sha256", ""))
         size = int(metadata.get("size", -1))
+        model_kind = str(metadata.get("kind", "speech")).strip().casefold()
         if not SHA256.fullmatch(digest) or size != path.stat().st_size:
             raise ValueError("model metadata is invalid")
+        if model_kind not in MODEL_KINDS:
+            raise ValueError("model metadata kind is invalid")
+        if kind is not None and model_kind != kind.strip().casefold():
+            raise ValueError("model kind does not match the requested use")
         if verify_hash and self._hash(path) != digest:
             raise ValueError("installed model SHA-256 mismatch")
-        return SpeechModel(model_id, path, digest, size)
+        return SpeechModel(model_id, path, digest, size, model_kind)
 
     def remove(self, model_id: str) -> None:
         with self._lock:
@@ -140,12 +185,33 @@ class SpeechModelManager:
         temporary.replace(self.manifest)
 
     @staticmethod
-    def _hash(path: Path) -> str:
+    def _hash(path: Path, *, cancel_event: Event | None = None) -> str:
         digest = hashlib.sha256()
         with path.open("rb") as stream:
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                SpeechModelManager._ensure_not_cancelled(cancel_event)
                 digest.update(chunk)
         return digest.hexdigest()
+
+    @staticmethod
+    def _copy_with_hash(
+        source: Path,
+        target: Path,
+        *,
+        cancel_event: Event | None = None,
+    ) -> str:
+        digest = hashlib.sha256()
+        with source.open("rb") as input_stream, target.open("xb") as output_stream:
+            for chunk in iter(lambda: input_stream.read(1024 * 1024), b""):
+                SpeechModelManager._ensure_not_cancelled(cancel_event)
+                output_stream.write(chunk)
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _ensure_not_cancelled(cancel_event: Event | None) -> None:
+        if cancel_event is not None and cancel_event.is_set():
+            raise InterruptedError("model import cancelled")
 
 
 class TranscriptionService:
@@ -165,6 +231,7 @@ class TranscriptionService:
         self._queue: list[str] = []
         self._worker: Thread | None = None
         self._process: subprocess.Popen[bytes] | None = None
+        self._capabilities: TranscriptionCapabilities | None = None
 
     @property
     def is_enabled(self) -> bool:
@@ -172,7 +239,30 @@ class TranscriptionService:
 
     @property
     def ready(self) -> bool:
-        return self.adapter is not None and self.adapter.is_file() and bool(self.models.list_models())
+        return (
+            self.adapter is not None
+            and self.adapter.is_file()
+            and bool(self.models.list_models("speech"))
+        )
+
+    def capabilities(
+        self,
+        *,
+        refresh: bool = False,
+    ) -> TranscriptionCapabilities:
+        with self._lock:
+            cached = self._capabilities
+        if cached is not None and not refresh:
+            return cached
+        text, diagnostic = self._probe_adapter_help()
+        supports_vad = bool(
+            re.search(r"(?<![\w-])--vad(?![\w-])", text)
+            and re.search(r"(?<![\w-])--vad-model(?![\w-])", text)
+        )
+        result = TranscriptionCapabilities(supports_vad, diagnostic)
+        with self._lock:
+            self._capabilities = result
+        return result
 
     def set_enabled(self, enabled: bool) -> int:
         with self._lock:
@@ -192,7 +282,14 @@ class TranscriptionService:
         language = request.language.strip().casefold()
         if language != "auto" and (not language.isalpha() or len(language) > 12):
             raise ValueError("transcription language is invalid")
-        model = self.models.get(request.model_id)
+        model = self.models.get(request.model_id, kind="speech")
+        vad_model = None
+        vad_model_id = request.vad_model_id
+        if vad_model_id is not None:
+            if not isinstance(vad_model_id, str) or not vad_model_id.strip():
+                raise ValueError("VAD model id is invalid")
+            vad_model_id = vad_model_id.strip().casefold()
+            vad_model = self.models.get(vad_model_id, kind="vad")
         outputs = tuple(output_dir / f"{source.stem}.{value}" for value in formats)
         if any(path.exists() for path in outputs):
             raise FileExistsError("a transcription output already exists")
@@ -202,12 +299,16 @@ class TranscriptionService:
             output_dir=output_dir,
             formats=formats,
             language=language,
+            vad_model_id=vad_model_id,
         )
         return TranscriptionPlan(
             normalized,
             outputs,
             model.size,
-            max(512 * 1024**2, model.size * 2),
+            max(
+                512 * 1024**2,
+                model.size * 2 + (vad_model.size if vad_model is not None else 0),
+            ),
         )
 
     def submit(self, request: TranscriptionRequest) -> str:
@@ -216,6 +317,7 @@ class TranscriptionService:
         if self.adapter is None or not self.adapter.is_file():
             raise RuntimeError("whisper.cpp whisper-cli is not installed")
         plan = self.preview(request)
+        self._validate_vad_capability(plan)
         task_id = uuid.uuid4().hex
         with self._lock:
             task = TranscriptionTask(task_id, plan.request)
@@ -271,7 +373,13 @@ class TranscriptionService:
                 task.outputs = tuple(str(path) for path in outputs)
 
     def _execute(self, task: TranscriptionTask, plan: TranscriptionPlan) -> tuple[Path, ...]:
-        model = self.models.get(plan.request.model_id)
+        model = self.models.get(plan.request.model_id, kind="speech")
+        vad_model = (
+            self.models.get(plan.request.vad_model_id, kind="vad")
+            if plan.request.vad_model_id is not None
+            else None
+        )
+        self._validate_vad_capability(plan)
         job_root = self.temp_root / task.task_id
         prefix = job_root / plan.request.source.stem
         job_root.mkdir(parents=True, exist_ok=False)
@@ -282,6 +390,8 @@ class TranscriptionService:
             ]
             if plan.request.language != "auto":
                 command.extend(("-l", plan.request.language))
+            if vad_model is not None:
+                command.extend(("--vad", "--vad-model", str(vad_model.path)))
             command.extend(f"-o{value}" for value in plan.request.formats)
             return_code = self._run(tuple(command), task.cancel_event)
             if task.cancel_event.is_set():
@@ -305,7 +415,13 @@ class TranscriptionService:
             shutil.rmtree(job_root, ignore_errors=True)
 
     def _run(self, command: tuple[str, ...], cancel_event: Event) -> int:
-        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=SUBPROCESS_CREATION_FLAGS,
+        )
         with self._lock:
             self._process = process
         try:
@@ -322,3 +438,55 @@ class TranscriptionService:
             with self._lock:
                 if self._process is process:
                     self._process = None
+
+    def _validate_vad_capability(self, plan: TranscriptionPlan) -> None:
+        if (
+            plan.request.vad_model_id is not None
+            and not self.capabilities().supports_vad
+        ):
+            raise RuntimeError(
+                "whisper-cli VAD support is unavailable; disable VAD or use a "
+                "compatible official build"
+            )
+
+    def _probe_adapter_help(self) -> tuple[str, str]:
+        if self.adapter is None or not self.adapter.is_file():
+            return "", "whisper-cli is unavailable"
+        try:
+            process = subprocess.Popen(
+                [str(self.adapter), "--help"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                creationflags=SUBPROCESS_CREATION_FLAGS,
+            )
+        except OSError as error:
+            return "", str(error)[:300]
+        output = bytearray()
+        truncated = [False]
+
+        def drain() -> None:
+            assert process.stdout is not None
+            while True:
+                chunk = process.stdout.read(4096)
+                if not chunk:
+                    return
+                remaining = max(0, MAX_ADAPTER_HELP_BYTES - len(output))
+                output.extend(chunk[:remaining])
+                if len(chunk) > remaining:
+                    truncated[0] = True
+
+        reader = Thread(target=drain, name="whisper-help", daemon=True)
+        reader.start()
+        try:
+            process.wait(timeout=ADAPTER_HELP_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            reader.join(timeout=1)
+            return "", "whisper-cli capability check timed out"
+        reader.join(timeout=1)
+        text = output.decode("utf-8", errors="replace")
+        if truncated[0]:
+            return text, "whisper-cli help output exceeded the size limit"
+        return text, ""

@@ -8,7 +8,7 @@ from core.builtin_mod_catalog import (
 
 
 def test_builtin_mod_catalog_is_complete_unique_and_typed() -> None:
-    assert len(BUILTIN_MOD_CATALOG) == 29
+    assert len(BUILTIN_MOD_CATALOG) == 30
     assert len(BUILTIN_MOD_IDS) == len(BUILTIN_MOD_CATALOG)
     assert not {provider_id for provider_id in BUILTIN_MOD_IDS if provider_id.startswith("ani-gamer")}
     assert builtin_mod_ids("download") == {
@@ -19,7 +19,7 @@ def test_builtin_mod_catalog_is_complete_unique_and_typed() -> None:
         "mega",
         "direct-http",
     }
-    assert len(builtin_mod_ids("discovery")) == 7
+    assert len(builtin_mod_ids("discovery")) == 8
     assert len(builtin_mod_ids("feature")) == 16
     assert all(item.purpose and item.control_location for item in BUILTIN_MOD_CATALOG)
 
@@ -35,6 +35,7 @@ def test_catalog_parent_and_default_state_match_runtime_contract() -> None:
     assert BUILTIN_MOD_PARENT["p2p-transfer"] == "gopeed-transfer"
     assert builtin_default_enabled("youtube")
     assert builtin_default_enabled("youtube-search")
+    assert builtin_default_enabled("musicbrainz-metadata")
     assert builtin_default_enabled("facebook")
     assert builtin_default_enabled("mega")
     assert builtin_default_enabled("direct-http")

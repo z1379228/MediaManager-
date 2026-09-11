@@ -41,6 +41,7 @@ def test_idle_controller_stops_only_active_repeating_timers(monkeypatch) -> None
     try:
         assert controller.enter(root) == 2
         assert controller.idle
+        assert controller.suspended_timer_count == 2
         assert root.property(BACKGROUND_IDLE_PROPERTY) is True
         assert is_background_idle(root)
         assert not repeating.isActive()
@@ -51,6 +52,7 @@ def test_idle_controller_stops_only_active_repeating_timers(monkeypatch) -> None
 
         assert controller.leave() == 2
         assert not controller.idle
+        assert controller.suspended_timer_count == 0
         assert root.property(BACKGROUND_IDLE_PROPERTY) is False
         assert not is_background_idle(root)
         assert repeating.isActive()

@@ -503,6 +503,28 @@ def test_search_capability_is_loaded_from_provider_manifest(tmp_path: Path) -> N
     assert provider.search_capability.max_page_size == 15
 
 
+def test_manual_search_visibility_requires_search_capability(tmp_path: Path) -> None:
+    root = make_provider(tmp_path, "")
+    manifest_path = root / "provider.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["search_visibility"] = "manual"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ProviderProtocolError, match="requires a search capability"):
+        SubprocessDownloadProvider(root, application_root=tmp_path)
+
+
+def test_search_visibility_rejects_unknown_values(tmp_path: Path) -> None:
+    root = make_provider(tmp_path, "")
+    manifest_path = root / "provider.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["search_visibility"] = "background"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ProviderProtocolError, match="visibility"):
+        SubprocessDownloadProvider(root, application_root=tmp_path)
+
+
 def test_search_capability_provider_must_match_manifest(tmp_path: Path) -> None:
     root = make_provider(tmp_path, "")
     manifest_path = root / "provider.json"

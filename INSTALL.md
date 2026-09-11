@@ -82,6 +82,20 @@ py -3.14 -m venv .venv
 `--portable` 會把資料放在執行根目錄旁的 `UserData/`。一般開發執行使用
 Repository 既有資料路徑；刪除虛擬環境不等於刪除使用者資料。
 
+### 瀏覽器主動交付網址
+
+瀏覽器擴充功能、捷徑或其他使用者主動操作可啟動 MediaManager 並帶入一個
+已支援的公開媒體頁；程式只開啟對應工作區，不會自動下載：
+
+```powershell
+.\.venv\Scripts\python.exe .\main.py --browser-handoff "https://www.youtube.com/watch?v=example"
+```
+
+Windows 自訂通訊協定整合可傳入百分比編碼的
+`mediamanager://add?url=<HTTPS URL>&title=<optional title>`。目前來源只提供安全的
+解析與 UI 交付契約，不會在安裝或啟動時自動修改 Registry；註冊工具必須另由
+使用者明確操作。網址含帳密、未知網站、非 HTTPS、重複欄位或過長內容會被拒絕。
+
 ## 初次檢查
 
 ```powershell

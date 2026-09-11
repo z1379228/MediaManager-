@@ -1,0 +1,17 @@
+{
+  "provider_id": "musicbrainz-metadata",
+  "display_name": "MusicBrainz Metadata",
+  "entry_point": "provider.py",
+  "url_hosts": ["musicbrainz.org"],
+  "permissions": ["network.musicbrainz"],
+  "search_visibility": "manual",
+  "search_capability": {
+    "provider_id": "musicbrainz-metadata",
+    "sites": ["musicbrainz"],
+    "content_types": ["music"],
+    "max_page_size": 10,
+    "pagination": "none",
+    "audio_preview": false,
+    "video_preview": false
+  }
+}

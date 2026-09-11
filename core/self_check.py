@@ -587,6 +587,48 @@ def _download_queue_item(context: object) -> SelfCheckItem:
     )
 
 
+def _conversion_auxiliary_item(context: object) -> SelfCheckItem:
+    """Describe conversion preview readiness without launching local tools."""
+
+    service = getattr(context, "conversion", None)
+    if service is None:
+        return _item(
+            "conversion.manual_tools",
+            "warning",
+            "格式工廠手動檢查工具未載入",
+            "輸出試轉與快速健康檢查必須由使用者在格式工廠中手動啟動。",
+            "dependencies.review",
+        )
+    required = (
+        "create_output_sample",
+        "discard_output_sample",
+        "check_source_health",
+    )
+    missing = tuple(
+        name
+        for name in required
+        if not callable(getattr(service, name, None))
+    )
+    if missing:
+        return _item(
+            "conversion.manual_tools",
+            "block",
+            "格式工廠手動檢查介面不完整",
+            f"缺少：{', '.join(missing)}",
+            "conversion.manual_tools.repair",
+        )
+    available = bool(getattr(service, "available", False))
+    return _item(
+        "conversion.manual_tools",
+        "pass" if available else "warning",
+        "格式工廠手動檢查工具已就緒"
+        if available
+        else "格式工廠手動檢查工具等待 FFmpeg",
+        "只回報暖狀態；自檢不會試轉、解碼或建立背景程序。",
+        "dependencies.refresh" if not available else "",
+    )
+
+
 def load_provider_smoke_report(path: Path) -> SelfCheckItem:
     """Load one bounded manual smoke report without contacting any provider."""
 
@@ -716,6 +758,7 @@ def run_self_check(
     items.append(_site_quality_item(Path(context.paths.application)))
     items.append(_transport_boundary_item())
     items.append(_download_queue_item(context))
+    items.append(_conversion_auxiliary_item(context))
     items.append(
         smoke_item
         or _item(

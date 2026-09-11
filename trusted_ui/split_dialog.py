@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from contracts.split_plan_v1 import SplitPlanV1
+from trusted_ui.table_refresh import limit_resize_contents_work
 
 
 _UNSAFE_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
@@ -149,6 +150,7 @@ def show_split_dialog(
     table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
     table.verticalHeader().hide()
     header = table.horizontalHeader()
+    limit_resize_contents_work(header)
     header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
     header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
     header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)

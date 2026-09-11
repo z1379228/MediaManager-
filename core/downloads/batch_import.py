@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Callable
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
@@ -119,6 +120,56 @@ def _parse_txt(text: str) -> BatchImportResult:
     return BatchImportResult(tuple(entries), tuple(issues))
 
 
+def parse_download_intake_text(text: str) -> BatchImportResult:
+    """Parse bounded pasted URLs for the trusted download inbox."""
+
+    if not isinstance(text, str):
+        raise ValueError("download inbox text is invalid")
+    if len(text.encode("utf-8")) > MAX_BATCH_IMPORT_BYTES:
+        raise ValueError("download inbox text exceeds the 2 MiB limit")
+    return _parse_txt(text)
+
+
+def prepare_download_intake(
+    result: BatchImportResult,
+    *,
+    accepts_url: Callable[[str], bool],
+    provider_for: Callable[[str], object],
+    site_label: str,
+) -> BatchImportResult:
+    """Apply one workspace and enabled-provider policy without network I/O."""
+
+    label = " ".join(site_label.split())[:80]
+    if not label or any(ord(character) < 32 for character in label):
+        raise ValueError("download inbox site label is invalid")
+    supported: list[BatchImportEntry] = []
+    issues = list(result.issues)
+    for entry in result.entries:
+        if not accepts_url(entry.url):
+            issues.append(
+                BatchImportIssue(
+                    entry.row_number,
+                    entry.url,
+                    f"此工作區只接受 {label} 網址",
+                )
+            )
+            continue
+        try:
+            provider_for(entry.url)
+        except RuntimeError as error:
+            reason = " ".join(str(error).split())[:300]
+            issues.append(
+                BatchImportIssue(
+                    entry.row_number,
+                    entry.url,
+                    reason or "目前沒有已啟用的下載 MOD 支援此網址",
+                )
+            )
+        else:
+            supported.append(entry)
+    return BatchImportResult(tuple(supported), tuple(issues))
+
+
 def _parse_csv(text: str) -> BatchImportResult:
     try:
         reader = csv.reader(StringIO(text), strict=True)
@@ -212,7 +263,11 @@ def parse_batch_import(path: Path) -> BatchImportResult:
         text = payload.decode("utf-8-sig")
     except UnicodeDecodeError as error:
         raise ValueError("batch import file must use UTF-8") from error
-    return _parse_txt(text) if candidate.suffix.casefold() == ".txt" else _parse_csv(text)
+    return (
+        parse_download_intake_text(text)
+        if candidate.suffix.casefold() == ".txt"
+        else _parse_csv(text)
+    )
 
 
 def build_import_requests(

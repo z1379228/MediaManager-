@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 
 from core.downloads.direct_http_policy import direct_http_url_candidate
+from core.drop_intake import DropIntake
+from trusted_ui.direct_http_workspace import merge_direct_http_drop
 
 
 def load_provider():
@@ -51,6 +53,7 @@ class Response:
         self.url = url
         self.body = body
         self.offset = 0
+        self.read_sizes: list[int] = []
         self.status = status
         self.headers = Headers(length=len(body), filename="release.zip")
 
@@ -64,6 +67,7 @@ class Response:
         return self.url
 
     def read(self, size: int):
+        self.read_sizes.append(size)
         chunk = self.body[self.offset : self.offset + size]
         self.offset += len(chunk)
         return chunk
@@ -86,6 +90,37 @@ def test_direct_http_candidate_is_explicit_and_never_takes_site_mod_urls() -> No
         "https://cdn.threads.com/media/video.mp4",
     ):
         assert not direct_http_url_candidate(value)
+
+
+def test_direct_http_drop_merges_only_explicit_supported_urls() -> None:
+    result = merge_direct_http_drop(
+        ("https://downloads.example.org/one.zip",),
+        DropIntake(
+            urls=(
+                "https://downloads.example.org/one.zip",
+                "https://downloads.example.org/two.mp4",
+                "https://example.org/page",
+            )
+        ),
+    )
+
+    assert result == (
+        "https://downloads.example.org/one.zip",
+        "https://downloads.example.org/two.mp4",
+    )
+
+
+def test_direct_http_drop_rejects_local_files_and_preserves_current_input(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"media")
+
+    with pytest.raises(ValueError, match="只接受"):
+        merge_direct_http_drop(
+            ("https://downloads.example.org/one.zip",),
+            DropIntake(media_files=(source.resolve(),)),
+        )
 
 
 def test_direct_http_analyze_reports_bounded_file_metadata(monkeypatch) -> None:
@@ -135,6 +170,34 @@ def test_direct_http_download_streams_atomically_and_checks_sha256(
 
     assert Path(result).read_bytes() == body
     assert not (tmp_path / ".release.zip.part").exists()
+
+
+def test_direct_http_download_uses_one_bounded_stream_chunk_size(
+    tmp_path: Path, monkeypatch
+) -> None:
+    provider = load_provider()
+    monkeypatch.setattr(provider, "_global_host", lambda _host: None)
+    monkeypatch.setattr(provider, "_STREAM_CHUNK_BYTES", 4)
+    response = Response(
+        "https://downloads.example.org/release.zip",
+        b"0123456789",
+    )
+
+    class Opener:
+        def open(self, _request, timeout):
+            assert timeout == 30
+            return response
+
+    monkeypatch.setattr(provider, "build_opener", lambda *_args: Opener())
+
+    provider.download(
+        {
+            "url": "https://downloads.example.org/release.zip",
+            "output_dir": str(tmp_path),
+        }
+    )
+
+    assert response.read_sizes == [4, 4, 4, 4]
 
 
 def test_direct_http_download_resumes_only_on_partial_response(

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import replace
 import hashlib
 import json
 import os
@@ -21,6 +22,10 @@ MAX_PLAYLIST_BYTES = 2 * 1024 * 1024
 MAX_PLAYLIST_ENTRIES = 5_000
 FINGERPRINT_CHUNK = 1024 * 1024
 ARTWORK_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+
+
+class DuplicateScanCancelled(RuntimeError):
+    """Raised when a caller cancels full duplicate verification."""
 
 
 def _resolved(path: Path) -> Path:
@@ -123,6 +128,7 @@ class LibraryService:
                     modified REAL NOT NULL,
                     available INTEGER NOT NULL DEFAULT 1,
                     fingerprint TEXT,
+                    content_sha256 TEXT,
                     title TEXT NOT NULL DEFAULT '',
                     artist TEXT NOT NULL DEFAULT '',
                     tags_json TEXT NOT NULL DEFAULT '[]',
@@ -150,6 +156,18 @@ class LibraryService:
                     PRIMARY KEY (playlist_id, position)
                 );
                 """
+            )
+            columns = {
+                row[1]
+                for row in self._connection.execute("PRAGMA table_info(items)")
+            }
+            if "content_sha256" not in columns:
+                self._connection.execute(
+                    "ALTER TABLE items ADD COLUMN content_sha256 TEXT"
+                )
+            self._connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_items_content_sha256 "
+                "ON items(content_sha256)"
             )
 
     def close(self) -> None:
@@ -200,11 +218,14 @@ class LibraryService:
                     )
                     self._connection.execute(
                         "UPDATE items SET media_type=?,size=?,modified=?,available=1,"
-                        "fingerprint=CASE WHEN ? THEN NULL ELSE fingerprint END WHERE item_id=?",
+                        "fingerprint=CASE WHEN ? THEN NULL ELSE fingerprint END,"
+                        "content_sha256=CASE WHEN ? THEN NULL ELSE content_sha256 END "
+                        "WHERE item_id=?",
                         (
                             media.media_type,
                             media.size,
                             media.modified,
+                            int(changed),
                             int(changed),
                             existing["item_id"],
                         ),
@@ -311,28 +332,115 @@ class LibraryService:
                 raise KeyError(item_id)
         return cached
 
-    def duplicate_groups(self) -> tuple[DuplicateGroup, ...]:
-        candidates: dict[int, list[LibraryItem]] = defaultdict(list)
+    def duplicate_groups(
+        self,
+        *,
+        cancel_event: threading.Event | None = None,
+        progress: Callable[[int, int], None] | None = None,
+    ) -> tuple[DuplicateGroup, ...]:
+        """Confirm same-size/edge candidates with cancellable full SHA-256."""
+
+        def ensure_not_cancelled() -> None:
+            if cancel_event is not None and cancel_event.is_set():
+                raise DuplicateScanCancelled("duplicate verification cancelled")
+
+        current_items: list[LibraryItem] = []
+        changed_items: list[tuple[int, float, str]] = []
+        unavailable_items: list[tuple[str]] = []
         for item in self.search():
+            ensure_not_cancelled()
+            try:
+                if item.path.is_symlink() or not item.path.is_file():
+                    unavailable_items.append((item.item_id,))
+                    continue
+                stat = item.path.stat()
+            except OSError:
+                unavailable_items.append((item.item_id,))
+                continue
+            if stat.st_size != item.size or stat.st_mtime != item.modified:
+                item = replace(
+                    item,
+                    size=stat.st_size,
+                    modified=stat.st_mtime,
+                    fingerprint=None,
+                    content_sha256=None,
+                )
+                changed_items.append((item.size, item.modified, item.item_id))
+            current_items.append(item)
+        if changed_items or unavailable_items:
+            with self._lock, self._connection:
+                self._connection.executemany(
+                    "UPDATE items SET size=?,modified=?,fingerprint=NULL,"
+                    "content_sha256=NULL WHERE item_id=?",
+                    changed_items,
+                )
+                self._connection.executemany(
+                    "UPDATE items SET available=0 WHERE item_id=?",
+                    unavailable_items,
+                )
+
+        candidates: dict[int, list[LibraryItem]] = defaultdict(list)
+        for item in current_items:
             candidates[item.size].append(item)
+        fingerprint_updates: list[tuple[str, str]] = []
+        partial_groups: dict[str, list[LibraryItem]] = defaultdict(list)
         for same_size in candidates.values():
             if len(same_size) < 2:
                 continue
             for item in same_size:
-                fingerprint = item.fingerprint or self._fingerprint(item.path, item.size)
+                ensure_not_cancelled()
+                fingerprint = item.fingerprint or self._fingerprint(
+                    item.path,
+                    item.size,
+                    item.modified,
+                )
                 if item.fingerprint != fingerprint:
-                    with self._lock, self._connection:
-                        self._connection.execute(
-                            "UPDATE items SET fingerprint=? WHERE item_id=?",
-                            (fingerprint, item.item_id),
-                        )
-        grouped: dict[str, list[LibraryItem]] = defaultdict(list)
-        for item in self.search():
-            if item.fingerprint:
-                grouped[item.fingerprint].append(item)
+                    fingerprint_updates.append((fingerprint, item.item_id))
+                    item = replace(item, fingerprint=fingerprint)
+                partial_groups[fingerprint].append(item)
+        if fingerprint_updates:
+            with self._lock, self._connection:
+                self._connection.executemany(
+                    "UPDATE items SET fingerprint=? WHERE item_id=?",
+                    fingerprint_updates,
+                )
+        to_confirm = tuple(
+            item
+            for items in partial_groups.values()
+            if len(items) > 1
+            for item in items
+        )
+        confirmed: dict[str, list[LibraryItem]] = defaultdict(list)
+        total = len(to_confirm)
+        for completed, item in enumerate(to_confirm, 1):
+            ensure_not_cancelled()
+            if item.content_sha256:
+                self._validate_file_state(item.path, item.size, item.modified)
+                sha256 = item.content_sha256
+            else:
+                sha256 = self._full_hash(
+                    item.path,
+                    item.size,
+                    item.modified,
+                    cancel_event=cancel_event,
+                )
+            if item.content_sha256 != sha256:
+                with self._lock, self._connection:
+                    self._connection.execute(
+                        "UPDATE items SET content_sha256=? WHERE item_id=?",
+                        (sha256, item.item_id),
+                    )
+                item = replace(item, content_sha256=sha256)
+            confirmed[sha256].append(item)
+            if progress is not None:
+                progress(completed, total)
         return tuple(
-            DuplicateGroup(fingerprint, items[0].size, tuple(items))
-            for fingerprint, items in sorted(grouped.items())
+            DuplicateGroup(
+                sha256,
+                items[0].size,
+                tuple(items),
+            )
+            for sha256, items in sorted(confirmed.items())
             if len(items) > 1
         )
 
@@ -512,16 +620,58 @@ class LibraryService:
         return self.get(plan.item_id)
 
     @staticmethod
-    def _fingerprint(path: Path, size: int) -> str:
-        if path.is_symlink() or not path.is_file():
-            raise ValueError("cannot fingerprint unavailable media")
+    def _fingerprint(path: Path, size: int, modified: float) -> str:
+        LibraryService._validate_file_state(path, size, modified)
         digest = hashlib.sha256(str(size).encode("ascii"))
         with path.open("rb") as stream:
             digest.update(stream.read(FINGERPRINT_CHUNK))
             if size > FINGERPRINT_CHUNK:
                 stream.seek(max(0, size - FINGERPRINT_CHUNK))
                 digest.update(stream.read(FINGERPRINT_CHUNK))
+        LibraryService._validate_file_state(path, size, modified)
         return digest.hexdigest()
+
+    @staticmethod
+    def _full_hash(
+        path: Path,
+        expected_size: int,
+        expected_modified: float,
+        *,
+        cancel_event: threading.Event | None = None,
+    ) -> str:
+        LibraryService._validate_file_state(
+            path,
+            expected_size,
+            expected_modified,
+        )
+        before = path.stat()
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                if cancel_event is not None and cancel_event.is_set():
+                    raise DuplicateScanCancelled(
+                        "duplicate verification cancelled"
+                    )
+                digest.update(chunk)
+        after = path.stat()
+        if (
+            before.st_size != after.st_size
+            or before.st_mtime_ns != after.st_mtime_ns
+        ):
+            raise ValueError("media changed during duplicate verification")
+        return digest.hexdigest()
+
+    @staticmethod
+    def _validate_file_state(
+        path: Path,
+        expected_size: int,
+        expected_modified: float,
+    ) -> None:
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("media is unavailable during duplicate verification")
+        stat = path.stat()
+        if stat.st_size != expected_size or stat.st_mtime != expected_modified:
+            raise ValueError("media changed during duplicate verification")
 
     @staticmethod
     def _clean_text(value: object, field: str, maximum: int) -> str:
@@ -548,6 +698,7 @@ class LibraryService:
             modified=float(row["modified"]),
             available=bool(row["available"]),
             fingerprint=row["fingerprint"],
+            content_sha256=row["content_sha256"],
             title=row["title"],
             artist=row["artist"],
             tags=tags,

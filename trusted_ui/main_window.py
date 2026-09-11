@@ -48,6 +48,7 @@ from trusted_ui.theme import (
     apply_application_theme,
     normalized_ui_scale,
 )
+from trusted_ui.workspace_navigation import install_workspace_navigation
 
 
 def security_presentation(mode: object, reason: str | None) -> tuple[str, str, str]:
@@ -67,6 +68,9 @@ def configure_workspace_tabs(tabs: object) -> None:
     tabs.setObjectName("workspaceTabs")
     tabs.setDocumentMode(True)
     tabs.setMovable(False)
+    tabs.setAccessibleName("MediaManager 工作區導覽")
+    tabs.tabBar().setAccessibleName("工作區分頁")
+    tabs.tabBar().setUsesScrollButtons(True)
     # Fusion/Windows can still paint the native tab-bar base even when the
     # pane border is removed by QSS. Against the dark background that base
     # becomes a bright horizontal artifact beside the selected workspace tab.
@@ -161,7 +165,12 @@ def apply_download_prefill(
     return True
 
 
-def run_main_window(context: object, *, start_minimized: bool = False) -> int:
+def run_main_window(
+    context: object,
+    *,
+    start_minimized: bool = False,
+    initial_prefill: dict[str, str] | None = None,
+) -> int:
     from PySide6.QtCore import QEvent, QObject, QTimer, Qt, QUrl, Signal
     from PySide6.QtGui import (
         QAction,
@@ -382,6 +391,7 @@ def run_main_window(context: object, *, start_minimized: bool = False) -> int:
 
             tabs = QTabWidget()
             configure_workspace_tabs(tabs)
+            self.workspace_navigator = install_workspace_navigation(tabs)
             self.workspace_tabs = tabs
 
             def create_workspace_placeholder(
@@ -407,6 +417,7 @@ def run_main_window(context: object, *, start_minimized: bool = False) -> int:
             self.download_panel = create_download_panel(
                 context, self, site_family="youtube"
             )
+            self.download_panel.setProperty("workspaceId", "youtube")
             tabs.addTab(self.download_panel, self.download_panel.workspace_title.text())
             tabs.setTabToolTip(0, "YouTube 搜尋、播放清單、批量與分段下載")
 
@@ -1156,8 +1167,11 @@ def run_main_window(context: object, *, start_minimized: bool = False) -> int:
     # Startup stays non-modal.  MOD selection and dependency remediation remain
     # available through the visible MOD manager and environment status buttons.
     window = Window()
-    if not start_minimized or not window.enter_background_idle():
+    effective_start_minimized = start_minimized and initial_prefill is None
+    if not effective_start_minimized or not window.enter_background_idle():
         window.show()
         window.raise_()
         window.activateWindow()
+    if initial_prefill is not None:
+        context.events.publish("download.prefill", initial_prefill)
     return app.exec()

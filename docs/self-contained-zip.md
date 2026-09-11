@@ -6,7 +6,8 @@ portable runtime 必須全部來自同一個已稽核 staged release。
 
 目前最新公開附件是 Testing `1.2.2`，由 Development `39.0.39` 的乾淨 source
 freeze 建立於 `Version/Testing/1.2.2`，並使用唯一 tag `test-v1.2.2`。本機
-Testing `1.2.3` 是由 Development `39.0.94` 建立的未發布候選，不得冒充或覆寫
+Testing `1.2.4` 是由 Development `39.0.112` source freeze 建立的未發布候選；
+既有 Testing `1.2.3` 由 Development `39.0.94` 建立，兩者都不得冒充或覆寫
 公開的 `1.2.2`。既有
 [Testing `1.2.1` prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)
 及 `Version/Testing/1.2`、`Version/Testing/1.2.1` 保持不可變。

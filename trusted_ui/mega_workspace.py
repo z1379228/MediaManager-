@@ -13,7 +13,10 @@ from core.mod_groups import load_builtin_mod_group
 from core.site_routing import classify_site_url
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.download_panel import download_refresh_interval, safe_task_output_path
-from trusted_ui.table_refresh import suspended_table_updates
+from trusted_ui.table_refresh import (
+    limit_resize_contents_work,
+    suspended_table_updates,
+)
 
 
 _CONTENT_LABELS = {
@@ -309,6 +312,7 @@ def create_mega_workspace(context: object, parent: object = None) -> object:
             self.table.setShowGrid(False)
             self.table.verticalHeader().hide()
             header = self.table.horizontalHeader()
+            limit_resize_contents_work(header)
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
             header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)

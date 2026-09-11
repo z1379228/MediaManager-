@@ -31,6 +31,7 @@ from trusted_ui.search_paging import (
     merge_search_results,
     provider_next_cursor,
 )
+from trusted_ui.table_refresh import limit_resize_contents_work
 from trusted_ui.thumbnail_loader import (
     create_thumbnail_loader,
     visible_thumbnail_rows,
@@ -329,6 +330,7 @@ def create_youtube_workspace(
             self.table.setIconSize(QSize(96, 54))
             self.table.setMinimumHeight(210)
             header = self.table.horizontalHeader()
+            limit_resize_contents_work(header)
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
             self.table.setColumnWidth(0, 112)
             header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)

@@ -1908,6 +1908,177 @@ prerelease 與全部附件 digest 均已驗證；Testing 1.2.1 的目錄、tag �
 - 回復可移除輸出預檢與測量程序的 Job Object 包裝；不涉及版本產物、設定或
   使用者資料遷移。
 
+## 39.0.107（下載收件匣、瀏覽器交付與全域資源模式）
+
+- 手動貼入與 TXT／CSV 匯入改用同一個可信下載收件匣。2 MiB／500 列上限、
+  HTTPS／帳密／控制字元驗證、去重、工作區辨識與啟用 provider 檢查都在加入
+  佇列前完成；無效項目保留原因，使用者可篩選並選擇可加入列。搜尋結果帶入的
+  metadata 及原有最後下載確認仍保留。
+- 新增 `core.browser_handoff` 與公開 `--browser-handoff` 入口，接受直接 HTTPS
+  URL 或 `mediamanager://add` URI。契約只允許 `url` 與可選 `title`，拒絕未知
+  action、重複欄位、帳密、未知站台及不可下載的社群官方頁。交付會取消背景
+  啟動、顯示主視窗並切換到正確下載工作區，但不會自動加入佇列。
+- 省資源、平衡、高速及自動 profile 改為所有下載工作區都可見的全域資源模式；
+  高速模式建議工作數由 2 調整為有界上限 4。核心仍只有對 YouTube 注入版本化
+  片段參數，其他 provider 只共享佇列工作數，不接收網站專屬欄位。
+- 自動模式現在於程序內只偵測一次邏輯處理器與總實體記憶體，不啟動監控執行緒；
+  低於保守門檻採省資源、資訊不足採平衡，至少 12 threads／16 GiB 才採高速。
+  UI 顯示實際判定並鎖定自動工作數，工作途中不會反覆切換。
+- 共用深色樣式補齊說明卡、次要卡片、網址分類、縮圖框與 ghost hover；下載
+  收件匣使用來源 badge、摘要卡、可鍵盤操作表格、明確 primary action，以及
+  `✓ 可加入`／錯誤原因文字，不只依顏色表達狀態。分頁捲動控制、選取狀態、
+  scrollbar hover、選單分隔與鍵盤焦點也統一為不需動畫的低負擔樣式。
+- 頂層新增按需建立的「工作區」分類選單，將現有頁面分成下載、搜尋與媒體、
+  工具、自動化、官方工具及其他；未知第三方工作區不會遺失。選取項目只切換
+  現有 tab 並沿用 lazy 物化，不增加輪詢或常駐工作，原有分頁及快捷鍵仍保留。
+- 格式工廠新增「無損選取音訊／字幕軌」。只有單一有界本機來源可進入背景
+  ffprobe 檢查；最多接受 128 條 stream，UI 顯示 index、codec、語言、標題、
+  聲道及 default／forced。音訊輸出 `.mka`、字幕輸出 `.mks`，排隊前重查軌道
+  類型，完成前確認 Matroska、相同 codec 及所選來源／輸出封包 SHA-256。
+- Speech to Text 模型 manifest 新增向後相容的 `speech`／`vad` 類型；舊模型
+  保持 `speech`。VAD 模型仍需本機檔案與明確 SHA-256，UI 不會自動下載；使用者
+  點擊偵測後才在背景讀取 whisper-cli help，只有同時存在 `--vad`／`--vad-model`
+  才開放預設關閉的 VAD。CLI 工作在 Windows 改用 no-window creation flag。
+- Automation 的頻道／播放清單排程已提供預設關閉、定期展開及封存去重，因此
+  本版不新增重複的訂閱背景服務。
+- 媒體庫重複檔案改為大小、首尾指紋及完整 SHA-256 三階段確認。只有候選檔案
+  計算完整雜湊；SQLite 快取在大小或修改時間改變時失效。完整確認在背景 thread
+  執行、可取消且顯示進度；只有完整雜湊相同才列為重複，介面不會自動刪除。
+- 完整 Repository runner 為 `1731 passed, 7 skipped`；七項 skip 都是目前 Windows
+  帳號缺少建立測試用 link 權限。Quality audit 通過 Ruff `386` 個 Python 檔與
+  文字污染掃描 `496` 個受控檔案，版本文件稽核及 `git diff --check` 亦通過。
+- 以目前來源執行 2 次 warmup、7 次無網路 Provider Host 固定成本樣本；elapsed
+  p50／p95 為 `351.495 / 377.174 ms`，Private Bytes p50／p95 為
+  `18,509,824 / 18,952,192`。這不包含真實搜尋或下載，尚不足以支持新增短期
+  常駐 Host；本版保留每次請求的程序隔離。
+- `tools.startup_baseline` 報告 schema 升為 4，新增乾淨 lazy 及全部工作區物化的
+  前景／背景待機角色，每個樣本固定觀察 5 秒。lazy active repeat timer p50
+  `1 → 0`，物化後 `6 → 0`，OS thread p50 `9 → 8`；但 CPU 低於取樣解析度，
+  Private Bytes／Working Set 也沒有穩定下降，因此只確認停止週期喚醒來源，
+  不宣稱已量得 CPU 或記憶體降幅。背景仍保留頁面與使用者輸入。
+- 新增固定 200 筆的 `search-results` offscreen workload。搜尋表格在同一批次
+  暫停中間 repaint 與 `ResizeToContents` 重複掃描，完成後恢復原欄寬模式；
+  結果建立 elapsed p50／p95 由 `407.624 / 413.729 ms` 降為
+  `23.414 / 26.490 ms`，CPU time 由 `406.25 / 421.875 ms` 降為
+  `31.25 / 31.25 ms`。頂端／底端縮圖請求仍為 `8 / 16`，網路嘗試為零。
+  一次性預設列高候選使 elapsed p50 退步至 `484.693 ms`，因此已撤回。
+- schema 4 再新增 YouTube／Bilibili 專用搜尋結果角色，以相同 200 筆、頂端／
+  底端、offscreen 與網路封鎖條件量測真實工作區。原路徑 elapsed p50／p95
+  分別為 `23.956 / 27.657 ms` 與 `31.106 / 34.020 ms`；套用通用搜尋的批次
+  repaint／欄寬候選後退為 `26.945 / 34.463 ms` 與 `31.072 / 37.354 ms`，因此
+  已撤回。撤回後重測為 `23.855 / 24.438 ms` 與 `30.305 / 33.399 ms`；兩者縮圖
+  請求均維持 `9 / 18`。A／B／C 證據只保存於 Repository 外，不把局部候選
+  未經數據套用到其他 Qt 表格。
+- Direct HTTP 串流讀取改由單一 1 MiB 私有常數控制，並新增完全離線的 provider
+  I/O 基準。32 MiB 合成內容的 256 KiB／1 MiB／4 MiB elapsed p50 為
+  `35.116 / 44.308 / 43.977 ms`，tracemalloc peak p50 為
+  `660,427 / 2,232,539 / 8,523,819 bytes`；256 KiB 則產生 4 倍進度事件。
+  因量測不含真實 HTTPS、pipe flush 或 UI 消費者，本版保留 1 MiB，不以合成
+  結果宣稱下載加速。證據只寫入 Repository 外，所有合成輸出已清除。
+- 新增預設 dry-run、只允許固定 W3C HTML5 測試 URL 的單次真實 HTTPS smoke。
+  provider 在 8 MiB 上限內取得 `4,372,373` bytes、產生 5 次進度事件、記錄
+  SHA-256，並移除 owned 暫存下載。單次觀察為 `2562.414 ms / 1.627 MiB/s`；
+  公共主機未重複取樣，因此只證明端到端整合，不作 p50／p95 或下載加速宣稱。
+- 本次只修改 Development 來源與文件；未 build、stage、commit、push，未建立
+  或更新 Testing／Stable，也未修改 Windows Registry。
+
+## 39.0.108（完整性稽核與背景模型匯入修正）
+
+- 真實 FFmpeg 回歸發現 Matroska 字幕軌輸出使用 `.mks` 時，部分 FFmpeg build
+  不會由副檔名自動選出 muxer。`stream-copy-matroska` 現在明確傳入
+  `-f matroska`；實際 SubRip 軌道複製成功，來源與輸出的 selected-packet
+  SHA-256 相同，codec 與單一字幕 stream 亦由 ffprobe 確認。
+- 媒體庫在開始重複確認時重新讀取每個索引檔案的大小與修改時間。掃描後才被
+  同大小改寫的檔案會清除首尾指紋及完整 SHA-256 快取，再依目前內容重新分層
+  驗證；遺失檔案改標為不可用，不會以舊快取列入重複群組。首尾指紋與完整
+  雜湊也會檢查處理前後檔案狀態，偵測到競態修改即失敗關閉。
+- Speech to Text 的本機模型驗證與複製由 GUI thread 移至背景 thread。來源
+  SHA-256 驗證保留，複製時同步計算目的內容雜湊，避免完成後再讀取整份大型
+  暫存檔；關閉 UI 會要求取消，取消或錯誤時移除 `.tmp`，不留下半套 manifest。
+- 新增三項回歸：掃描後同大小改寫不誤報重複、取消模型複製不留部分安裝、
+  模型雜湊與複製不阻塞 offscreen Qt GUI。完整 Repository runner 為
+  `1734 passed, 7 skipped`；七項 skip 均是目前 Windows 帳號缺少建立測試用
+  link 權限。Quality audit、版本文件稽核與 `git diff --check` 通過。
+- 本次未 build、stage、commit、push 或發布，沒有建立或覆寫 Testing／Stable。
+
+## 39.0.109（有界拖放、輸出試轉與快速健康檢查）
+
+- 新增共用拖放分類器，最多處理 500 項，拒絕遺失檔案、非一般檔案、未知格式、
+  重複路徑及符號連結／junction。下載工作區將網址或單一 TXT／CSV 送入既有
+  收件流程；Direct HTTP 只採用既有政策允許的公開 HTTPS 檔案網址；格式工廠
+  只採用本機媒體。拖放本身不會分析網站、排隊、下載或轉檔。
+- 格式工廠新增最多 20 秒的實際輸出試轉。只支援會重新編碼且能形成有意義
+  樣本的影音 preset；串流複製、無損軌道、字幕、影像與剪除 preset 維持停用。
+  樣本以 `-t` 強制限制長度，寫入服務私有暫存目錄，不建立正式工作紀錄，並於
+  關閉預覽或服務時清除。
+- 新增快速媒體健康檢查：先以 ffprobe 讀取有界結構，再由 FFmpeg 以 `-xerror`
+  解碼開頭最多 15 秒的第一條影音軌。結果明示只代表檔案開頭，不能取代完整
+  掃描。試轉、健康檢查與正式轉換共用單一執行槽，取消只終止所屬程序，避免
+  輔助工作誤停正式佇列。
+- 既有手動自我檢查新增格式工廠工具暖狀態，但不執行 ffprobe／FFmpeg、不建立
+  背景程序或第二份診斷包。
+- 完整 Repository runner 為 `1753 passed, 9 skipped`；九項 skip 均是 Windows
+  測試帳號缺少建立 link 權限。本機 FFmpeg smoke 實際完成 WAV 快速解碼、
+  1 秒 PCM 輸出試轉、ffprobe 驗證及暫存清理。Quality audit 通過 Ruff `390`
+  個 Python 檔與文字污染掃描 `500` 個受控檔案；版本文件稽核通過。
+- 本次未 build、stage、commit、push 或發布，沒有建立或覆寫 Testing／Stable。
+
+## 39.0.110（明確硬體轉檔與非阻塞能力偵測）
+
+- 格式工廠新增 Intel QSV 與 AMD AMF 的 H.264／H.265 preset，以及 NVIDIA、
+  Intel、AMD 三種 AV1 硬體 preset。每個 preset 都聲明唯一必要 encoder，未偵測
+  到時維持停用，執行失敗也不靜默改用 CPU，避免速度、品質與耗電行為被改寫。
+- 本機能力偵測從 GUI thread 移至背景工作。偵測保留六個既有、具 timeout 與
+  輸出上限的 FFmpeg 查詢，增加取消與 UI 世代隔離；關閉頁面或舊偵測較晚完成
+  都不會更新目前畫面。
+- UI 明確區分「FFmpeg build 包含 encoder」與「實際 GPU／驅動可執行」。後者
+  仍在工作啟動時驗證，沒有把編譯清單誤當成裝置可用證據。
+- 格式工廠完整定向套件為 `87 passed, 2 skipped`；完整 Repository runner 為
+  `1762 passed, 9 skipped`。所有 skip 都是 Windows 測試帳號缺少建立 link
+  權限；Quality audit 通過 Ruff `390` 個 Python 檔與文字污染掃描 `500` 個
+  受控檔案，版本文件及 diff 格式檢查通過。
+- 本次未 build、stage、commit、push 或發布，沒有建立或覆寫 Testing／Stable。
+
+## 39.0.111（目標容量與明確音量標準化）
+
+- 格式工廠新增 H.264 兩階段目標容量格式。可信 UI 只對單一來源在背景讀取
+  時長；核心以 3% 容器餘裕、第一音軌 AAC 192 kbps 及有效剪輯時長計算影片
+  平均位元率。第一階段不處理音訊，第二階段建立輸出新檔，且 commit 前仍拒絕
+  超過使用者上限的結果。
+- 未使用 FFmpeg `-fs`，避免達到 byte 上限時截斷內容。此格式是明確的 CPU
+  兩階段工作，不與 CRF 或硬體快速 preset 混合；無法提供最低 150 kbps 影片
+  位元率的容量／時長組合會在排隊前拒絕。
+- pass log 使用每工作唯一的服務暫存前綴；成功、失敗與取消都清除已知統計檔，
+  不寫入來源或輸出資料夾。
+- 新增 EBU R128 `I=-16:TP=-1.5:LRA=11` 的 FLAC 品質優先及 Opus 160 kbps
+  容量優先格式。兩者要求本機 FFmpeg 同時回報 `loudnorm` filter 與對應 encoder，
+  UI 明示會處理音訊樣本，不是串流複製或 Opus Passthru。
+- 格式工廠定向套件為 `100 passed, 2 skipped`；本機 FFmpeg 兩個真實 smoke
+  均完成。此變更已與後續 39.0.112 一起納入該節記錄的完整 Repository runner。
+- 本次未 build、stage、commit、push 或發布，沒有建立或覆寫 Testing／Stable。
+
+## 39.0.112（手動 MusicBrainz 本機中繼資料）
+
+- 本機媒體庫的單一音訊項目可由管理選單手動查詢 MusicBrainz 錄音資料，預覽
+  最多 10 筆結果後才由使用者選取。查詢在背景 thread 呼叫隔離 provider，介面
+  不等待程序；停止等待會忽略晚到結果，已送出的單一請求由 timeout 收束。
+- provider 只允許官方 `musicbrainz.org/ws/2/recording/` HTTPS API，拒絕離開
+  固定路徑的 redirect，回應上限為 512 KiB，並以可識別 User-Agent 及同一
+  instance 至少一秒的請求起始間隔遵守官方服務規則。不使用 Cookie、登入、
+  背景輪詢或檔案寫入權限。
+- 新增通用 `search_visibility: manual` provider manifest 欄位。手動來源仍可由
+  明確 provider ID 呼叫及由 MOD 管理啟停，但不出現在網站搜尋來源清單，也不會
+  被預設或明確的 federated search 派送；避免中繼資料服務污染媒體網站搜尋。
+- 套用時只更新 MediaManager 本機 SQLite 的標題、歌手及單一 canonical
+  `musicbrainz:<MBID>` 標籤；既有其他標籤保留，媒體檔、檔名與內容不變。
+  同時修正媒體庫音訊類型使用「音訊」但 UI 誤檢查 `audio` 的契約落差。
+- MusicBrainz provider、搜尋隔離、媒體庫資料更新及非阻塞 UI 定向回歸為
+  `108 passed`，跨模組定向回歸為 `273 passed, 5 skipped`；完整 Repository
+  runner 為 `1790 passed, 9 skipped`。九項 skip 均是目前 Windows 帳號缺少建立
+  測試用 link 權限。Quality audit 通過 Ruff `392` 個 Python 檔與文字污染掃描
+  `503` 個受控檔案；版本文件、版本產物及 diff 格式稽核通過。
+- 本次未 build、stage、commit、push 或發布，沒有建立或覆寫 Testing／Stable。
+
 ## 40.0
 
 沒有獨立 material delta，狀態為

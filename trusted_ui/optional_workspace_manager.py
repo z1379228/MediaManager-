@@ -34,6 +34,12 @@ class OptionalWorkspaceManager:
         self.placeholders: dict[str, object] = {}
         self._materializing = False
 
+    @staticmethod
+    def _assign_workspace_id(item: object, provider_id: str) -> None:
+        set_property = getattr(item, "setProperty", None)
+        if callable(set_property):
+            set_property("workspaceId", provider_id)
+
     def sync(self, payload: object = None) -> None:
         requested = (
             str(payload.get("provider_id")) if isinstance(payload, dict) else ""
@@ -46,11 +52,13 @@ class OptionalWorkspaceManager:
             if visible and item is None:
                 if self.placeholder_factory is None:
                     panel = spec.create()
+                    self._assign_workspace_id(panel, provider_id)
                     self.panels[provider_id] = panel
                     index = self.tabs.addTab(panel, spec.label(panel))
                 else:
                     label = spec.placeholder_label or provider_id
                     placeholder = self.placeholder_factory(provider_id, label)
+                    self._assign_workspace_id(placeholder, provider_id)
                     self.placeholders[provider_id] = placeholder
                     index = self.tabs.addTab(placeholder, label)
                 self.tabs.setTabToolTip(index, spec.tooltip)
@@ -79,6 +87,7 @@ class OptionalWorkspaceManager:
         self._materializing = True
         try:
             panel = spec.create()
+            self._assign_workspace_id(panel, provider_id)
             self.tabs.removeTab(index)
             self.placeholders.pop(provider_id, None)
             self.panels[provider_id] = panel

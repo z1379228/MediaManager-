@@ -136,6 +136,29 @@ def test_complete_main_window_builds_at_supported_minimum_size(
         observed["lazy_panel_retained"] = (
             window.core_workspace_manager.panels["bilibili"] is bilibili_panel
         )
+        navigator_menu = window.workspace_navigator.menu()
+        navigator_menu.aboutToShow.emit()
+        observed["navigator_accessible"] = (
+            window.workspace_navigator.accessibleName()
+        )
+        observed["navigator_groups"] = tuple(
+            action.text() for action in navigator_menu.actions()
+        )
+        search_group = next(
+            action.menu()
+            for action in navigator_menu.actions()
+            if action.text() == "搜尋與媒體"
+        )
+        library_action = next(
+            action
+            for action in search_group.actions()
+            if action.text() == "本機媒體庫"
+        )
+        library_action.trigger()
+        app.processEvents()
+        observed["navigator_selected"] = tabs.currentWidget().property(
+            "workspaceId"
+        )
         window.close_behavior_select.setCurrentIndex(1)
         app.processEvents()
         observed["saved_close_behavior"] = context.settings.close_behavior
@@ -166,6 +189,9 @@ def test_complete_main_window_builds_at_supported_minimum_size(
         assert observed["lazy_placeholder_count"] >= 3
         assert observed["lazy_core_after_select"] == ("bilibili",)
         assert observed["lazy_panel_retained"] is True
+        assert observed["navigator_accessible"] == "切換工作區"
+        assert observed["navigator_groups"][:2] == ("下載", "搜尋與媒體")
+        assert observed["navigator_selected"] == "library"
         assert observed["saved_close_behavior"] == "exit"
     finally:
         context.lifecycle.shutdown()
@@ -365,6 +391,63 @@ def test_startup_opens_main_window_without_modal_prompts(
         assert run_main_window(context) == 0
         assert modal_titles == []
         assert context.settings.initial_mod_setup_completed is False
+    finally:
+        context.lifecycle.shutdown()
+
+
+def test_browser_handoff_opens_visible_target_workspace(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication, QMainWindow
+
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+    app = QApplication.instance() or QApplication([])
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    observed: dict[str, object] = {}
+
+    def inspect_then_exit(_app: QApplication) -> int:
+        app.processEvents()
+        window = next(
+            widget
+            for widget in app.topLevelWidgets()
+            if isinstance(widget, QMainWindow)
+            and widget.accessibleName() == "MediaManager 主視窗"
+            and widget.settings_root == Path(context.paths.settings)
+        )
+        panel = window.site_download_panels["youtube"]
+        observed["visible"] = window.isVisible()
+        observed["idle"] = window.idle_resources.idle
+        observed["url"] = panel.urls.toPlainText()
+        observed["focus"] = panel.urls.hasFocus()
+        window.request_full_exit()
+        app.processEvents()
+        return 0
+
+    monkeypatch.setattr(QApplication, "exec", inspect_then_exit)
+    try:
+        assert (
+            run_main_window(
+                context,
+                start_minimized=True,
+                initial_prefill={
+                    "url": "https://www.youtube.com/watch?v=example",
+                    "title": "Browser share",
+                    "provider_id": "browser-handoff",
+                },
+            )
+            == 0
+        )
+        assert observed == {
+            "visible": True,
+            "idle": False,
+            "url": "https://www.youtube.com/watch?v=example",
+            "focus": True,
+        }
     finally:
         context.lifecycle.shutdown()
 

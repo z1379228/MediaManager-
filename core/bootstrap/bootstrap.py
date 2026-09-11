@@ -461,6 +461,25 @@ class Bootstrap:
                 enabled=builtin_default_enabled("bilibili-search"),
             )
 
+        musicbrainz_metadata = load_builtin(
+            "musicbrainz-metadata",
+            lambda provider_root: SubprocessDownloadProvider(
+                provider_root,
+                application_root=paths.application,
+                expected_hashes=BUILTIN_PROVIDER_HASHES[
+                    "musicbrainz-metadata"
+                ],
+                runtime_home=(
+                    paths.temp / "provider-runtime" / "musicbrainz-metadata"
+                ),
+            ),
+        )
+        if musicbrainz_metadata is not None:
+            discovery.register(
+                musicbrainz_metadata,
+                enabled=builtin_default_enabled("musicbrainz-metadata"),
+            )
+
         for feature_id in (
             "instagram",
             "instagram-page",

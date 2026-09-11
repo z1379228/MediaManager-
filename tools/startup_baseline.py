@@ -19,7 +19,8 @@ import time
 from typing import Any
 
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 4
+_IDLE_OBSERVATION_SECONDS = 5.0
 _MARKER = "__MEDIAMANAGER_STARTUP_BASELINE__="
 _ROLES = (
     "version",
@@ -28,8 +29,15 @@ _ROLES = (
     "plugin-host",
     "gui-lazy",
     "gui-materialized",
+    "gui-foreground-idle",
+    "gui-background-idle",
+    "gui-materialized-foreground-idle",
+    "gui-materialized-background-idle",
     "table-rebuild",
     "table-reuse",
+    "search-results",
+    "youtube-results",
+    "bilibili-results",
 )
 _EXPECTED_EXIT_CODES = {
     "version": frozenset({0}),
@@ -38,8 +46,15 @@ _EXPECTED_EXIT_CODES = {
     "plugin-host": frozenset({0}),
     "gui-lazy": frozenset({0}),
     "gui-materialized": frozenset({0}),
+    "gui-foreground-idle": frozenset({0}),
+    "gui-background-idle": frozenset({0}),
+    "gui-materialized-foreground-idle": frozenset({0}),
+    "gui-materialized-background-idle": frozenset({0}),
     "table-rebuild": frozenset({0}),
     "table-reuse": frozenset({0}),
+    "search-results": frozenset({0}),
+    "youtube-results": frozenset({0}),
+    "bilibili-results": frozenset({0}),
 }
 
 _DEFERRED_WORKSPACE_MODULES = frozenset(
@@ -242,12 +257,44 @@ def _run_gui_workload(role: str) -> tuple[int, dict[str, Any]]:
             and widget.accessibleName() == "MediaManager 主視窗"
         )
         tabs = window.findChild(QTabWidget, "workspaceTabs")
-        if role == "gui-materialized":
+        if role in {
+            "gui-materialized",
+            "gui-materialized-foreground-idle",
+            "gui-materialized-background-idle",
+        }:
             for index in range(tabs.count()):
                 tabs.setCurrentIndex(index)
                 app.processEvents()
             tabs.setCurrentIndex(0)
             app.processEvents()
+        background_idle = role.endswith("background-idle")
+        observes_idle = role.endswith(("foreground-idle", "background-idle"))
+        suspended_timers = 0
+        if background_idle:
+            if not window.enter_background_idle(hide=False):
+                raise RuntimeError("background idle transition failed")
+            suspended_timers = window.idle_resources.suspended_timer_count
+            window.hide()
+            app.processEvents()
+        observation_elapsed_ms = 0.0
+        observation_cpu_time_ms = 0.0
+        if observes_idle:
+            observation_started = time.perf_counter_ns()
+            observation_cpu_started = time.process_time_ns()
+            deadline = time.monotonic() + _IDLE_OBSERVATION_SECONDS
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                app.processEvents()
+                time.sleep(min(0.01, remaining))
+            app.processEvents()
+            observation_elapsed_ms = (
+                time.perf_counter_ns() - observation_started
+            ) / 1_000_000
+            observation_cpu_time_ms = (
+                time.process_time_ns() - observation_cpu_started
+            ) / 1_000_000
         observed.update(
             qt_objects=len(window.findChildren(QObject)),
             active_repeat_timers=sum(
@@ -263,6 +310,14 @@ def _run_gui_workload(role: str) -> tuple[int, dict[str, Any]]:
                 name in sys.modules for name in _DEFERRED_WORKSPACE_MODULES
             ),
         )
+        if observes_idle:
+            observed.update(
+                background_idle=int(window.idle_resources.idle),
+                window_visible=int(window.isVisible()),
+                suspended_timers=suspended_timers,
+                observation_elapsed_ms=round(observation_elapsed_ms, 3),
+                observation_cpu_time_ms=round(observation_cpu_time_ms, 3),
+            )
         window.request_full_exit()
         app.processEvents()
         return 0
@@ -356,6 +411,157 @@ def _run_table_workload(role: str) -> tuple[int, dict[str, Any]]:
     return 0, observed
 
 
+def _run_search_results_workload(role: str) -> tuple[int, dict[str, Any]]:
+    """Render and scroll one maximum-sized trusted result surface offscreen."""
+
+    from contracts.discovery_v1 import DiscoveryItemV1
+    from PySide6.QtCore import QCoreApplication, QEvent, QObject
+    from PySide6.QtWidgets import QApplication
+    from core.discovery.adapters import FederatedSearchResult
+
+    class Discovery:
+        def statuses(self) -> tuple[object, ...]:
+            return ()
+
+        def is_enabled(self, _provider_id: str) -> bool:
+            return False
+
+        def set_enabled(self, _provider_id: str, _enabled: bool) -> None:
+            return None
+
+        def video_preview_provider(self) -> None:
+            return None
+
+    class DownloadProviders:
+        def is_enabled(self, _provider_id: str) -> bool:
+            return True
+
+        def provider_for(self, _url: str) -> None:
+            return None
+
+    class Context:
+        discovery = Discovery()
+        download_providers = DownloadProviders()
+        events = None
+        audit = None
+
+    app = QApplication.instance() or QApplication([])
+    if role == "search-results":
+        from trusted_ui.search_panel import create_search_panel
+
+        panel = create_search_panel(Context())
+        result_host = "www.youtube.com"
+        result_prefix = "watch?v=benchmark-"
+    elif role == "youtube-results":
+        from trusted_ui.youtube_workspace import create_youtube_workspace
+
+        panel = create_youtube_workspace(Context(), lambda _urls: None)
+        result_host = "www.youtube.com"
+        result_prefix = "watch?v=benchmark-"
+    elif role == "bilibili-results":
+        from trusted_ui.bilibili_workspace import create_bilibili_workspace
+
+        panel = create_bilibili_workspace(Context(), lambda _urls: None)
+        result_host = "www.bilibili.com"
+        result_prefix = "video/BVbenchmark-"
+    else:
+        raise ValueError(f"unsupported search result role: {role}")
+    requested_thumbnails: list[str] = []
+    panel.thumbnail_loader.load = (
+        lambda url, _callback: requested_thumbnails.append(url)
+    )
+    results = tuple(
+        DiscoveryItemV1(
+            f"benchmark-{index:03d}",
+            f"https://{result_host}/{result_prefix}{index:03d}",
+            f"Benchmark result {index:03d}",
+            f"Artist {index % 20:02d}",
+            120 + index,
+            "zh-TW",
+            "music" if index % 2 else "video",
+            f"https://i.ytimg.com/vi/benchmark-{index:03d}/mqdefault.jpg",
+        )
+        for index in range(200)
+    )
+    try:
+        panel.resize(940, 620)
+        body = getattr(panel, "body", None)
+        if body is not None:
+            body.show()
+        panel.show()
+        app.processEvents()
+        cpu_started_at = time.process_time_ns()
+        started_at = time.perf_counter_ns()
+        if role == "search-results":
+            panel.show_results(results, "")
+        else:
+            provider_id = (
+                "youtube-search"
+                if role == "youtube-results"
+                else "bilibili-search"
+            )
+            panel.last_query = "benchmark"
+            if role == "youtube-results":
+                panel.active_operation = "search"
+            panel.show_results(
+                0,
+                FederatedSearchResult(
+                    results,
+                    (),
+                    (provider_id,) * len(results),
+                ),
+                "",
+            )
+        app.processEvents()
+        search_workload_ms = (time.perf_counter_ns() - started_at) / 1_000_000
+        search_cpu_time_ms = (
+            time.process_time_ns() - cpu_started_at
+        ) / 1_000_000
+        initial_thumbnail_requests = len(requested_thumbnails)
+
+        scroll_started_at = time.perf_counter_ns()
+        panel.table.verticalScrollBar().setValue(
+            panel.table.verticalScrollBar().maximum()
+        )
+        app.processEvents()
+        scroll_workload_ms = (
+            time.perf_counter_ns() - scroll_started_at
+        ) / 1_000_000
+        total_thumbnail_requests = len(requested_thumbnails)
+        if not 0 < initial_thumbnail_requests < len(results):
+            raise RuntimeError("initial thumbnail request window is not bounded")
+        if not initial_thumbnail_requests < total_thumbnail_requests < len(results):
+            raise RuntimeError("scrolled thumbnail request window is not bounded")
+        resources = _windows_process_metrics()
+        observed: dict[str, Any] = {
+            "search_workload_ms": round(search_workload_ms, 3),
+            "search_surface": role,
+            "search_cpu_time_ms": round(search_cpu_time_ms, 3),
+            "scroll_workload_ms": round(scroll_workload_ms, 3),
+            "rendered_rows": panel.table.rowCount(),
+            "initial_thumbnail_requests": initial_thumbnail_requests,
+            "total_thumbnail_requests": total_thumbnail_requests,
+            "search_qt_objects": len(panel.findChildren(QObject)),
+            "search_resource_status": resources["status"],
+        }
+        if resources["status"] == "supported":
+            observed.update(
+                search_private_bytes=resources["private_bytes"],
+                search_working_set_bytes=resources["working_set_bytes"],
+                search_peak_working_set_bytes=resources[
+                    "peak_working_set_bytes"
+                ],
+                search_os_threads=resources["os_threads"],
+            )
+        return 0, observed
+    finally:
+        panel.shutdown()
+        panel.close()
+        panel.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        app.processEvents()
+
+
 def _run_probe(role: str, repository: Path, runtime_root: Path) -> int:
     if role not in _ROLES:
         return 2
@@ -369,7 +575,13 @@ def _run_probe(role: str, repository: Path, runtime_root: Path) -> int:
         original_stdin = sys.stdin
         sys.argv[0] = str(repository / "main.py")
         extra: dict[str, Any] = {}
-        if role.startswith("gui-"):
+        if role in {
+            "search-results",
+            "youtube-results",
+            "bilibili-results",
+        }:
+            result, extra = _run_search_results_workload(role)
+        elif role.startswith("gui-"):
             result, extra = _run_gui_workload(role)
         elif role.startswith("table-"):
             result, extra = _run_table_workload(role)
@@ -491,6 +703,28 @@ def _role_summary(samples: Sequence[dict[str, Any]]) -> dict[str, Any]:
             metric: _stats([sample[metric] for sample in samples])
             for metric in gui_metrics
         }
+    idle_metrics = (
+        "background_idle",
+        "window_visible",
+        "suspended_timers",
+        "observation_elapsed_ms",
+        "observation_cpu_time_ms",
+    )
+    if all(all(metric in sample for metric in idle_metrics) for sample in samples):
+        summary["idle_observation"] = {
+            metric: _stats(
+                [sample[metric] for sample in samples],
+                digits=(
+                    3
+                    if metric in {
+                        "observation_elapsed_ms",
+                        "observation_cpu_time_ms",
+                    }
+                    else None
+                ),
+            )
+            for metric in idle_metrics
+        }
     table_metrics = (
         "table_workload_ms",
         "rendered_rows",
@@ -507,6 +741,55 @@ def _role_summary(samples: Sequence[dict[str, Any]]) -> dict[str, Any]:
             )
             for metric in table_metrics
         }
+    search_metrics = (
+        "search_workload_ms",
+        "search_cpu_time_ms",
+        "scroll_workload_ms",
+        "rendered_rows",
+        "initial_thumbnail_requests",
+        "total_thumbnail_requests",
+        "search_qt_objects",
+    )
+    if all(all(metric in sample for metric in search_metrics) for sample in samples):
+        summary["search_results"] = {
+            metric: _stats(
+                [sample[metric] for sample in samples],
+                digits=(
+                    3
+                    if metric
+                    in {
+                        "search_workload_ms",
+                        "search_cpu_time_ms",
+                        "scroll_workload_ms",
+                    }
+                    else None
+                ),
+            )
+            for metric in search_metrics
+        }
+        supported = all(
+            sample.get("search_resource_status") == "supported"
+            for sample in samples
+        )
+        live_process: dict[str, Any] = {
+            "status": "supported" if supported else "unsupported"
+        }
+        if supported:
+            live_process.update(
+                private_bytes=_stats(
+                    [sample["search_private_bytes"] for sample in samples]
+                ),
+                working_set_bytes=_stats(
+                    [sample["search_working_set_bytes"] for sample in samples]
+                ),
+                peak_working_set_bytes=_stats(
+                    [sample["search_peak_working_set_bytes"] for sample in samples]
+                ),
+                os_threads=_stats(
+                    [sample["search_os_threads"] for sample in samples]
+                ),
+            )
+        summary["search_results"]["live_process"] = live_process
     return summary
 
 
@@ -594,6 +877,9 @@ def run_baseline(
             "network_allowed": False,
             "visible_ui_allowed": False,
             "user_data_isolated": True,
+            "idle_observation_seconds": _IDLE_OBSERVATION_SECONDS,
+            "search_result_rows": 200,
+            "search_scroll_positions": ["top", "bottom"],
         },
         "roles": {role: _role_summary(recorded[role]) for role in roles},
     }

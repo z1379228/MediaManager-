@@ -38,6 +38,7 @@ def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
         (
             ProviderStatus("youtube-search", "Search", True),
             ProviderStatus("bilibili-search", "Bilibili Search", False),
+            ProviderStatus("musicbrainz-metadata", "MusicBrainz Metadata", True),
             ProviderStatus("youtube-player", "Player", False),
             ProviderStatus("youtube-history", "History", False),
             ProviderStatus("youtube-recovery", "Recovery", True),
@@ -63,9 +64,9 @@ def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
             FeatureStatus("automation", "Automation", False),
         ),
     )
-    assert len(rows) == 29
+    assert len(rows) == 30
     assert all(row.available for row in rows)
-    assert sum(row.enabled for row in rows) == 5
+    assert sum(row.enabled for row in rows) == 6
     player = next(row for row in rows if row.provider_id == "youtube-player")
     assert not player.enabled
 
@@ -84,6 +85,7 @@ def test_builtin_mod_rows_keep_missing_expected_mod_visible() -> None:
         "twitter",
         "youtube-search",
         "bilibili-search",
+        "musicbrainz-metadata",
         "bilibili-danmaku",
         "youtube-player",
         "youtube-history",
@@ -164,6 +166,7 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
                 for provider_id in (
                     "youtube-search",
                     "bilibili-search",
+                    "musicbrainz-metadata",
                     "youtube-player",
                     "youtube-history",
                     "youtube-recovery",
@@ -202,17 +205,17 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
         for label in panel.findChildren(QLabel)
         if label.objectName() == "dependencySummary"
     )
-    assert tree.topLevelItemCount() == 13 + len(PLANNED_MODS)
+    assert tree.topLevelItemCount() == 14 + len(PLANNED_MODS)
     assert tree.accessibleName() == "依網站分組的內建 MOD 清單"
     toggles = [
         toggle
         for toggle in panel.findChildren(QCheckBox)
         if toggle.accessibleName().endswith("啟用狀態")
     ]
-    assert len(toggles) == 19
+    assert len(toggles) == 20
     assert {toggle.text() for toggle in toggles} == {"啟用"}
     assert summary.text() == (
-        "內建 MOD 29/29 已載入 · 8 個已啟用 · "
+        "內建 MOD 30/30 已載入 · 9 個已啟用 · "
         f"7 個網站父 MOD · 規劃中 {len(PLANNED_MODS)} 個"
     )
     youtube = next(

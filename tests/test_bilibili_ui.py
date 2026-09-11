@@ -44,6 +44,8 @@ def test_bilibili_ui_builds_segmented_ass_mkv_request(
 
     from PySide6.QtWidgets import QApplication, QMessageBox
 
+    import trusted_ui.download_panel as download_panel_module
+
     app = QApplication.instance() or QApplication([])
     unexpected_message = Mock(return_value=QMessageBox.StandardButton.Ok)
     monkeypatch.setattr(QMessageBox, "critical", unexpected_message)
@@ -53,6 +55,11 @@ def test_bilibili_ui_builds_segmented_ass_mkv_request(
         QMessageBox,
         "question",
         lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    monkeypatch.setattr(
+        download_panel_module,
+        "show_batch_import_dialog",
+        lambda result, _parent, *, source_label: result.entries,
     )
     context = Bootstrap(portable=True).initialize(start_background=False)
     panel = None

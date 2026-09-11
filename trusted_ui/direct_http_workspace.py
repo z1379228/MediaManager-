@@ -11,10 +11,15 @@ from core.downloads.direct_http_policy import direct_http_url_candidate
 from core.downloads.models import DownloadRequest, DownloadState, DownloadTask
 from core.downloads.preflight import preflight_download_batch
 from core.downloads.preparation import human_bytes
+from core.drop_intake import DropIntake
 from core.localization import normalized_core_locale
 from trusted_ui.builtin_mod_control import set_builtin_mod_enabled
 from trusted_ui.download_panel import download_refresh_interval, safe_task_output_path
-from trusted_ui.table_refresh import suspended_table_updates
+from trusted_ui.drop_intake import install_drop_intake, issue_summary
+from trusted_ui.table_refresh import (
+    limit_resize_contents_work,
+    suspended_table_updates,
+)
 
 
 _TEXT = {
@@ -39,6 +44,28 @@ _TEXT = {
         "enable": "Direct HTTP メイン MOD を有効化",
     },
 }
+
+
+def merge_direct_http_drop(
+    current: tuple[str, ...],
+    intake: DropIntake,
+    *,
+    limit: int = 100,
+) -> tuple[str, ...]:
+    """Merge an explicit URL-only drop without starting a download."""
+
+    if intake.batch_files or intake.media_files:
+        raise ValueError("Direct HTTP 欄位只接受公開 HTTPS 檔案網址")
+    existing = tuple(value.strip() for value in current if value.strip())
+    if any(not direct_http_url_candidate(url) for url in existing):
+        raise ValueError("請先修正欄位中既有的無效 Direct HTTP 網址")
+    incoming = tuple(
+        url for url in intake.urls if direct_http_url_candidate(url)
+    )
+    merged = tuple(dict.fromkeys((*existing, *incoming)))
+    if len(merged) > limit:
+        raise ValueError(f"Direct HTTP 一次最多 {limit} 個網址")
+    return merged
 
 
 def _direct_tasks(context: object) -> tuple[DownloadTask, ...]:
@@ -151,6 +178,13 @@ def create_direct_http_workspace(context: object, parent: object = None) -> obje
             self.preview = QLabel("尚未輸入直接檔案網址。")
             self.preview.setObjectName("preview")
             self.preview.setWordWrap(True)
+            self.drop_intake_filter = install_drop_intake(
+                self.urls,
+                self.apply_drop_intake,
+                on_error=lambda message: self.preview.setText(
+                    f"拖放內容無法使用：{message}"
+                ),
+            )
             action_row.addWidget(self.preview, 1)
             self.read_info = QPushButton("讀取檔案資訊")
             self.read_info.clicked.connect(self.analyze_first)
@@ -172,6 +206,7 @@ def create_direct_http_workspace(context: object, parent: object = None) -> obje
             self.table.setAlternatingRowColors(True)
             self.table.verticalHeader().hide()
             header = self.table.horizontalHeader()
+            limit_resize_contents_work(header)
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
             header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
@@ -212,6 +247,34 @@ def create_direct_http_workspace(context: object, parent: object = None) -> obje
                 for line in self.urls.toPlainText().splitlines()
                 if line.strip()
             )
+
+        def apply_drop_intake(self, intake: DropIntake) -> None:
+            try:
+                merged = merge_direct_http_drop(self._urls(), intake)
+            except ValueError as error:
+                self.preview.setText(str(error))
+                return
+            accepted = len(
+                tuple(
+                    url
+                    for url in intake.urls
+                    if direct_http_url_candidate(url)
+                )
+            )
+            if not accepted:
+                rejected = issue_summary(intake)
+                self.preview.setText(
+                    "拖放內容沒有可用的 Direct HTTP 網址"
+                    + (f"：{rejected}" if rejected else "。")
+                )
+                return
+            self.urls.setPlainText("\n".join(merged))
+            rejected_count = len(intake.urls) - accepted + len(intake.issues)
+            self.preview.setText(
+                f"已拖入 {accepted} 個 Direct HTTP 網址；請檢查後再加入。"
+                + (f" 略過 {rejected_count} 項。" if rejected_count else "")
+            )
+            self.urls.setFocus()
 
         def apply_language(self, _payload: object = None) -> None:
             locale = normalized_core_locale(

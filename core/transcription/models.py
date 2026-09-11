@@ -17,12 +17,19 @@ class TranscriptionState(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class TranscriptionCapabilities:
+    supports_vad: bool = False
+    diagnostic: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class TranscriptionRequest:
     source: Path
     model_id: str
     output_dir: Path
     formats: tuple[str, ...] = ("txt", "srt", "vtt")
     language: str = "auto"
+    vad_model_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

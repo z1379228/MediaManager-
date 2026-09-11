@@ -6,6 +6,9 @@ from core.conversion.models import (
     ConversionRequest,
     ConversionState,
     ConversionTask,
+    MediaHealthReport,
+    MediaInspection,
+    MediaStreamInfo,
 )
 from core.conversion.service import ConversionService
 from core.conversion.feature import MediaAdTrimFeature
@@ -17,5 +20,8 @@ __all__ = [
     "ConversionService",
     "ConversionState",
     "ConversionTask",
+    "MediaHealthReport",
+    "MediaInspection",
+    "MediaStreamInfo",
     "MediaAdTrimFeature",
 ]

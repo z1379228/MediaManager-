@@ -94,6 +94,32 @@ def test_self_check_is_manual_read_only_and_uses_only_warm_snapshot(
     ).state == "warning"
 
 
+def test_self_check_reports_conversion_tools_without_running_them(
+    tmp_path: Path,
+) -> None:
+    value = context(tmp_path)
+
+    def must_not_run(*_args, **_kwargs):
+        raise AssertionError("manual conversion tools must not run during self-check")
+
+    value.conversion = SimpleNamespace(
+        available=True,
+        create_output_sample=must_not_run,
+        discard_output_sample=must_not_run,
+        check_source_health=must_not_run,
+    )
+
+    report = run_self_check(value)
+
+    item = next(
+        item
+        for item in report.items
+        if item.check_id == "conversion.manual_tools"
+    )
+    assert item.state == "pass"
+    assert "不會試轉" in item.detail
+
+
 def test_self_check_imports_bounded_manual_provider_smoke(tmp_path: Path) -> None:
     path = tmp_path / "provider-smoke.json"
     path.write_text(

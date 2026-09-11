@@ -2,7 +2,7 @@
 
 BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
     "direct-http": {
-        "provider.py": "cd8473f4e323278cbd40ca16598268256918c86bb64a5176b470a141810a994a",
+        "provider.py": "aeeeb1b19f0d3708c265f86491c9f1c996802113167ff3d08c16eb411df25bdc",
         "provider.json": "001b249260a75bb7f284b4cbc53b0d91a646a35d4dfc7027e3a273a757d448c7",
     },
     "automation": {
@@ -11,7 +11,11 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
     },
     "media-convert": {
         "feature.json": "94acc1e77de17499ae118c2c89f3430f3b04721772851823841376c490f62946",
-        "presets.json": "441af528c087d891f0d7e8aea27731dafb5e50870323938612cc576e4bbb9956",
+        "presets.json": "0d14e0ca375c310eef4c55160c7037fddeaebab0ed9b8d645f3a9388cc7e82f5",
+    },
+    "musicbrainz-metadata": {
+        "provider.py": "0e349fe774cb6d2f2197f9c99dd1c6c3be26c3dc7eb627abd0ec43bbed981fb5",
+        "provider.json": "cf801274a28de052036284b1f7a21d7021173eab498b6de1cbfc3324c8d4aba2",
     },
     "media-ad-trim": {
         "feature.json": "49db63e4ae5e3b499702603537bd21495797dfe19e69f588f3570d97c510e69e",
@@ -23,7 +27,7 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "feature.json": "65b1ba694184a3657e9f41f216b2357defde11f1a4a7055999561dae4574bc92",
     },
     "speech-to-text": {
-        "adapter.json": "0d155d02eadc79b42abc12479bf5ceee79e3739b6bb43e20ea9d1ffc71403046",
+        "adapter.json": "a35ff87617c805bd15aa95ee284b2d42802f07d239d4474a1d9da39f9e3ca884",
         "feature.json": "e5d9222296dfe35e7b552bdb109d8d2d5dbe766a961e38e1ad562875289544ae",
     },
     "bilibili": {

@@ -4,10 +4,14 @@
 逐版重複日誌與退役功能說明已從目前樹移除；必要時由 Git 歷史或 GitHub Releases
 追查，不另建第二份歷史索引。
 
-- 目前來源版本為開發版 39.0（核心相容版本 39.0.106）。
+- 目前來源版本為開發版 39.0（核心相容版本 39.0.112）。
 - [下一次 Development 資源與 MOD 效能計畫](performance-mod-optimization-plan.md)
-  已開始執行；39.0.106 已完成階段 A、階段 B、階段 C 與階段 D 的安全實驗
-  工具，但尚未執行原型 build 或取得配置比較結果。build、
+  已開始執行；39.0.106 已完成階段 A 至 D 及 onefile／onedir 隔離比較，
+  39.0.107 開始階段 E 的下載工作流與 UI 改善，39.0.108 完成稽核修正，
+  39.0.109 加入手動拖放、輸出試轉與快速健康檢查，39.0.110 增加明確的
+  Intel／AMD／AV1 硬體轉檔 preset 並把 FFmpeg 能力偵測移至背景；39.0.111
+  加入兩階段目標容量與明確非 Passthru 的音量標準化；39.0.112 完成只由
+  本機媒體庫手動觸發、只更新本機資料庫的 MusicBrainz 中繼資料 MOD。新的 build、
   Testing／Stable、push 與發布均未授權。Development 40.0 仍是 `NO RELEASE`，
   不因規劃文件建立空版本。
 - Testing `1.2.0` 已由 Development `39.0.11` 建立本機歷史封存，保留於
@@ -51,7 +55,7 @@
 - [版本資料夾與三軌政策](version-layout.md)
 - [GitHub 免安裝自包含 ZIP](self-contained-zip.md)
 - [Development 39.0–40.0 更新紀錄](release-39.0-40.0.md)
-- [Testing 1.2.3 候選與 1.2.x 發行紀錄](release-testing-1.2.md)
+- [Testing 1.2.4 候選與 1.2.x 發行紀錄](release-testing-1.2.md)
 - [Testing 1.1 說明](release-testing-1.1.md)
 - [簽章與發行 Gate](release-signing.md)
 - [GitHub 自動檢查與合併](github-auto-merge.md)

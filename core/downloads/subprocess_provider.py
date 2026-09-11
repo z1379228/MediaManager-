@@ -147,6 +147,8 @@ class SubprocessDownloadProvider:
         self.runtime_home = runtime_home.resolve() if runtime_home else None
         self._processes: set[subprocess.Popen[str]] = set()
         self._lock = threading.RLock()
+        self._search_rate_lock = threading.Lock()
+        self._last_search_started = 0.0
         (
             self.provider_id,
             self.display_name,
@@ -154,6 +156,7 @@ class SubprocessDownloadProvider:
             self.hosts,
             self.permissions,
             self.search_capability,
+            self.search_visibility,
         ) = self._load_manifest()
         self.js_runtime: tuple[str, str] | None = None
         if js_runtime is not None:
@@ -199,6 +202,7 @@ class SubprocessDownloadProvider:
         frozenset[str],
         tuple[str, ...],
         SearchCapabilityV2 | None,
+        str,
     ]:
         try:
             raw = json.loads(
@@ -218,7 +222,9 @@ class SubprocessDownloadProvider:
         if (
             not isinstance(raw, dict)
             or not required <= set(raw)
-            or set(raw) - required - {"search_capability"}
+            or set(raw)
+            - required
+            - {"search_capability", "search_visibility"}
         ):
             raise ProviderProtocolError("provider manifest fields invalid")
         provider_id = raw["provider_id"]
@@ -268,6 +274,7 @@ class SubprocessDownloadProvider:
             },
             "youtube-search": {"network.youtube", "process.javascript"},
             "bilibili-search": {"network.bilibili"},
+            "musicbrainz-metadata": {"network.musicbrainz"},
             "youtube-player": {
                 "network.youtube",
                 "storage.temp.write",
@@ -336,6 +343,13 @@ class SubprocessDownloadProvider:
                 ) from error
             if search_capability.provider_id != provider_id:
                 raise ProviderProtocolError("search capability provider mismatch")
+        search_visibility = raw.get("search_visibility", "federated")
+        if search_visibility not in {"federated", "manual"}:
+            raise ProviderProtocolError("search visibility is invalid")
+        if search_visibility == "manual" and search_capability is None:
+            raise ProviderProtocolError(
+                "manual search visibility requires a search capability"
+            )
         return (
             provider_id,
             display_name,
@@ -343,6 +357,7 @@ class SubprocessDownloadProvider:
             frozenset(host.casefold() for host in hosts),
             tuple(permissions),
             search_capability,
+            search_visibility,
         )
 
     def _verify_expected_files(self) -> None:
@@ -419,6 +434,7 @@ class SubprocessDownloadProvider:
         permission = {
             "youtube-search": "network.youtube",
             "bilibili-search": "network.bilibili",
+            "musicbrainz-metadata": "network.musicbrainz",
             "test": "network.youtube",
         }.get(self.provider_id)
         if permission is None:
@@ -515,6 +531,7 @@ class SubprocessDownloadProvider:
             False,
         )
         normalized = query.normalized(capability)
+        self._wait_for_search_rate_limit()
         payload = {
             "operation": "search",
             "query": normalized.query,
@@ -546,6 +563,15 @@ class SubprocessDownloadProvider:
             raise ProviderProtocolError(
                 f"provider search page is invalid: {error}"
             ) from error
+
+    def _wait_for_search_rate_limit(self) -> None:
+        if self.provider_id != "musicbrainz-metadata":
+            return
+        with self._search_rate_lock:
+            remaining = 1.0 - (time.monotonic() - self._last_search_started)
+            if remaining > 0:
+                time.sleep(remaining)
+            self._last_search_started = time.monotonic()
 
     def similar_plan(
         self,

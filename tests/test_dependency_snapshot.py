@@ -98,7 +98,7 @@ def test_snapshot_derives_readiness_for_each_catalog_mod(tmp_path: Path) -> None
 
     snapshot = service.refresh()
 
-    assert len(snapshot.readiness) == 29
+    assert len(snapshot.readiness) == 30
     assert snapshot.readiness_for("youtube").ready
     assert snapshot.readiness_for("mega").ready
     assert snapshot.readiness_for("speech-to-text").ready
@@ -108,3 +108,4 @@ def test_snapshot_derives_readiness_for_each_catalog_mod(tmp_path: Path) -> None
         "speech-model",
     )
     assert snapshot.readiness_for("automation").ready
+    assert snapshot.readiness_for("musicbrainz-metadata").ready

@@ -43,6 +43,12 @@ class IdleResourceController:
         self._root: object | None = None
         self.idle = False
 
+    @property
+    def suspended_timer_count(self) -> int:
+        """Return the bounded timer count currently held for restoration."""
+
+        return len(self._suspended)
+
     def enter(self, root: object) -> int:
         if self.idle:
             return 0

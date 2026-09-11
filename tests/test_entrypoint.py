@@ -118,7 +118,7 @@ def test_version_prepares_frozen_cli_output_before_argparse(
 
     assert raised.value.code == 0
     assert calls == ["restore", "close"]
-    assert "MediaManager 開發版 39.0.106" in capsys.readouterr().out
+    assert "MediaManager 開發版 39.0.112" in capsys.readouterr().out
 
 
 def test_frozen_windowed_cli_uses_hard_process_exit(monkeypatch) -> None:
@@ -160,7 +160,7 @@ def test_source_script_entry_keeps_normal_system_exit(monkeypatch) -> None:
 def test_start_minimized_is_forwarded_only_to_the_graphical_shell(
     monkeypatch,
 ) -> None:
-    calls: list[bool] = []
+    calls: list[tuple[bool, object]] = []
 
     class FakeBootstrap:
         def __init__(self, *, portable: bool = False) -> None:
@@ -179,11 +179,81 @@ def test_start_minimized_is_forwarded_only_to_the_graphical_shell(
     monkeypatch.setattr(
         main,
         "_run_graphical_shell",
-        lambda _context, *, start_minimized: calls.append(start_minimized) or 0,
+        lambda _context, *, start_minimized, initial_prefill: calls.append(
+            (start_minimized, initial_prefill)
+        )
+        or 0,
     )
 
     assert main.main(["--start-minimized"]) == 0
-    assert calls == [True]
+    assert calls == [(True, None)]
+
+
+def test_browser_handoff_is_validated_and_forwarded_to_graphical_shell(
+    monkeypatch,
+) -> None:
+    captured: list[object] = []
+    context = SimpleNamespace(
+        lifecycle=SimpleNamespace(shutdown=lambda: None)
+    )
+    monkeypatch.setattr(
+        main,
+        "_create_bootstrap",
+        lambda *, portable: SimpleNamespace(initialize=lambda: context),
+    )
+    monkeypatch.setattr(
+        main,
+        "_run_graphical_shell",
+        lambda _context, *, start_minimized, initial_prefill: captured.append(
+            (start_minimized, initial_prefill)
+        )
+        or 0,
+    )
+
+    assert (
+        main.main(
+            [
+                "--start-minimized",
+                "--browser-handoff",
+                "https://www.youtube.com/watch?v=example",
+            ]
+        )
+        == 0
+    )
+    assert captured == [
+        (
+            False,
+            {
+                "url": "https://www.youtube.com/watch?v=example",
+                "title": "瀏覽器交付",
+                "provider_id": "browser-handoff",
+            },
+        )
+    ]
+
+
+def test_browser_handoff_rejects_headless_and_invalid_urls(monkeypatch) -> None:
+    monkeypatch.setattr(
+        main,
+        "_create_bootstrap",
+        lambda **_: (_ for _ in ()).throw(
+            AssertionError("invalid handoff must not initialize the application")
+        ),
+    )
+
+    with pytest.raises(SystemExit) as invalid:
+        main.main(["--browser-handoff", "https://example.com/video"])
+    with pytest.raises(SystemExit) as headless:
+        main.main(
+            [
+                "--headless",
+                "--browser-handoff",
+                "https://youtu.be/example",
+            ]
+        )
+
+    assert invalid.value.code == 2
+    assert headless.value.code == 2
 
 
 def test_importing_entrypoint_does_not_load_bootstrap_or_graphical_shell(

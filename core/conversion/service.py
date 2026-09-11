@@ -11,7 +11,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-from threading import Event, RLock, Thread
+from threading import Event, Lock, RLock, Thread
 import time
 import uuid
 
@@ -21,6 +21,9 @@ from core.conversion.models import (
     ConversionRequest,
     ConversionState,
     ConversionTask,
+    MediaHealthReport,
+    MediaInspection,
+    MediaStreamInfo,
 )
 from core.logging.redaction import bounded_redacted_text
 from core.storage.atomic import commit_file_without_overwrite
@@ -36,12 +39,43 @@ MAX_FFMPEG_DIAGNOSTIC_BYTES = 64 * 1024
 MAX_CAPABILITY_OUTPUT_BYTES = 512 * 1024
 MAX_FFPROBE_OUTPUT_BYTES = 256 * 1024
 MAX_STREAM_HASH_OUTPUT_BYTES = 256
+MAX_INSPECTED_STREAMS = 128
 STDERR_READER_JOIN_SECONDS = 2.0
 TOOL_PROBE_TIMEOUT_SECONDS = 8.0
 FFPROBE_TIMEOUT_SECONDS = 20.0
 STREAM_HASH_TIMEOUT_SECONDS = 300.0
 DEFAULT_CONVERSION_FREE_SPACE_RESERVE = 256 * 1024 * 1024
 LOCAL_PROTOCOL_WHITELIST = "file,pipe"
+MAX_OUTPUT_SAMPLE_SECONDS = 30.0
+MAX_HEALTH_CHECK_SECONDS = 30.0
+MIN_TARGET_SIZE_BYTES = 8 * 1024 * 1024
+MAX_TARGET_SIZE_BYTES = 2 * 1024**4
+TARGET_SIZE_PAYLOAD_RATIO = 0.97
+MIN_TARGET_VIDEO_BITRATE_KBPS = 150
+MAX_TARGET_VIDEO_BITRATE_KBPS = 200_000
+OUTPUT_SAMPLE_PRESETS = frozenset(
+    {
+        "video-h264",
+        "compress-h265",
+        "watermark-h264",
+        "video-vp9-webm",
+        "video-mpeg4-avi",
+        "video-h264-qsv",
+        "video-hevc-qsv",
+        "video-h264-amf",
+        "video-hevc-amf",
+        "video-av1-nvenc",
+        "video-av1-qsv",
+        "video-av1-amf",
+        "audio-mp3",
+        "audio-flac",
+        "audio-loudnorm-flac",
+        "audio-aac",
+        "audio-opus",
+        "audio-loudnorm-opus",
+        "audio-wav",
+    }
+)
 SUBPROCESS_CREATION_FLAGS = (
     getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 )
@@ -77,6 +111,10 @@ class ConversionService:
         self._queue: list[str] = []
         self._worker: Thread | None = None
         self._process: subprocess.Popen[bytes] | None = None
+        self._process_cancel_event: object | None = None
+        self._execution_lock = Lock()
+        self._aux_cancel_events: set[Event] = set()
+        self._output_samples: set[Path] = set()
         self._capabilities: ConversionCapabilities | None = None
 
     @property
@@ -93,9 +131,16 @@ class ConversionService:
             and self.ffprobe.is_file()
         )
 
-    def capabilities(self, *, refresh: bool = False) -> ConversionCapabilities:
+    def capabilities(
+        self,
+        *,
+        refresh: bool = False,
+        cancel_event: Event | None = None,
+    ) -> ConversionCapabilities:
         """Return cached, observed local FFmpeg capabilities without guessing."""
 
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("capability probe cancelled")
         with self._lock:
             cached = self._capabilities
         if cached is not None and not refresh:
@@ -111,7 +156,15 @@ class ConversionService:
             "-filters",
             "-hwaccels",
         ):
-            text, error = self._probe_text(flag)
+            if cancel_event is not None and cancel_event.is_set():
+                raise RuntimeError("capability probe cancelled")
+            if cancel_event is None:
+                text, error = self._probe_text(flag)
+            else:
+                text, error = self._probe_text(
+                    flag,
+                    cancel_event=cancel_event,
+                )
             outputs[flag] = text
             if error:
                 errors.append(f"{flag}: {error}")
@@ -160,16 +213,278 @@ class ConversionService:
             )
         with self._lock:
             self._enabled = enabled
+            auxiliary = tuple(self._aux_cancel_events) if not enabled else ()
+        for cancel_event in auxiliary:
+            cancel_event.set()
         return 0 if enabled else self.cancel_all()
 
     def preset_ids(self) -> tuple[str, ...]:
         return tuple(self._presets)
 
+    def preset_required_encoder(self, preset_id: str) -> str:
+        """Return one explicit encoder gate without probing or starting work."""
+
+        selected = preset_id.strip().casefold()
+        definition = self._presets.get(selected)
+        if definition is None:
+            raise ValueError("unsupported conversion preset")
+        required = definition.get("required_encoder")
+        return required if isinstance(required, str) else ""
+
+    def preset_required_filter(self, preset_id: str) -> str:
+        """Return one explicit FFmpeg filter gate without starting work."""
+
+        selected = preset_id.strip().casefold()
+        definition = self._presets.get(selected)
+        if definition is None:
+            raise ValueError("unsupported conversion preset")
+        required = definition.get("required_filter")
+        return required if isinstance(required, str) else ""
+
+    def inspect_source(
+        self,
+        source: Path,
+        *,
+        cancel_event: Event | None = None,
+    ) -> MediaInspection:
+        """Inspect one bounded local file for trusted track selection UI."""
+
+        if not isinstance(source, Path):
+            raise TypeError("inspection source must be a local path")
+        expanded = source.expanduser()
+        if _is_linklike(expanded):
+            raise ValueError("inspection source must be a regular file")
+        path = expanded.resolve()
+        if not path.is_file():
+            raise ValueError("inspection source must be a regular file")
+        if path.stat().st_size > MAX_SOURCE_BYTES:
+            raise ValueError("inspection source exceeds the size limit")
+        document = self._probe_document(
+            path,
+            "ffprobe source inspection failed",
+            cancel_event=cancel_event,
+        )
+        raw_streams = document.get("streams")
+        assert isinstance(raw_streams, list)
+        if len(raw_streams) > MAX_INSPECTED_STREAMS:
+            raise RuntimeError("ffprobe source inspection exceeded the stream limit")
+        streams: list[MediaStreamInfo] = []
+        observed_indices: set[int] = set()
+        for raw_stream in raw_streams:
+            assert isinstance(raw_stream, dict)
+            index = self._stream_index(raw_stream.get("index"))
+            codec_type = self._normalized_text(raw_stream.get("codec_type"))
+            if codec_type not in {"video", "audio", "subtitle"}:
+                continue
+            if index is None or index in observed_indices:
+                raise RuntimeError("ffprobe source inspection has invalid stream indices")
+            observed_indices.add(index)
+            tags = raw_stream.get("tags")
+            if not isinstance(tags, dict):
+                tags = {}
+            disposition = raw_stream.get("disposition")
+            if not isinstance(disposition, dict):
+                disposition = {}
+            streams.append(
+                MediaStreamInfo(
+                    index=index,
+                    codec_type=codec_type,
+                    codec_name=self._metadata_text(
+                        raw_stream.get("codec_name"), 64
+                    ),
+                    title=self._metadata_text(tags.get("title"), 120),
+                    language=self._metadata_text(tags.get("language"), 16),
+                    channels=self._positive_integer(raw_stream.get("channels")),
+                    width=self._positive_integer(raw_stream.get("width")),
+                    height=self._positive_integer(raw_stream.get("height")),
+                    default=disposition.get("default") == 1,
+                    forced=disposition.get("forced") == 1,
+                )
+            )
+        format_document = document.get("format")
+        if not isinstance(format_document, dict):
+            format_document = {}
+        duration = self._nonnegative_float(format_document.get("duration"))
+        return MediaInspection(
+            path,
+            self._metadata_text(format_document.get("format_name"), 120),
+            duration,
+            tuple(streams),
+        )
+
+    def supports_output_sample(self, preset_id: str) -> bool:
+        """Return whether a preset produces a meaningful bounded encode sample."""
+
+        return preset_id.strip().casefold() in OUTPUT_SAMPLE_PRESETS
+
+    def create_output_sample(
+        self,
+        request: ConversionRequest,
+        *,
+        duration_seconds: float = 20.0,
+        cancel_event: Event | None = None,
+    ) -> Path:
+        """Encode a bounded sample under the private temp root without queuing."""
+
+        if not self.is_enabled:
+            raise RuntimeError("Media Convert MOD is disabled")
+        duration = self._bounded_aux_duration(
+            duration_seconds,
+            maximum=MAX_OUTPUT_SAMPLE_SECONDS,
+            label="sample duration",
+        )
+        if not self.supports_output_sample(request.preset):
+            raise ValueError("selected preset does not support an output sample")
+        event = cancel_event if cancel_event is not None else Event()
+        self._register_auxiliary(event)
+        output: Path | None = None
+        try:
+            sample_root = self._sample_root(create=True)
+            output = sample_root / (
+                f"output-sample-{uuid.uuid4().hex}{request.output.suffix}"
+            )
+            start = request.start_time or 0.0
+            sample_duration = duration
+            if request.end_time is not None:
+                sample_duration = min(sample_duration, request.end_time - start)
+            if sample_duration <= 0:
+                raise ValueError("sample duration is outside the requested time range")
+            sample_request = replace(
+                request,
+                output=output,
+                start_time=start if start > 0 else None,
+                end_time=None,
+                remove_ranges=(),
+                stream_index=None,
+            )
+            plan = self.preview(sample_request)
+            duration_args = ("-t", self._time_value(sample_duration))
+            plan = replace(
+                plan,
+                command=plan.command[:-1] + duration_args + plan.command[-1:],
+                fallback_command=(
+                    plan.fallback_command[:-1]
+                    + duration_args
+                    + plan.fallback_command[-1:]
+                    if plan.fallback_command is not None
+                    else None
+                ),
+            )
+            self._validate_runtime_requirements(plan)
+            self._preflight_output(plan)
+            task = ConversionTask(
+                f"sample-{uuid.uuid4().hex}",
+                plan.request,
+                cancel_event=event,
+            )
+            result = self._execute_serialized(task, plan)
+            with self._lock:
+                if self._closed:
+                    result.unlink(missing_ok=True)
+                    raise RuntimeError("conversion service is closed")
+                self._output_samples.add(result)
+            return result
+        except Exception:
+            if output is not None:
+                output.unlink(missing_ok=True)
+            raise
+        finally:
+            self._unregister_auxiliary(event)
+
+    def discard_output_sample(self, sample: Path) -> None:
+        """Delete only an output sample created inside this service's sample root."""
+
+        if not isinstance(sample, Path):
+            raise TypeError("sample path must be local")
+        sample_root = self._sample_root()
+        candidate = sample.expanduser()
+        if _is_linklike(candidate):
+            raise ValueError("sample must remain inside the sample directory")
+        resolved = candidate.resolve()
+        if resolved.parent != sample_root or not resolved.name.startswith(
+            "output-sample-"
+        ):
+            raise ValueError("sample must remain inside the sample directory")
+        with self._lock:
+            if resolved not in self._output_samples:
+                raise ValueError("sample was not created by this service")
+        resolved.unlink(missing_ok=True)
+        with self._lock:
+            self._output_samples.discard(resolved)
+
+    def check_source_health(
+        self,
+        source: Path,
+        *,
+        duration_seconds: float = 15.0,
+        cancel_event: Event | None = None,
+    ) -> MediaHealthReport:
+        """Probe metadata and decode at most one short prefix of local media."""
+
+        if not self.is_enabled:
+            raise RuntimeError("Media Convert MOD is disabled")
+        if self.ffmpeg is None or not self.ffmpeg.is_file():
+            raise RuntimeError("FFmpeg is unavailable")
+        duration = self._bounded_aux_duration(
+            duration_seconds,
+            maximum=MAX_HEALTH_CHECK_SECONDS,
+            label="health-check duration",
+        )
+        event = cancel_event if cancel_event is not None else Event()
+        self._register_auxiliary(event)
+        try:
+            inspection = self.inspect_source(source, cancel_event=event)
+            command = (
+                str(self.ffmpeg),
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-protocol_whitelist",
+                LOCAL_PROTOCOL_WHITELIST,
+                "-xerror",
+                "-i",
+                str(inspection.source),
+                "-map",
+                "0:v:0?",
+                "-map",
+                "0:a:0?",
+                "-t",
+                self._time_value(duration),
+                "-f",
+                "null",
+                "-",
+            )
+            return_code, diagnostic = self._run_serialized(command, event)
+            if event.is_set():
+                raise RuntimeError("health check cancelled")
+            checked = (
+                min(duration, inspection.duration_seconds)
+                if inspection.duration_seconds is not None
+                else duration
+            )
+            return MediaHealthReport(
+                inspection,
+                checked,
+                return_code == 0,
+                diagnostic,
+            )
+        finally:
+            self._unregister_auxiliary(event)
+
     def preview(self, request: ConversionRequest) -> ConversionPlan:
         sources, output, preset, remove_ranges, watermark = self._validate(request)
         definition = self._presets[preset]
         ratio = float(definition["estimate_ratio"])
-        estimated = max(1, int(sum(path.stat().st_size for path in sources) * ratio))
+        target_size = request.target_size_bytes
+        estimated = (
+            target_size
+            if target_size is not None
+            else max(
+                1,
+                int(sum(path.stat().st_size for path in sources) * ratio),
+            )
+        )
         ffmpeg = str(self.ffmpeg) if self.ffmpeg is not None else "ffmpeg"
         command = [
             ffmpeg,
@@ -202,11 +517,27 @@ class ConversionService:
                     f"aselect={selector},asetpts=N/SR/TB"
                 ),
             }
+        if request.stream_index is not None:
+            replacements["@STREAM_INDEX@"] = str(request.stream_index)
+        if target_size is not None:
+            video_bitrate = self._target_video_bitrate_kbps(
+                request,
+                definition,
+            )
+            replacements["@VIDEO_BITRATE@"] = f"{video_bitrate}k"
         args = tuple(
-            replacements.get(str(value), str(value))
+            self._replace_tokens(str(value), replacements)
             for value in definition["args"]
         )
         fallback = None
+        preparatory_commands: tuple[tuple[str, ...], ...] = ()
+        first_pass_args = definition.get("first_pass_args")
+        if isinstance(first_pass_args, list):
+            first_pass = tuple(
+                self._replace_tokens(str(value), replacements)
+                for value in first_pass_args
+            )
+            preparatory_commands = (tuple(command + list(first_pass)),)
         if request.hardware_acceleration and definition.get("gpu_args"):
             gpu_command = tuple(command + [str(value) for value in definition["gpu_args"]] + ["@OUTPUT@"])
             fallback = tuple(command + list(args) + ["@OUTPUT@"])
@@ -228,6 +559,7 @@ class ConversionService:
             estimated,
             final_command,
             fallback,
+            preparatory_commands,
         )
 
     def submit(self, request: ConversionRequest) -> str:
@@ -268,7 +600,12 @@ class ConversionService:
                 task.state = ConversionState.CANCELLED
                 if task_id in self._queue:
                     self._queue.remove(task_id)
-            process = self._process if task.state == ConversionState.RUNNING else None
+            process = (
+                self._process
+                if task.state == ConversionState.RUNNING
+                and self._process_cancel_event is task.cancel_event
+                else None
+            )
         if process is not None:
             process.terminate()
         return True
@@ -289,10 +626,89 @@ class ConversionService:
     def close(self) -> None:
         with self._lock:
             self._closed = True
+            auxiliary = tuple(self._aux_cancel_events)
+            output_samples = tuple(self._output_samples)
+            self._output_samples.clear()
+        for cancel_event in auxiliary:
+            cancel_event.set()
         self.cancel_all()
         worker = self._worker
         if worker is not None and worker.is_alive():
             worker.join(timeout=3)
+        for sample in output_samples:
+            sample.unlink(missing_ok=True)
+
+    @staticmethod
+    def _bounded_aux_duration(
+        value: float,
+        *,
+        maximum: float,
+        label: str,
+    ) -> float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"{label} must be numeric")
+        duration = float(value)
+        if not math.isfinite(duration) or duration <= 0 or duration > maximum:
+            raise ValueError(
+                f"{label} must be greater than 0 and no more than {maximum:g} seconds"
+            )
+        return duration
+
+    def _register_auxiliary(self, cancel_event: Event) -> None:
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("conversion service is closed")
+            self._aux_cancel_events.add(cancel_event)
+
+    def _sample_root(self, *, create: bool = False) -> Path:
+        root = self.temp_root / "samples"
+        if _is_linklike(root):
+            raise ValueError("sample directory must not be a link or junction")
+        if create:
+            root.mkdir(parents=True, exist_ok=True)
+        if _is_linklike(root):
+            raise ValueError("sample directory must not be a link or junction")
+        resolved = root.resolve()
+        if resolved.parent != self.temp_root:
+            raise ValueError("sample directory escaped the conversion temp root")
+        return resolved
+
+    def _unregister_auxiliary(self, cancel_event: Event) -> None:
+        with self._lock:
+            self._aux_cancel_events.discard(cancel_event)
+
+    def _acquire_execution(self, cancel_event: Event) -> None:
+        while not self._execution_lock.acquire(timeout=0.05):
+            if cancel_event.is_set():
+                raise RuntimeError("conversion cancelled")
+            with self._lock:
+                if self._closed:
+                    raise RuntimeError("conversion service is closed")
+        if cancel_event.is_set():
+            self._execution_lock.release()
+            raise RuntimeError("conversion cancelled")
+
+    def _execute_serialized(
+        self,
+        task: ConversionTask,
+        plan: ConversionPlan,
+    ) -> Path:
+        self._acquire_execution(task.cancel_event)
+        try:
+            return self._execute(task, plan)
+        finally:
+            self._execution_lock.release()
+
+    def _run_serialized(
+        self,
+        command: tuple[str, ...],
+        cancel_event: Event,
+    ) -> tuple[int, str]:
+        self._acquire_execution(cancel_event)
+        try:
+            return self._run(command, cancel_event)
+        finally:
+            self._execution_lock.release()
 
     def _work(self) -> None:
         while True:
@@ -306,7 +722,7 @@ class ConversionService:
                     continue
                 task.state = ConversionState.RUNNING
             try:
-                output = self._execute(task, self.preview(task.request))
+                output = self._execute_serialized(task, self.preview(task.request))
             except Exception as error:
                 with self._lock:
                     task.state = (
@@ -324,10 +740,39 @@ class ConversionService:
         output = plan.request.output
         part = output.with_name(f".{output.stem}.{task.task_id}.part{output.suffix}")
         concat = self.temp_root / f"{task.task_id}.ffconcat"
+        passlog = self.temp_root / f"{task.task_id}.passlog"
         part.unlink(missing_ok=True)
         concat.unlink(missing_ok=True)
         try:
-            command = self._materialize(plan.command, plan, part, concat)
+            for preparation in plan.preparatory_commands:
+                command = self._materialize(
+                    preparation,
+                    plan,
+                    part,
+                    concat,
+                    passlog,
+                )
+                return_code, diagnostic = self._run(
+                    command,
+                    task.cancel_event,
+                )
+                if task.cancel_event.is_set():
+                    raise RuntimeError("conversion cancelled")
+                if return_code != 0:
+                    message = (
+                        "FFmpeg preparation exited with code "
+                        f"{return_code}"
+                    )
+                    if diagnostic:
+                        message = f"{message}: {diagnostic}"
+                    raise RuntimeError(message)
+            command = self._materialize(
+                plan.command,
+                plan,
+                part,
+                concat,
+                passlog,
+            )
             return_code, diagnostic = self._run(command, task.cancel_event)
             if (
                 return_code != 0
@@ -335,7 +780,13 @@ class ConversionService:
                 and plan.fallback_command is not None
             ):
                 part.unlink(missing_ok=True)
-                command = self._materialize(plan.fallback_command, plan, part, concat)
+                command = self._materialize(
+                    plan.fallback_command,
+                    plan,
+                    part,
+                    concat,
+                    passlog,
+                )
                 return_code, diagnostic = self._run(command, task.cancel_event)
             if task.cancel_event.is_set():
                 raise RuntimeError("conversion cancelled")
@@ -349,6 +800,11 @@ class ConversionService:
                 plan=plan,
                 cancel_event=task.cancel_event,
             )
+            target_size = plan.request.target_size_bytes
+            if target_size is not None and part.stat().st_size > target_size:
+                raise RuntimeError(
+                    "conversion exceeded the requested target size"
+                )
             if output.exists():
                 raise FileExistsError(output)
             commit_file_without_overwrite(part, output)
@@ -356,6 +812,8 @@ class ConversionService:
         finally:
             part.unlink(missing_ok=True)
             concat.unlink(missing_ok=True)
+            for path in self._passlog_paths(passlog):
+                path.unlink(missing_ok=True)
 
     def _run(
         self, command: tuple[str, ...], cancel_event: object
@@ -394,6 +852,7 @@ class ConversionService:
         )
         with self._lock:
             self._process = process
+            self._process_cancel_event = cancel_event
         stderr_thread.start()
         try:
             while process.poll() is None:
@@ -442,6 +901,7 @@ class ConversionService:
             with self._lock:
                 if self._process is process:
                     self._process = None
+                    self._process_cancel_event = None
 
     def _preflight_output(self, plan: ConversionPlan) -> None:
         required = plan.estimated_bytes + DEFAULT_CONVERSION_FREE_SPACE_RESERVE
@@ -458,11 +918,48 @@ class ConversionService:
 
         definition = self._presets[plan.request.preset]
         required_encoder = definition.get("required_encoder")
+        required_filter = definition.get("required_filter")
+        capabilities = (
+            self.capabilities()
+            if isinstance(required_encoder, str)
+            or isinstance(required_filter, str)
+            else None
+        )
         if isinstance(required_encoder, str):
-            capabilities = self.capabilities()
+            assert capabilities is not None
             if required_encoder not in capabilities.encoders:
                 raise RuntimeError(
                     f"required FFmpeg encoder is unavailable: {required_encoder}"
+                )
+        if isinstance(required_filter, str):
+            assert capabilities is not None
+            if required_filter not in capabilities.filters:
+                raise RuntimeError(
+                    f"required FFmpeg filter is unavailable: {required_filter}"
+                )
+
+        selectable_types = definition.get("selectable_stream_types")
+        if isinstance(selectable_types, list):
+            inspection = self.inspect_source(plan.request.sources[0])
+            selected_stream = next(
+                (
+                    stream
+                    for stream in inspection.streams
+                    if stream.index == plan.request.stream_index
+                ),
+                None,
+            )
+            if selected_stream is None:
+                raise RuntimeError("selected media stream is no longer available")
+            if selected_stream.codec_type not in selectable_types:
+                raise RuntimeError("selected media stream type is not supported")
+            expected_extension = (
+                ".mka" if selected_stream.codec_type == "audio" else ".mks"
+            )
+            if plan.request.output.suffix.casefold() != expected_extension:
+                raise RuntimeError(
+                    f"selected {selected_stream.codec_type} stream requires "
+                    f"{expected_extension} output"
                 )
 
         required_audio_codec = definition.get("required_input_audio_codec")
@@ -505,7 +1002,12 @@ class ConversionService:
                 f"detected: {detected}"
             )
 
-    def _probe_text(self, flag: str) -> tuple[str, str]:
+    def _probe_text(
+        self,
+        flag: str,
+        *,
+        cancel_event: Event | None = None,
+    ) -> tuple[str, str]:
         if self.ffmpeg is None or not self.ffmpeg.is_file():
             return "", "FFmpeg is unavailable"
         command = [str(self.ffmpeg), "-nostdin", "-hide_banner", flag]
@@ -515,6 +1017,7 @@ class ConversionService:
             stdout_limit=MAX_CAPABILITY_OUTPUT_BYTES,
             stderr_limit=0,
             combine_stderr=True,
+            cancel_event=cancel_event,
         )
         text = bounded_redacted_text(
             raw.decode("utf-8", errors="replace"),
@@ -524,6 +1027,8 @@ class ConversionService:
             return "", text or "probe timed out"
         if return_code == -2:
             return "", text or "probe could not be started"
+        if return_code == -3:
+            return "", "probe cancelled"
         if return_code != 0:
             return "", text or f"probe exited with code {return_code}"
         if truncated:
@@ -861,6 +1366,39 @@ class ConversionService:
             if source_digest != output_digest:
                 self._raise_output_contract("audio packet digest changed")
 
+        if contract.get("preserve_selected_packets") is True:
+            stream_index = plan.request.stream_index
+            if stream_index is None:
+                self._raise_output_contract("selected stream index is missing")
+            source_document = self._probe_document(
+                plan.request.sources[0],
+                "output contract failed: source probe",
+                cancel_event=cancel_event,
+            )
+            source_stream = self._stream_by_index(source_document, stream_index)
+            if source_stream is None:
+                self._raise_output_contract("selected source stream is missing")
+            codec_type = self._normalized_text(source_stream.get("codec_type"))
+            output_stream = self._first_stream(output_document, codec_type)
+            if output_stream is None:
+                self._raise_output_contract("selected output stream is missing")
+            if self._normalized_text(source_stream.get("codec_name")) != (
+                self._normalized_text(output_stream.get("codec_name"))
+            ):
+                self._raise_output_contract("selected stream codec changed")
+            source_digest = self._stream_digest(
+                plan.request.sources[0],
+                stream_selector=f"0:{stream_index}",
+                cancel_event=cancel_event,
+            )
+            output_digest = self._stream_digest(
+                output,
+                stream_selector="0:0",
+                cancel_event=cancel_event,
+            )
+            if source_digest != output_digest:
+                self._raise_output_contract("selected stream packet digest changed")
+
     @staticmethod
     def _first_stream(
         document: dict[str, object],
@@ -876,6 +1414,24 @@ class ConversionService:
                 for stream in streams
                 if isinstance(stream, dict)
                 and str(stream.get("codec_type", "")).casefold() == expected
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _stream_by_index(
+        document: dict[str, object],
+        stream_index: int,
+    ) -> dict[str, object] | None:
+        streams = document.get("streams")
+        if not isinstance(streams, list):
+            return None
+        return next(
+            (
+                stream
+                for stream in streams
+                if isinstance(stream, dict)
+                and stream.get("index") == stream_index
             ),
             None,
         )
@@ -901,6 +1457,30 @@ class ConversionService:
         return None
 
     @staticmethod
+    def _stream_index(value: object) -> int | None:
+        if (
+            isinstance(value, int)
+            and not isinstance(value, bool)
+            and 0 <= value < MAX_INSPECTED_STREAMS
+        ):
+            return value
+        return None
+
+    @staticmethod
+    def _nonnegative_float(value: object) -> float | None:
+        try:
+            result = float(value)
+        except (TypeError, ValueError):
+            return None
+        return result if math.isfinite(result) and result >= 0 else None
+
+    @staticmethod
+    def _metadata_text(value: object, maximum: int) -> str:
+        if not isinstance(value, str):
+            return ""
+        return " ".join(value.split())[:maximum]
+
+    @staticmethod
     def _frame_rate(value: object) -> Fraction | None:
         if not isinstance(value, str):
             return None
@@ -924,6 +1504,7 @@ class ConversionService:
         self,
         path: Path,
         *,
+        stream_selector: str = "0:a:0",
         cancel_event: object | None = None,
     ) -> str:
         if self.ffmpeg is None or not self.ffmpeg.is_file():
@@ -939,7 +1520,7 @@ class ConversionService:
             "-i",
             str(path),
             "-map",
-            "0:a:0",
+            stream_selector,
             "-c",
             "copy",
             "-f",
@@ -983,6 +1564,7 @@ class ConversionService:
         plan: ConversionPlan,
         part: Path,
         concat: Path,
+        passlog: Path,
     ) -> tuple[str, ...]:
         if "@CONCAT_LIST@" in command:
             lines = ["ffconcat version 1.0"]
@@ -990,10 +1572,30 @@ class ConversionService:
                 escaped = str(source).replace("'", "'\\''")
                 lines.append(f"file '{escaped}'")
             concat.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        return tuple(
-            str(part) if value == "@OUTPUT@" else str(concat) if value == "@CONCAT_LIST@" else value
-            for value in command
+        replacements = {
+            "@OUTPUT@": str(part),
+            "@CONCAT_LIST@": str(concat),
+            "@PASSLOG@": str(passlog),
+            "@NULL_OUTPUT@": os.devnull,
+        }
+        return tuple(replacements.get(value, value) for value in command)
+
+    @staticmethod
+    def _passlog_paths(passlog: Path) -> tuple[Path, ...]:
+        return (
+            passlog,
+            Path(f"{passlog}-0.log"),
+            Path(f"{passlog}-0.log.mbtree"),
+            Path(f"{passlog}.log"),
+            Path(f"{passlog}.log.mbtree"),
         )
+
+    @staticmethod
+    def _replace_tokens(value: str, replacements: dict[str, str]) -> str:
+        result = value
+        for token, replacement in replacements.items():
+            result = result.replace(token, replacement)
+        return result
 
     def _validate(
         self, request: ConversionRequest
@@ -1044,6 +1646,14 @@ class ConversionService:
         if output in sources or output == watermark:
             raise ValueError("conversion output cannot replace a source")
         definition = self._presets[preset]
+        selectable_types = definition.get("selectable_stream_types")
+        if isinstance(selectable_types, list):
+            if self._stream_index(request.stream_index) is None:
+                raise ValueError("conversion stream index is invalid")
+            if request.start_time is not None or request.end_time is not None:
+                raise ValueError("stream copy does not support time clipping")
+        elif request.stream_index is not None:
+            raise ValueError("stream index requires a selectable track preset")
         source_extensions = {
             str(value).casefold()
             for value in definition.get("source_extensions", ())
@@ -1077,6 +1687,19 @@ class ConversionService:
                 raise ValueError(f"conversion {name} time is invalid")
         if request.end_time is not None and request.end_time <= (request.start_time or 0):
             raise ValueError("conversion end time must be after start")
+        target_size_preset = isinstance(
+            definition.get("target_size_audio_bitrate_kbps"),
+            int,
+        )
+        if target_size_preset:
+            self._target_video_bitrate_kbps(request, definition)
+        elif (
+            request.target_size_bytes is not None
+            or request.source_duration_seconds is not None
+        ):
+            raise ValueError(
+                "target size options require a target-size preset"
+            )
         remove_ranges = self._validated_removal_ranges(request.remove_ranges)
         if preset == "ad-trim-h264":
             if request.start_time is not None or request.end_time is not None:
@@ -1088,6 +1711,56 @@ class ConversionService:
         elif remove_ranges:
             raise ValueError("removal ranges require the ad-trim-h264 preset")
         return sources, output, preset, remove_ranges, watermark
+
+    @staticmethod
+    def _target_video_bitrate_kbps(
+        request: ConversionRequest,
+        definition: dict[str, object],
+    ) -> int:
+        target_size = request.target_size_bytes
+        if (
+            isinstance(target_size, bool)
+            or not isinstance(target_size, int)
+            or not MIN_TARGET_SIZE_BYTES <= target_size <= MAX_TARGET_SIZE_BYTES
+        ):
+            raise ValueError(
+                "target size must be between 8 MiB and 2 TiB"
+            )
+        source_duration = request.source_duration_seconds
+        if (
+            isinstance(source_duration, bool)
+            or not isinstance(source_duration, (int, float))
+            or not math.isfinite(source_duration)
+            or not 0 < source_duration <= MAX_MEDIA_SECONDS
+        ):
+            raise ValueError("source duration is required for target size")
+        start = request.start_time or 0.0
+        end = request.end_time or float(source_duration)
+        if start >= source_duration or end > source_duration + 0.001:
+            raise ValueError("target-size clipping exceeds source duration")
+        duration = end - start
+        if duration <= 0:
+            raise ValueError("target-size duration is invalid")
+        audio_bitrate = definition.get("target_size_audio_bitrate_kbps")
+        if isinstance(audio_bitrate, bool) or not isinstance(audio_bitrate, int):
+            raise ValueError("target-size preset audio bitrate is invalid")
+        total_bitrate = math.floor(
+            target_size
+            * 8
+            * TARGET_SIZE_PAYLOAD_RATIO
+            / duration
+            / 1000
+        )
+        video_bitrate = total_bitrate - audio_bitrate
+        if not (
+            MIN_TARGET_VIDEO_BITRATE_KBPS
+            <= video_bitrate
+            <= MAX_TARGET_VIDEO_BITRATE_KBPS
+        ):
+            raise ValueError(
+                "target size is not feasible for the selected duration"
+            )
+        return video_bitrate
 
     def _load_presets(self) -> dict[str, dict[str, object]]:
         document = json.loads(self.preset_path.read_text(encoding="utf-8"))
@@ -1104,8 +1777,12 @@ class ConversionService:
             "args",
             "gpu_args",
             "required_encoder",
+            "required_filter",
             "required_input_audio_codec",
+            "selectable_stream_types",
             "output_contract",
+            "first_pass_args",
+            "target_size_audio_bitrate_kbps",
         }
         presets: dict[str, dict[str, object]] = {}
         for preset_id, definition in raw.items():
@@ -1121,6 +1798,17 @@ class ConversionService:
                     "source_extensions" in definition
                     and not isinstance(definition["source_extensions"], list)
                 )
+                or (
+                    "selectable_stream_types" in definition
+                    and (
+                        not isinstance(definition["selectable_stream_types"], list)
+                        or not definition["selectable_stream_types"]
+                        or any(
+                            value not in {"audio", "subtitle"}
+                            for value in definition["selectable_stream_types"]
+                        )
+                    )
+                )
                 or any(
                     requirement in definition
                     and (
@@ -1132,7 +1820,30 @@ class ConversionService:
                     )
                     for requirement in (
                         "required_encoder",
+                        "required_filter",
                         "required_input_audio_codec",
+                    )
+                )
+                or (
+                    ("first_pass_args" in definition)
+                    != ("target_size_audio_bitrate_kbps" in definition)
+                )
+                or (
+                    "first_pass_args" in definition
+                    and (
+                        not isinstance(definition["first_pass_args"], list)
+                        or not definition["first_pass_args"]
+                        or not isinstance(
+                            definition["target_size_audio_bitrate_kbps"],
+                            int,
+                        )
+                        or isinstance(
+                            definition["target_size_audio_bitrate_kbps"],
+                            bool,
+                        )
+                        or not 32
+                        <= definition["target_size_audio_bitrate_kbps"]
+                        <= 512
                     )
                 )
                 or (
@@ -1159,6 +1870,7 @@ class ConversionService:
             "preserve_dimensions",
             "preserve_frame_rate",
             "preserve_audio_packets",
+            "preserve_selected_packets",
         }
         if not set(value).issubset(allowed):
             return False
@@ -1188,6 +1900,7 @@ class ConversionService:
             "preserve_dimensions",
             "preserve_frame_rate",
             "preserve_audio_packets",
+            "preserve_selected_packets",
         ):
             if key in value and not isinstance(value[key], bool):
                 return False

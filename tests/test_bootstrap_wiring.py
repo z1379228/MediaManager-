@@ -122,6 +122,7 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
         "youtube-recovery",
         "youtube-similar",
         "youtube-auto-split",
+        "musicbrainz-metadata",
     }
     assert context.discovery.is_enabled("youtube-search")
     assert context.discovery.is_enabled("bilibili-search")

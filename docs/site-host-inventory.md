@@ -1,6 +1,6 @@
 # 網站與官方媒體子網域清冊
 
-狀態：Canonical／Development 39.0.12 工作來源；主機邊界未變（2026-07-27）
+狀態：Canonical／Development 39.0.112 工作來源（2026-09-11）
 
 本清冊記錄 MediaManager 目前接受的**精確輸入主機名稱**。白名單不使用
 萬用字元；未知子網域不會因母網域已支援而自動取得信任。網址還必須通過各
@@ -45,6 +45,7 @@ Direct HTTP 是另一個受限 adapter：它只接受使用者明確提供、通
 | `*.fbcdn.net` | Facebook provider 回傳的 HTTPS 縮圖。 |
 | `*.bahamut.com.tw` | 既有可信縮圖載入器後綴；動畫瘋工作流已退休，不能作為媒體路由。 |
 | `api.soundcloud.com` | 只可作為 `w.soundcloud.com/player/` 的單一內層 `url` 目標，不是頂層 generic 輸入。 |
+| `musicbrainz.org` | 只由本機媒體庫的手動 MusicBrainz 中繼資料操作連線固定 `/ws/2/recording/` JSON API；不接受貼入作為下載或網站聚合搜尋來源。 |
 | `mega.io`、`help.x.com`、Facebook／Instagram help URL、GitHub dependency URL | 由使用者明確按下按鈕才開啟的首頁、說明或安裝文件，不是解析／下載主機。 |
 | `127.0.0.1` | 使用者自行啟動之 Gopeed REST API；loopback-only，不是公網網站支援。 |
 
@@ -76,6 +77,9 @@ Direct HTTP 是另一個受限 adapter：它只接受使用者明確提供、通
 - [Twitch Video & Clips](https://dev.twitch.tv/docs/embed/video-and-clips/)
 - [YouTube Kids 網頁版可用性](https://support.google.com/youtubekids/answer/7348648)
 - [Bilibili 國際版 About](https://www.bilibili.tv/about)
+- [MusicBrainz Web Service](https://musicbrainz.org/doc/MusicBrainz_API)
+- [MusicBrainz 搜尋 API](https://musicbrainz.org/doc/MusicBrainz_API/Search)
+- [MusicBrainz rate limiting](https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting)
 
 ## 同步與驗證
 

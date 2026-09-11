@@ -132,6 +132,45 @@ def test_discovery_service_uses_provider_declared_search_capability(tmp_path) ->
     service.close()
 
 
+def test_manual_search_provider_is_hidden_from_federated_search(tmp_path) -> None:
+    provider = Mock()
+    provider.provider_id = "metadata-search"
+    provider.display_name = "Metadata Search"
+    provider.search_visibility = "manual"
+    provider.search_capability = SearchCapabilityV2(
+        "metadata-search",
+        ("metadata",),
+        ("music",),
+        10,
+        "none",
+        False,
+        False,
+    )
+    provider.search.return_value = ()
+    service = DiscoveryService(tmp_path / "discovery-state.json")
+    service.register(provider, enabled=True)
+
+    assert service.search_capabilities() == ()
+    assert service.search_capabilities(include_manual=True) == (
+        provider.search_capability,
+    )
+    assert service.search_source_statuses() == ()
+    assert service.federated_search("example").items == ()
+    provider.search.assert_not_called()
+
+    assert service.search(
+        "example",
+        provider_id="metadata-search",
+        content_type="music",
+    ) == ()
+    provider.search.assert_called_once_with(
+        "example",
+        limit=12,
+        content_type="music",
+    )
+    service.close()
+
+
 def test_search_capability_mismatch_does_not_leave_partial_registration(
     tmp_path,
 ) -> None:

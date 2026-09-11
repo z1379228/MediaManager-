@@ -24,16 +24,26 @@ def _sample(role: str, *_args: object) -> dict[str, object]:
         "os_threads": 2,
     }
     if role.startswith("gui-"):
+        materialized = role in {
+            "gui-materialized",
+            "gui-materialized-foreground-idle",
+            "gui-materialized-background-idle",
+        }
         sample.update(
-            qt_objects=10,
-            active_repeat_timers=1,
+            qt_objects=(30 if materialized else 10),
+            active_repeat_timers=(0 if role.endswith("background-idle") else 1),
             tabs=4,
-            materialized_workspaces=(
-                0 if role == "gui-lazy" else 3
-            ),
-            loaded_deferred_modules=(
-                0 if role == "gui-lazy" else 3
-            ),
+            materialized_workspaces=(3 if materialized else 0),
+            loaded_deferred_modules=(3 if materialized else 0),
+        )
+    if role.endswith(("foreground-idle", "background-idle")):
+        background = role.endswith("background-idle")
+        sample.update(
+            background_idle=int(background),
+            window_visible=int(not background),
+            suspended_timers=(2 if background else 0),
+            observation_elapsed_ms=1_000.0,
+            observation_cpu_time_ms=(1.0 if background else 5.0),
         )
     if role.startswith("table-"):
         sample.update(
@@ -45,6 +55,25 @@ def _sample(role: str, *_args: object) -> dict[str, object]:
                 10_000 if role == "table-rebuild" else 200
             ),
             table_qt_objects=400,
+        )
+    if role in {
+        "search-results",
+        "youtube-results",
+        "bilibili-results",
+    }:
+        sample.update(
+            search_workload_ms=18.5,
+            search_cpu_time_ms=15.625,
+            scroll_workload_ms=2.5,
+            rendered_rows=200,
+            initial_thumbnail_requests=12,
+            total_thumbnail_requests=24,
+            search_qt_objects=1_500,
+            search_resource_status="supported",
+            search_private_bytes=70_000_000,
+            search_working_set_bytes=95_000_000,
+            search_peak_working_set_bytes=96_000_000,
+            search_os_threads=8,
         )
     return sample
 
@@ -60,6 +89,7 @@ def test_baseline_aggregates_isolated_role_samples(tmp_path: Path) -> None:
     )
 
     assert report["result"] == "BASELINE_RECORDED"
+    assert report["schema_version"] == 4
     assert report["workload"]["network_allowed"] is False
     assert report["workload"]["visible_ui_allowed"] is False
     assert report["roles"]["version"]["samples"] == 2
@@ -100,6 +130,51 @@ def test_baseline_summarizes_lazy_and_materialized_gui_samples(
     assert report["roles"]["gui-materialized"]["gui"][
         "loaded_deferred_modules"
     ]["p50"] == 3
+
+
+def test_baseline_summarizes_foreground_and_background_idle_samples(
+    tmp_path: Path,
+) -> None:
+    report = startup_baseline.run_baseline(
+        repository_root=ROOT,
+        temp_root=tmp_path / "runs",
+        warmups=0,
+        iterations=1,
+        roles=("gui-foreground-idle", "gui-background-idle"),
+        sample_runner=_sample,
+    )
+
+    foreground = report["roles"]["gui-foreground-idle"]
+    background = report["roles"]["gui-background-idle"]
+    assert foreground["idle_observation"]["background_idle"]["p50"] == 0
+    assert background["idle_observation"]["background_idle"]["p50"] == 1
+    assert background["idle_observation"]["window_visible"]["p50"] == 0
+    assert background["idle_observation"]["suspended_timers"]["p50"] == 2
+    assert background["idle_observation"]["observation_cpu_time_ms"]["p50"] == 1.0
+    assert report["workload"]["idle_observation_seconds"] == 5.0
+
+
+def test_baseline_summarizes_materialized_background_idle_samples(
+    tmp_path: Path,
+) -> None:
+    report = startup_baseline.run_baseline(
+        repository_root=ROOT,
+        temp_root=tmp_path / "runs",
+        warmups=0,
+        iterations=1,
+        roles=(
+            "gui-materialized-foreground-idle",
+            "gui-materialized-background-idle",
+        ),
+        sample_runner=_sample,
+    )
+
+    foreground = report["roles"]["gui-materialized-foreground-idle"]
+    background = report["roles"]["gui-materialized-background-idle"]
+    assert foreground["gui"]["materialized_workspaces"]["p50"] == 3
+    assert background["gui"]["materialized_workspaces"]["p50"] == 3
+    assert background["idle_observation"]["background_idle"]["p50"] == 1
+    assert background["idle_observation"]["window_visible"]["p50"] == 0
 
 
 def test_probe_uses_the_real_application_entry_for_path_discovery(
@@ -147,3 +222,49 @@ def test_baseline_summarizes_table_rebuild_and_reuse_samples(
     assert report["roles"]["table-reuse"]["table"][
         "progress_allocations"
     ]["p50"] == 200
+
+
+def test_baseline_summarizes_bounded_search_result_samples(
+    tmp_path: Path,
+) -> None:
+    report = startup_baseline.run_baseline(
+        repository_root=ROOT,
+        temp_root=tmp_path / "runs",
+        warmups=0,
+        iterations=1,
+        roles=("search-results",),
+        sample_runner=_sample,
+    )
+
+    search = report["roles"]["search-results"]["search_results"]
+    assert search["rendered_rows"]["p50"] == 200
+    assert search["initial_thumbnail_requests"]["p50"] == 12
+    assert search["total_thumbnail_requests"]["p50"] == 24
+    assert search["search_cpu_time_ms"]["p50"] == 15.625
+    assert search["live_process"]["private_bytes"]["p50"] == 70_000_000
+    assert report["workload"]["search_result_rows"] == 200
+
+
+def test_baseline_covers_each_trusted_search_result_surface(
+    tmp_path: Path,
+) -> None:
+    roles = (
+        "search-results",
+        "youtube-results",
+        "bilibili-results",
+    )
+    report = startup_baseline.run_baseline(
+        repository_root=ROOT,
+        temp_root=tmp_path / "runs",
+        warmups=0,
+        iterations=1,
+        roles=roles,
+        sample_runner=_sample,
+    )
+
+    assert report["schema_version"] == 4
+    for role in roles:
+        search = report["roles"][role]["search_results"]
+        assert search["rendered_rows"]["p50"] == 200
+        assert search["initial_thumbnail_requests"]["p50"] == 12
+        assert search["total_thumbnail_requests"]["p50"] == 24

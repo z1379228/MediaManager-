@@ -45,6 +45,22 @@ def test_tree_views_have_visible_focus_indicator() -> None:
 }""" in stylesheet
 
 
+def test_shared_visual_hierarchy_styles_cover_guides_and_media_context() -> None:
+    stylesheet = application_stylesheet()
+
+    assert "QFrame#subtleCard" in stylesheet
+    assert "QLabel#modUsageGuide" in stylesheet
+    assert "QLabel#urlClassification" in stylesheet
+    assert "QLabel#downloadThumbnail" in stylesheet
+    assert "QPushButton#ghost:hover" in stylesheet
+    assert "QTabBar QToolButton" in stylesheet
+    assert "QTabBar::scroller" in stylesheet
+    assert "QToolButton#workspaceNavigator" in stylesheet
+    assert "QMenu::separator" in stylesheet
+    assert "QScrollBar::handle:vertical:hover" in stylesheet
+    assert "QPushButton:focus" in stylesheet
+
+
 def test_application_palette_keeps_popup_and_viewport_surfaces_dark(
     monkeypatch,
 ) -> None:

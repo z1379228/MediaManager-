@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import pytest
@@ -146,6 +147,49 @@ def test_search_panel_only_requests_visible_thumbnail_window(monkeypatch) -> Non
         assert panel.thumbnail_requests == set()
         panel.thumbnail_loader.resume()
         assert len(loaded) > initial_count
+    finally:
+        panel.shutdown()
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+
+
+def test_search_panel_batches_result_table_repaints(monkeypatch) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    import trusted_ui.search_panel as search_panel
+
+    app = QApplication.instance() or QApplication([])
+    original = search_panel.suspended_table_updates
+    update_states: list[bool] = []
+
+    @contextmanager
+    def observe_updates(table):
+        with original(table):
+            update_states.append(table.updatesEnabled())
+            yield
+        update_states.append(table.updatesEnabled())
+
+    monkeypatch.setattr(search_panel, "suspended_table_updates", observe_updates)
+    panel = search_panel.create_search_panel(_Context(_Discovery()))
+    result = DiscoveryItemV1(
+        "video-1",
+        "https://www.youtube.com/watch?v=video-1",
+        "Example",
+        "Artist",
+        120,
+        "zh-TW",
+        "music",
+        "",
+    )
+    try:
+        panel.show_results((result,), "")
+
+        assert update_states == [False, True]
+        assert panel.table.item(0, 1).text() == "Example"
+        assert panel.table.rowHeight(0) == 66
+        assert panel.table.updatesEnabled()
     finally:
         panel.shutdown()
         panel.close()

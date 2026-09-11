@@ -16,10 +16,19 @@ def _create_bootstrap(*, portable: bool) -> object:
     return Bootstrap(portable=portable)
 
 
-def _run_graphical_shell(context: object, *, start_minimized: bool) -> int:
+def _run_graphical_shell(
+    context: object,
+    *,
+    start_minimized: bool,
+    initial_prefill: dict[str, str] | None,
+) -> int:
     from trusted_ui.main_window import run_main_window
 
-    return run_main_window(context, start_minimized=start_minimized)
+    return run_main_window(
+        context,
+        start_minimized=start_minimized,
+        initial_prefill=initial_prefill,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,6 +45,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="start in background idle mode when the system tray is available",
     )
+    parser.add_argument(
+        "--browser-handoff",
+        metavar="URL_OR_URI",
+        help=(
+            "open a supported media URL in the trusted download setup; "
+            "also accepts mediamanager://add handoff URIs"
+        ),
+    )
     parser.add_argument("--verify-only", action="store_true", help="verify core integrity and exit")
     parser.add_argument("--provider-host", help=argparse.SUPPRESS)
     parser.add_argument("--provider-root", help=argparse.SUPPRESS)
@@ -48,7 +65,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _run(raw_argv: list[str]) -> int:
-    args = build_parser().parse_args(raw_argv)
+    parser = build_parser()
+    args = parser.parse_args(raw_argv)
+    initial_prefill: dict[str, str] | None = None
+    if args.browser_handoff is not None:
+        if args.headless or args.plugin_host or args.provider_host:
+            parser.error("--browser-handoff requires the graphical application")
+        from core.browser_handoff import parse_browser_handoff
+
+        try:
+            initial_prefill = parse_browser_handoff(
+                args.browser_handoff
+            ).to_payload()
+        except ValueError as error:
+            parser.error(str(error))
     if args.plugin_host:
         if args.provider_host or args.provider_root or not all(
             (args.plugin_id, args.plugin_root, args.entry_point, args.nonce)
@@ -97,7 +127,8 @@ def _run(raw_argv: list[str]) -> int:
             return 2 if context.security.mode == "BLOCKED" else 0
         return _run_graphical_shell(
             context,
-            start_minimized=args.start_minimized,
+            start_minimized=(args.start_minimized and initial_prefill is None),
+            initial_prefill=initial_prefill,
         )
     finally:
         context.lifecycle.shutdown()
