@@ -46,4 +46,6 @@ def test_pyinstaller_spec_has_fail_closed_package_layout_switch() -> None:
     assert "MEDIAMANAGER_PYINSTALLER_LAYOUT" in spec
     assert "{'onefile', 'onedir'}" in spec
     assert "exclude_binaries=True" in spec
+    assert "MEDIAMANAGER_PYINSTALLER_ISOLATED_PATH" in spec
+    assert "os.environ['PATH'] = isolated_build_path" in spec
     assert "COLLECT(" in spec

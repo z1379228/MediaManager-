@@ -10,18 +10,22 @@ Cloudflare、廣告、付費、地區或其他網站限制。
 
 ## 目前狀態
 
-- 目前來源版本為開發版 39.0（核心相容版本 39.0.112）。
+- 目前來源版本為開發版 39.0（核心相容版本 39.0.113）。
 - 最新公開下載是未簽署的
   [Testing 1.2.2 prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.2)，
   對應 Development `39.0.39`。
-- Development `39.0.40`～`39.0.112` 的修改尚未包含在公開 Testing ZIP。
-- Testing `1.2.4` 是由本次 Development `39.0.112` source freeze 建立的本機
-  未簽署候選；Testing `1.2.3` 保持不可變，兩者均未上傳或發布。
+- Development `39.0.40`～`39.0.113` 的修改尚未包含在公開 Testing ZIP。
+- 先前由 Development `39.0.112` 建立的本機 Testing `1.2.4` 因建置環境誤包
+  外部 ICU DLL，已判定無效且不得散布。來源已於 `39.0.113` 修正；必須由新的
+  乾淨 source freeze 重建並通過 Qt runtime gate。Testing `1.2.3` 保持不可變。
 - 尚未發布已簽署的 Stable 套件；`MediaManager v1.0` 是產品顯示名稱，不代表
   Stable 已發布。
 
 ### 最近來源變更
 
+- `39.0.113`：隔離 PyInstaller 原生 DLL 搜尋路徑，避免建置主機上的 Poppler、
+  libheif 或其他外部工具 DLL 污染 EXE；copied-folder smoke 新增 Qt Widgets
+  runtime 實際載入 gate，避免只驗證 headless CLI 而漏掉 GUI 啟動錯誤。
 - `39.0.112`：本機媒體庫新增使用者明確觸發的 MusicBrainz 錄音中繼資料查詢。
   查詢 MOD 在隔離程序中只連線官方 HTTPS API，限制每秒最多一個請求及 10 筆
   結果；它採 `manual` 搜尋可見性，不會混入網站聚合搜尋或背景輪詢。套用結果

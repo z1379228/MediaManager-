@@ -2079,6 +2079,28 @@ prerelease 與全部附件 digest 均已驗證；Testing 1.2.1 的目錄、tag �
   `503` 個受控檔案；版本文件、版本產物及 diff 格式稽核通過。
 - 本次未 build、stage、commit、push 或發布，沒有建立或覆寫 Testing／Stable。
 
+## 39.0.113（PyInstaller 原生 DLL 隔離與 Qt runtime gate）
+
+- 修正 Testing 1.2.4 GUI 啟動時 `PySide6.QtCore` 報「找不到指定的程序」。建置
+  主機 PATH 中的 Codex Poppler ICU 78 位於 `System32` 前方；PyInstaller 因而
+  將外部 `icuuc.dll`／`icudt78.dll` 誤包進 onefile。Qt 6.11 所需的 20 個
+  Windows ICU 匯出在該版本化 DLL 中全部不存在，headless CLI 又不載入 Qt，
+  因此既有 smoke 未能發現。
+- release build 與 onefile／onedir 實驗現在建立只含 Windows、目前 Python 與
+  venv 的受控 PATH，移除 `PYTHONPATH`／`PYTHONHOME` 並停用 user site；spec 在
+  Analysis 前再次套用隔離值，避免受管理程序宿主於建立子程序時重新注入 PATH。
+- 新增隱藏的 `--ui-runtime-check`，只載入 QtCore、QtWidgets 與 offscreen
+  platform plugin，不初始化 Bootstrap、下載、MOD 或背景服務。copied-folder
+  current／previous／current gate 會在 verify-only 前執行此檢查，失敗或逾時
+  即停止且由 Windows Job Object 清除完整程序樹。
+- 隔離 onefile 診斷建置的 Analysis 與 archive 中，`codex-runtimes`、Poppler、
+  libheif、`icuuc.dll` 與 `icudt78.dll` 均為 0；沙箱外執行 Qt runtime gate
+  回傳 `0`。定向回歸為 `92 passed`，完整 Repository runner 為
+  `1792 passed, 9 skipped`；九項 skip 仍為 Windows link 建立權限限制。
+  Quality audit、版本文件與 diff 格式檢查通過。
+- 39.0.112 建立的本機 Testing 1.2.4 EXE／ZIP 已判定無效，不得散布；修正版
+  尚未 source freeze、stage、commit、push、簽署或發布，也未覆寫 Testing 1.2.3。
+
 ## 40.0
 
 沒有獨立 material delta，狀態為

@@ -30,6 +30,8 @@ from tools.stage_version import stage_version, version_folder_name
 
 BUILD_RECEIPT_SCHEMA_VERSION = 1
 PYINSTALLER_LAYOUT_ENVIRONMENT = "MEDIAMANAGER_PYINSTALLER_LAYOUT"
+PYINSTALLER_PATH_ENVIRONMENT = "MEDIAMANAGER_PYINSTALLER_ISOLATED_PATH"
+PYINSTALLER_CONSOLE_ENVIRONMENT = "MEDIAMANAGER_PYINSTALLER_DEBUG_CONSOLE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +41,61 @@ class VersionBuildPaths:
     pyinstaller_work: Path
     executable_output: Path
     wheel_output: Path
+
+
+def pyinstaller_build_environment(
+    environment: Mapping[str, str],
+    *,
+    python_executable: Path,
+    base_prefix: Path,
+    temp_dir: Path,
+    layout: str,
+) -> dict[str, str]:
+    """Return a deterministic Windows environment for native dependency scans.
+
+    PyInstaller searches ``PATH`` while resolving PE imports.  Release builds
+    must not inherit unrelated application directories that can contain DLLs
+    with Windows system-library names, such as Poppler's versioned ICU build.
+    """
+
+    result = dict(environment)
+    result["TEMP"] = str(temp_dir)
+    result["TMP"] = str(temp_dir)
+    result[PYINSTALLER_LAYOUT_ENVIRONMENT] = layout
+    result[PYINSTALLER_CONSOLE_ENVIRONMENT] = "0"
+    result["PYTHONNOUSERSITE"] = "1"
+    result.pop("PYTHONPATH", None)
+    result.pop("PYTHONHOME", None)
+    if os.name != "nt":
+        result[PYINSTALLER_PATH_ENVIRONMENT] = result.get("PATH", "")
+        return result
+    windows_text = result.get("SystemRoot") or result.get("WINDIR")
+    if not windows_text:
+        raise RuntimeError("Windows release build requires SystemRoot or WINDIR")
+    windows_root = Path(windows_text).resolve()
+    system32 = windows_root / "System32"
+    if not system32.is_dir():
+        raise FileNotFoundError(f"Windows System32 directory is missing: {system32}")
+    candidates = (
+        system32,
+        windows_root,
+        python_executable.resolve().parent,
+        base_prefix.resolve(),
+    )
+    seen: set[str] = set()
+    isolated_path: list[str] = []
+    for candidate in candidates:
+        normalized = os.path.normcase(str(candidate))
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        isolated_path.append(str(candidate))
+    result["PATH"] = os.pathsep.join(isolated_path)
+    # Some managed process hosts prepend their own native tool directories
+    # while creating a child.  The spec restores this value immediately
+    # before Analysis resolves PE dependencies.
+    result[PYINSTALLER_PATH_ENVIRONMENT] = result["PATH"]
+    return result
 
 
 def version_build_paths(
@@ -425,8 +482,16 @@ def build_version(
         build_environment["TEMP"] = str(build_temp)
         build_environment["TMP"] = str(build_temp)
         # Release builds remain onefile until the isolated onedir experiment
-        # passes the complete packaging and copied-folder gates.
-        build_environment[PYINSTALLER_LAYOUT_ENVIRONMENT] = "onefile"
+        # passes the complete packaging and copied-folder gates.  PyInstaller
+        # additionally receives an isolated PATH so unrelated native tools
+        # cannot replace Windows system DLLs during dependency discovery.
+        pyinstaller_environment = pyinstaller_build_environment(
+            build_environment,
+            python_executable=Path(sys.executable),
+            base_prefix=Path(sys.base_prefix),
+            temp_dir=build_temp,
+            layout="onefile",
+        )
         pyinstaller = Path(sys.executable).with_name("pyinstaller.exe")
         if not pyinstaller.is_file():
             raise FileNotFoundError(
@@ -445,7 +510,7 @@ def build_version(
             ],
             cwd=root,
             check=True,
-            env=build_environment,
+            env=pyinstaller_environment,
         )
         if paths.wheel_output.exists():
             remove_build_tree(paths.wheel_output)

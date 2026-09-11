@@ -7,6 +7,10 @@ import sys
 import pytest
 
 from tools import package_layout_experiment
+from tools.build_version import (
+    PYINSTALLER_CONSOLE_ENVIRONMENT,
+    PYINSTALLER_PATH_ENVIRONMENT,
+)
 
 
 def test_package_layout_paths_are_explicit_and_distinct(tmp_path: Path) -> None:
@@ -93,6 +97,14 @@ def test_experiment_builds_both_layouts_and_verifies_copy(
         environment = kwargs["env"]
         assert isinstance(environment, dict)
         layout = environment[package_layout_experiment.PYINSTALLER_LAYOUT_ENVIRONMENT]
+        assert (
+            environment[PYINSTALLER_PATH_ENVIRONMENT]
+            == environment["PATH"]
+        )
+        assert (
+            environment[PYINSTALLER_CONSOLE_ENVIRONMENT]
+            == "0"
+        )
         observed_layouts.append(layout)
         dist = Path(command[command.index("--distpath") + 1])
         if layout == "onefile":

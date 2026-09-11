@@ -4,15 +4,15 @@
 
 - 軌道：Testing
 - Testing 身分：`1.2.4`
-- 來源：Development `39.0.112` 的乾淨 source freeze；精確 revision 由
-  `release-info.json` 與 build receipt 綁定
+- 來源：待由 Development `39.0.113` 的新乾淨 source freeze 重建；精確
+  revision 必須由 `release-info.json` 與 build receipt 綁定
 - 資料夾：`Version/Testing/1.2.4`
-- 內容：39.0.95～39.0.112 的啟動降噪、待機、延遲工作區、共用縮圖、資源模式、
+- 內容：39.0.95～39.0.113 的啟動降噪、待機、延遲工作區、共用縮圖、資源模式、
   安全拖放、格式工廠硬體／目標容量／音量標準化，以及手動 MusicBrainz 本機
   中繼資料流程
 - 信任狀態：未簽署、`SAFE_MODE`、非 Stable
-- 發布狀態：只建立本機 receipt-bound EXE、staged runtime 與自包含 ZIP；
-  不 push、不簽署、不發布
+- 發布狀態：39.0.112 的本機 EXE／ZIP 因外部 ICU DLL 污染已判定無效且不得
+  散布；39.0.113 修正尚待新的 source freeze、build、stage 與 ZIP 驗證
 - 相容性：Testing `1.2.3` 與更早目錄、tag、附件及雜湊維持不可變
 
 ## Testing 1.2.3 本機候選

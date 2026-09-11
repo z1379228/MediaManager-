@@ -28,6 +28,7 @@ from core.version import CORE_VERSION
 from core.downloads.windows_job import ProviderJob
 from tools.build_version import (
     PYINSTALLER_LAYOUT_ENVIRONMENT,
+    pyinstaller_build_environment,
     validate_clean_source,
 )
 from tools.g39_baseline import (
@@ -579,13 +580,12 @@ def run_layout_experiment(
             build_root = attempt / "builds" / layout
             build_temp = attempt / "build-temp" / layout
             build_temp.mkdir(parents=True)
-            environment = os.environ.copy()
-            environment.update(
-                {
-                    "TEMP": str(build_temp),
-                    "TMP": str(build_temp),
-                    PYINSTALLER_LAYOUT_ENVIRONMENT: layout,
-                }
+            environment = pyinstaller_build_environment(
+                os.environ,
+                python_executable=Path(sys.executable),
+                base_prefix=Path(sys.base_prefix),
+                temp_dir=build_temp,
+                layout=layout,
             )
             command = pyinstaller_command(
                 executable_builder,

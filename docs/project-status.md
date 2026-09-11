@@ -4,7 +4,7 @@
 
 ## 結論
 
-MediaManager 目前工作來源為 Development `39.0.112`。39.0.107 先完成三個下載工作流
+MediaManager 目前工作來源為 Development `39.0.113`。39.0.107 先完成三個下載工作流
 基礎：手動貼入與 TXT／CSV 共用可信下載收件匣；瀏覽器交付只接受有界、已知且
 可下載的公開 HTTPS 頁面，開啟對應工作區但不自動排隊；資源模式提升為所有下載
 頁共用，省資源／平衡／高速分別預設 1／2／4 個全域工作，YouTube 再於核心套用
@@ -13,9 +13,9 @@ MediaManager 目前工作來源為 Development `39.0.112`。39.0.107 先完成�
 共用說明元件使用一致的階層、導覽捲動、焦點與非色彩狀態文字。頂層另提供
 按需建立的「工作區」分類選單，直接切換並沿用既有 lazy 工作區；它不新增背景
 timer，第三方未知工作區仍保留在「其他」。
-本來源已指定為 Testing `1.2.4` 的本機未簽署候選；精確 source revision 由
-build receipt 與 staged `release-info.json` 綁定。Testing `1.2.3` 不覆寫，且
-本輪不 push、不簽署、不發布。
+先前由 39.0.112 建立的 Testing `1.2.4` 本機 EXE／ZIP 已因外部 ICU DLL 污染
+判定無效且不得散布。39.0.113 來源修正尚待新的乾淨 source freeze、build receipt、
+stage 與 ZIP 驗證。Testing `1.2.3` 不覆寫，且本輪不 push、不簽署、不發布。
 格式工廠另完成無損軌道工作流：單一來源由背景 ffprobe 列出音訊／字幕軌，
 明確選取後輸出 `.mka`／`.mks`，排隊前重查軌道與副檔名，完成前驗證 codec 及
 來源／輸出封包 SHA-256；不在 GUI thread 等待探測，也不重新編碼所選軌道。
@@ -56,7 +56,12 @@ GUI thread 同步執行六個 FFmpeg 能力命令的路徑改為可取消的背�
 中的標題、歌手及單一 `musicbrainz:<MBID>` 標籤；媒體位元、檔名及內容雜湊不變。
 查詢不在 GUI thread 執行，不建立背景輪詢；停止等待後不套用晚到結果，已送出
 的單一請求由 15 秒 timeout 收束。
-完整 Repository runner 為 `1790 passed, 9 skipped`；九項 skip 均是目前 Windows
+39.0.113 修正發行建置繼承外部原生工具 PATH 的問題。PyInstaller 現在只使用
+Windows、目前 Python 與 venv 的受控搜尋路徑，spec 在 Analysis 前再次套用該值，
+避免受管理程序宿主重新注入 Poppler／libheif 路徑。copied-folder smoke 新增
+`--ui-runtime-check`，實際載入 QtCore、QtWidgets 與 offscreen platform plugin；
+因此只通過 version、verify-only、headless 的 EXE 不再能進入可散布候選。
+完整 Repository runner 為 `1792 passed, 9 skipped`；九項 skip 均是目前 Windows
 帳號缺少建立測試用 link 權限，其中兩項覆蓋拖放與試轉暫存目錄的 link 拒絕
 路徑。Quality audit 通過 Ruff `392` 個 Python 檔與文字污染掃描 `503` 個受控
 檔案；版本文件及 diff 格式檢查通過。

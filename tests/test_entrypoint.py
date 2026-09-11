@@ -34,6 +34,25 @@ def test_verify_only_does_not_start_background_workers(monkeypatch) -> None:
     assert calls == ["verify_only"]
 
 
+def test_ui_runtime_check_does_not_initialize_bootstrap(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(
+        main,
+        "_verify_ui_runtime",
+        lambda: calls.append("ui-runtime") or 0,
+    )
+    monkeypatch.setattr(
+        main,
+        "_create_bootstrap",
+        lambda **_options: (_ for _ in ()).throw(
+            AssertionError("UI runtime check must not initialize application services")
+        ),
+    )
+
+    assert main.main(["--ui-runtime-check"]) == 0
+    assert calls == ["ui-runtime"]
+
+
 def test_plugin_host_entrypoint_routes_without_bootstrap(
     tmp_path, monkeypatch
 ) -> None:
@@ -118,7 +137,7 @@ def test_version_prepares_frozen_cli_output_before_argparse(
 
     assert raised.value.code == 0
     assert calls == ["restore", "close"]
-    assert "MediaManager 開發版 39.0.112" in capsys.readouterr().out
+    assert "MediaManager 開發版 39.0.113" in capsys.readouterr().out
 
 
 def test_frozen_windowed_cli_uses_hard_process_exit(monkeypatch) -> None:

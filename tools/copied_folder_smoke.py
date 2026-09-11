@@ -2,7 +2,8 @@
 
 The default library runner cannot guarantee termination of a complete Windows
 process tree after a timeout, so it stops after ``--verify-only``.  The CLI uses
-a kill-on-close Windows Job Object runner for the complete headless sequence.
+a kill-on-close Windows Job Object runner for the UI-runtime and complete
+headless sequence.
 """
 
 from __future__ import annotations
@@ -520,6 +521,7 @@ def _run_version_phase(
     commands: list[CommandStatus] = []
     specifications = (
         ("version", (str(executable), "--version")),
+        ("ui-runtime", (str(executable), "--ui-runtime-check")),
         ("verify-only", (str(executable), "--portable", "--verify-only")),
     )
     for name, command in specifications:

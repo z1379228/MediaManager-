@@ -7,6 +7,20 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy
 
 from core.security.release_layout import pinned_builtin_pyinstaller_datas
 
+isolated_build_path = os.environ.get(
+    'MEDIAMANAGER_PYINSTALLER_ISOLATED_PATH'
+)
+debug_console = (
+    os.environ.get('MEDIAMANAGER_PYINSTALLER_DEBUG_CONSOLE') == '1'
+)
+if os.name == 'nt':
+    if not isolated_build_path:
+        raise RuntimeError(
+            'Windows builds must use tools.build_version or '
+            'tools.package_layout_experiment'
+        )
+    os.environ['PATH'] = isolated_build_path
+
 yt_dlp_hiddenimports = (
     collect_submodules('yt_dlp.extractor')
     + collect_submodules('yt_dlp.postprocessor')
@@ -55,7 +69,7 @@ exe_options = dict(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,
+    console=debug_console,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

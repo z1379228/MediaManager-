@@ -126,17 +126,19 @@ def test_full_smoke_uses_current_previous_current_and_preserves_sources(
     ]
     assert [command.name for phase in report.versions for command in phase.commands] == [
         "version",
+        "ui-runtime",
         "verify-only",
         "headless-portable",
     ] * 3
     assert [call[0][1:] for call in calls] == [
         ("--version",),
+        ("--ui-runtime-check",),
         ("--portable", "--verify-only"),
         ("--headless", "--portable"),
     ] * 3
     assert "current" in calls[0][1].parts
-    assert "previous" in calls[3][1].parts
-    assert "current" in calls[6][1].parts
+    assert "previous" in calls[4][1].parts
+    assert "current" in calls[8][1].parts
     assert all(
         Path(phase.portable_data_root).is_relative_to(Path(phase.copied_root))
         for phase in report.versions
@@ -333,9 +335,10 @@ def test_default_runner_capability_stops_after_verify_only(tmp_path: Path) -> No
     assert not report.copied_folder_smoke
     assert not report.rollback
     assert not report.process_tree_safe
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert [status.name for status in report.versions[0].commands] == [
         "version",
+        "ui-runtime",
         "verify-only",
         "headless-portable",
     ]

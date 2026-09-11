@@ -4,16 +4,17 @@
 逐版重複日誌與退役功能說明已從目前樹移除；必要時由 Git 歷史或 GitHub Releases
 追查，不另建第二份歷史索引。
 
-- 目前來源版本為開發版 39.0（核心相容版本 39.0.112）。
+- 目前來源版本為開發版 39.0（核心相容版本 39.0.113）。
 - [下一次 Development 資源與 MOD 效能計畫](performance-mod-optimization-plan.md)
   已開始執行；39.0.106 已完成階段 A 至 D 及 onefile／onedir 隔離比較，
   39.0.107 開始階段 E 的下載工作流與 UI 改善，39.0.108 完成稽核修正，
   39.0.109 加入手動拖放、輸出試轉與快速健康檢查，39.0.110 增加明確的
   Intel／AMD／AV1 硬體轉檔 preset 並把 FFmpeg 能力偵測移至背景；39.0.111
   加入兩階段目標容量與明確非 Passthru 的音量標準化；39.0.112 完成只由
-  本機媒體庫手動觸發、只更新本機資料庫的 MusicBrainz 中繼資料 MOD。新的 build、
-  Testing／Stable、push 與發布均未授權。Development 40.0 仍是 `NO RELEASE`，
-  不因規劃文件建立空版本。
+  本機媒體庫手動觸發、只更新本機資料庫的 MusicBrainz 中繼資料 MOD；39.0.113
+  修正 PyInstaller 外部 ICU 污染並新增 Qt runtime 發行 gate。先前本機 Testing
+  `1.2.4` 已判定無效，尚未重建、push 或發布。Development 40.0 仍是
+  `NO RELEASE`，不因規劃文件建立空版本。
 - Testing `1.2.0` 已由 Development `39.0.11` 建立本機歷史封存，保留於
   `Version/Testing/1.2`，未建立 GitHub Release。
 - [Testing `1.2.2`](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.2)

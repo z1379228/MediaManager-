@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -443,6 +444,71 @@ def test_build_only_preserves_receipt_bound_artifacts(
     receipt = json.loads((paths.work / "build-receipt.json").read_text("utf-8"))
     assert receipt["release_version"] == "1.0.0"
     assert receipt["source_revision"] == "a" * 40
+
+
+def test_release_build_excludes_foreign_native_dll_paths(
+    tmp_path: Path, monkeypatch
+) -> None:
+    python = tmp_path / "runtime" / "python.exe"
+    python.parent.mkdir()
+    python.write_bytes(b"python")
+    python.with_name("pyinstaller.exe").write_bytes(b"pyinstaller")
+    foreign_native = tmp_path / "foreign-native"
+    foreign_native.mkdir()
+    inherited_path = os.environ.get("PATH", "")
+    monkeypatch.setenv(
+        "PATH",
+        os.pathsep.join((str(foreign_native), inherited_path)),
+    )
+    monkeypatch.setattr(build_version, "validate_build_version", lambda *_args: None)
+    monkeypatch.setattr(
+        build_version, "validate_clean_source", lambda *_args: "a" * 40
+    )
+    monkeypatch.setattr(
+        build_version, "portable_release_tools", lambda *_args, **_kwargs: {}
+    )
+    monkeypatch.setattr(build_version.secrets, "token_hex", lambda _size: "isolatedpath")
+    monkeypatch.setattr(build_version.sys, "executable", str(python))
+    paths = version_build_paths(
+        tmp_path,
+        CORE_VERSION,
+        channel="testing",
+        release_version="1.2.4",
+        attempt_id="isolatedpath",
+    )
+    observed_environments: list[dict[str, str]] = []
+
+    def fake_run(command, **options):
+        if Path(command[0]).name.lower() == "pyinstaller.exe":
+            observed_environments.append(options["env"])
+            paths.executable_output.mkdir(parents=True)
+            (paths.executable_output / "MediaManager.exe").write_bytes(b"unsigned")
+        else:
+            paths.wheel_output.mkdir(parents=True, exist_ok=True)
+            (
+                paths.wheel_output
+                / f"mediamanager-{CORE_VERSION}-py3-none-any.whl"
+            ).write_bytes(b"wheel")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(build_version.subprocess, "run", fake_run)
+
+    build_version.build_version(
+        tmp_path,
+        CORE_VERSION,
+        portable_runtime=False,
+        channel="testing",
+        stage_output=False,
+    )
+
+    assert observed_environments
+    environment = observed_environments[0]
+    assert str(foreign_native) not in environment["PATH"].split(os.pathsep)
+    assert (
+        environment[build_version.PYINSTALLER_PATH_ENVIRONMENT]
+        == environment["PATH"]
+    )
+    assert environment[build_version.PYINSTALLER_CONSOLE_ENVIRONMENT] == "0"
 
 
 def test_stage_built_stable_requires_valid_authenticode(

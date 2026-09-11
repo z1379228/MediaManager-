@@ -7,7 +7,9 @@ import os
 import sys
 from pathlib import Path
 
-_FROZEN_CLI_OUTPUT_FLAGS = frozenset({"--version", "--verify-only", "--headless"})
+_FROZEN_CLI_OUTPUT_FLAGS = frozenset(
+    {"--version", "--verify-only", "--headless", "--ui-runtime-check"}
+)
 
 
 def _create_bootstrap(*, portable: bool) -> object:
@@ -29,6 +31,23 @@ def _run_graphical_shell(
         start_minimized=start_minimized,
         initial_prefill=initial_prefill,
     )
+
+
+def _verify_ui_runtime() -> int:
+    """Load Qt's widget and platform runtime without starting the full UI."""
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QCoreApplication
+    from PySide6.QtWidgets import QApplication
+
+    application = QApplication.instance()
+    created = application is None
+    if application is None:
+        application = QApplication([])
+    QCoreApplication.processEvents()
+    if created:
+        application.quit()
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -54,6 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--verify-only", action="store_true", help="verify core integrity and exit")
+    parser.add_argument("--ui-runtime-check", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--provider-host", help=argparse.SUPPRESS)
     parser.add_argument("--provider-root", help=argparse.SUPPRESS)
     parser.add_argument("--plugin-host", action="store_true", help=argparse.SUPPRESS)
@@ -67,6 +87,8 @@ def build_parser() -> argparse.ArgumentParser:
 def _run(raw_argv: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(raw_argv)
+    if args.ui_runtime_check:
+        return _verify_ui_runtime()
     initial_prefill: dict[str, str] | None = None
     if args.browser_handoff is not None:
         if args.headless or args.plugin_host or args.provider_host:
