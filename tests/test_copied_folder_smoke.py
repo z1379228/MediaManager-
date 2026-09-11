@@ -129,16 +129,30 @@ def test_full_smoke_uses_current_previous_current_and_preserves_sources(
         "ui-runtime",
         "verify-only",
         "headless-portable",
-    ] * 3
+        "version",
+        "verify-only",
+        "headless-portable",
+        "version",
+        "ui-runtime",
+        "verify-only",
+        "headless-portable",
+    ]
     assert [call[0][1:] for call in calls] == [
         ("--version",),
         ("--ui-runtime-check",),
         ("--portable", "--verify-only"),
         ("--headless", "--portable"),
-    ] * 3
+        ("--version",),
+        ("--portable", "--verify-only"),
+        ("--headless", "--portable"),
+        ("--version",),
+        ("--ui-runtime-check",),
+        ("--portable", "--verify-only"),
+        ("--headless", "--portable"),
+    ]
     assert "current" in calls[0][1].parts
     assert "previous" in calls[4][1].parts
-    assert "current" in calls[8][1].parts
+    assert "current" in calls[7][1].parts
     assert all(
         Path(phase.portable_data_root).is_relative_to(Path(phase.copied_root))
         for phase in report.versions

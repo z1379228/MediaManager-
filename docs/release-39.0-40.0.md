@@ -2091,15 +2091,16 @@ prerelease 與全部附件 digest 均已驗證；Testing 1.2.1 的目錄、tag �
   Analysis 前再次套用隔離值，避免受管理程序宿主於建立子程序時重新注入 PATH。
 - 新增隱藏的 `--ui-runtime-check`，只載入 QtCore、QtWidgets 與 offscreen
   platform plugin，不初始化 Bootstrap、下載、MOD 或背景服務。copied-folder
-  current／previous／current gate 會在 verify-only 前執行此檢查，失敗或逾時
-  即停止且由 Windows Job Object 清除完整程序樹。
+  gate 只在兩個 current 階段的 verify-only 前執行此檢查；previous 階段維持
+  舊版已支援的命令，以免要求回復基線理解未來新增的 CLI 參數。檢查失敗或
+  逾時即停止，並由 Windows Job Object 清除完整程序樹。
 - 隔離 onefile 診斷建置的 Analysis 與 archive 中，`codex-runtimes`、Poppler、
   libheif、`icuuc.dll` 與 `icudt78.dll` 均為 0；沙箱外執行 Qt runtime gate
   回傳 `0`。定向回歸為 `92 passed`，完整 Repository runner 為
   `1792 passed, 9 skipped`；九項 skip 仍為 Windows link 建立權限限制。
   Quality audit、版本文件與 diff 格式檢查通過。
-- 39.0.112 建立的本機 Testing 1.2.4 EXE／ZIP 已判定無效，不得散布；修正版
-  尚未 source freeze、stage、commit、push、簽署或發布，也未覆寫 Testing 1.2.3。
+- 39.0.112 建立的本機 Testing 1.2.4 EXE／ZIP 已判定無效，不得散布；任何
+  修正版都必須由 39.0.113 source freeze 重新建立，不得覆寫 Testing 1.2.3。
 
 ## 40.0
 

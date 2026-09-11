@@ -519,10 +519,13 @@ def _run_version_phase(
         {name: str(path) for name, path in environment_paths.items()}
     )
     commands: list[CommandStatus] = []
-    specifications = (
-        ("version", (str(executable), "--version")),
-        ("ui-runtime", (str(executable), "--ui-runtime-check")),
-        ("verify-only", (str(executable), "--portable", "--verify-only")),
+    specifications = [("version", (str(executable), "--version"))]
+    if label == "current":
+        specifications.append(
+            ("ui-runtime", (str(executable), "--ui-runtime-check"))
+        )
+    specifications.append(
+        ("verify-only", (str(executable), "--portable", "--verify-only"))
     )
     for name, command in specifications:
         status = _run_command(
