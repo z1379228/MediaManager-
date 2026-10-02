@@ -21,6 +21,7 @@ class SearchCapabilityV2:
     pagination: str
     audio_preview: bool
     video_preview: bool
+    source_scope: str = "none"
 
     def __post_init__(self) -> None:
         allowed_types = {"all", "music", "video", "playlist", "live"}
@@ -47,6 +48,8 @@ class SearchCapabilityV2:
             or self.pagination not in {"none", "offset", "cursor"}
             or not isinstance(self.audio_preview, bool)
             or not isinstance(self.video_preview, bool)
+            or not isinstance(self.source_scope, str)
+            or self.source_scope not in {"none", "https-origin"}
         ):
             raise SearchContractV2Error("search capability values invalid")
 
@@ -61,7 +64,11 @@ class SearchCapabilityV2:
             "audio_preview",
             "video_preview",
         }
-        if not isinstance(raw, dict) or set(raw) != required:
+        if (
+            not isinstance(raw, dict)
+            or not required <= set(raw)
+            or set(raw) - required - {"source_scope"}
+        ):
             raise SearchContractV2Error("search capability fields invalid")
         provider_id = raw["provider_id"]
         sites = raw["sites"]
@@ -90,6 +97,8 @@ class SearchCapabilityV2:
             or raw["pagination"] not in {"none", "offset", "cursor"}
             or not isinstance(raw["audio_preview"], bool)
             or not isinstance(raw["video_preview"], bool)
+            or not isinstance(raw.get("source_scope", "none"), str)
+            or raw.get("source_scope", "none") not in {"none", "https-origin"}
         ):
             raise SearchContractV2Error("search capability values invalid")
         return cls(
@@ -100,6 +109,7 @@ class SearchCapabilityV2:
             raw["pagination"],
             raw["audio_preview"],
             raw["video_preview"],
+            raw.get("source_scope", "none"),
         )
 
 
@@ -109,6 +119,7 @@ class SearchQueryV2:
     content_type: str = "all"
     page_size: int = 12
     cursor: str = ""
+    source_scope: str = ""
 
     def validated(self) -> "SearchQueryV2":
         """Validate caller-controlled fields before provider dispatch."""
@@ -126,6 +137,13 @@ class SearchQueryV2:
             raise SearchContractV2Error("search content type invalid")
         if not isinstance(self.cursor, str) or len(self.cursor) > 500:
             raise SearchContractV2Error("search cursor invalid")
+        if (
+            not isinstance(self.source_scope, str)
+            or len(self.source_scope) > 500
+            or "\r" in self.source_scope
+            or "\n" in self.source_scope
+        ):
+            raise SearchContractV2Error("search source scope invalid")
         if not isinstance(self.page_size, int) or isinstance(self.page_size, bool):
             raise SearchContractV2Error("search page size invalid")
         return SearchQueryV2(
@@ -133,6 +151,7 @@ class SearchQueryV2:
             self.content_type,
             self.page_size,
             self.cursor,
+            self.source_scope.strip(),
         )
 
     def normalized(self, capability: SearchCapabilityV2) -> "SearchQueryV2":
@@ -141,11 +160,16 @@ class SearchQueryV2:
             raise SearchContractV2Error("content type is unsupported by this MOD")
         if validated.cursor and capability.pagination == "none":
             raise SearchContractV2Error("search MOD does not support pagination")
+        if capability.source_scope == "https-origin" and not validated.source_scope:
+            raise SearchContractV2Error("search MOD requires an HTTPS origin")
+        if capability.source_scope == "none" and validated.source_scope:
+            raise SearchContractV2Error("search MOD does not accept a source scope")
         return SearchQueryV2(
             validated.query,
             validated.content_type,
             max(1, min(validated.page_size, capability.max_page_size)),
             validated.cursor,
+            validated.source_scope,
         )
 
 

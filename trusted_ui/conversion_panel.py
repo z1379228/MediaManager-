@@ -264,8 +264,10 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
         control.setDecimals(3)
         control.setSpecialValueText("未設定")
         control.setSuffix(" 秒")
-    gpu = QCheckBox("H.264 使用 NVIDIA GPU（失敗回退 CPU）")
-    gpu.setToolTip("必須先偵測到本機 FFmpeg 提供 h264_nvenc 才能啟用。")
+    gpu = QCheckBox("H.264 使用 NVIDIA GPU（失敗後可手動改用 CPU）")
+    gpu.setToolTip(
+        "必須先偵測到本機 FFmpeg 提供 h264_nvenc；失敗時不會自動更換 encoder。"
+    )
     output_text = QLineEdit()
     output_text.setReadOnly(True)
     output_text.setPlaceholderText("尚未選擇輸出新檔")
@@ -372,8 +374,15 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
     table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
     table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
     page.addWidget(table, 1)
+    task_actions = QHBoxLayout()
+    task_actions.addStretch()
+    retry_cpu = QPushButton("使用 CPU 重試")
+    retry_cpu.setEnabled(False)
+    retry_cpu.setToolTip("只適用於明確啟用 NVIDIA GPU 的 H.264 失敗工作")
     cancel = QPushButton("取消選取工作")
-    page.addWidget(cancel, alignment=Qt.AlignmentFlag.AlignRight)
+    task_actions.addWidget(retry_cpu)
+    task_actions.addWidget(cancel)
+    page.addLayout(task_actions)
 
     def trim_enabled() -> bool:
         return builtin_mod_is_enabled(context, "media-ad-trim")
@@ -1204,6 +1213,7 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
             timer.setInterval(interval)
         signature = visible_rows_signature(rows)
         if signature == panel.render_signature:
+            update_task_actions()
             return
         panel.render_signature = signature
         table.setRowCount(len(tasks))
@@ -1223,6 +1233,45 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
                 if column == 0:
                     cell.setData(Qt.ItemDataRole.UserRole, task.task_id)
                 table.setItem(row, column, cell)
+        update_task_actions()
+
+    def selected_task_id() -> str:
+        cell = table.item(table.currentRow(), 0) if table.currentRow() >= 0 else None
+        value = cell.data(Qt.ItemDataRole.UserRole) if cell is not None else None
+        return str(value) if isinstance(value, str) else ""
+
+    def update_task_actions() -> None:
+        task_id = selected_task_id()
+        retry_cpu.setEnabled(bool(task_id) and service.can_retry_with_cpu(task_id))
+        cancel.setEnabled(bool(task_id))
+
+    def retry_selected_with_cpu() -> None:
+        task_id = selected_task_id()
+        if not task_id or not service.can_retry_with_cpu(task_id):
+            return
+        answer = QMessageBox.question(
+            panel,
+            "使用 CPU 重試",
+            "此工作會保留來源、輸出、H.264 格式與其他選項，只將 NVIDIA "
+            "encoder 改為 CPU encoder 後重新執行；不會覆寫既有檔案。是否繼續？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            changed = service.retry_with_cpu(task_id)
+        except (OSError, RuntimeError, ValueError) as error:
+            QMessageBox.warning(panel, "CPU 重試失敗", str(error))
+            return
+        if not changed:
+            QMessageBox.information(
+                panel,
+                "使用 CPU 重試",
+                "工作狀態已改變，請重新選取後再試。",
+            )
+        panel.render_signature = None
+        refresh()
 
     def cancel_selected() -> None:
         cell = table.item(table.currentRow(), 0) if table.currentRow() >= 0 else None
@@ -1278,6 +1327,8 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
     cancel_auxiliary.clicked.connect(stop_auxiliary)
     submit.clicked.connect(enqueue)
     cancel.clicked.connect(cancel_selected)
+    retry_cpu.clicked.connect(retry_selected_with_cpu)
+    table.itemSelectionChanged.connect(update_task_actions)
     timer = QTimer(panel)
     timer.setInterval(1500)
     timer.timeout.connect(refresh)
@@ -1310,6 +1361,7 @@ def create_conversion_panel(context: object, parent: object = None) -> object:
     panel.cancel_auxiliary = cancel_auxiliary
     panel.auxiliary_status = auxiliary_status
     panel.submit = submit
+    panel.retry_cpu = retry_cpu
     panel.source_text = source_text
     panel.output_text = output_text
     panel.apply_drop_intake = apply_source_drop

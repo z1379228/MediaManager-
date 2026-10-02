@@ -38,6 +38,7 @@ def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
         (
             ProviderStatus("youtube-search", "Search", True),
             ProviderStatus("bilibili-search", "Bilibili Search", False),
+            ProviderStatus("peertube-search", "PeerTube Search", False),
             ProviderStatus("musicbrainz-metadata", "MusicBrainz Metadata", True),
             ProviderStatus("youtube-player", "Player", False),
             ProviderStatus("youtube-history", "History", False),
@@ -58,13 +59,14 @@ def test_builtin_mod_rows_merge_download_and_discovery_statuses() -> None:
             FeatureStatus("twitter-export", "X Export", False),
             FeatureStatus("media-convert", "Media Convert", False),
             FeatureStatus("media-ad-trim", "Local Ad Segment Trim", False),
+            FeatureStatus("podcast-import", "Podcast / RSS", False),
             FeatureStatus("speech-to-text", "Speech to Text", False),
             FeatureStatus("gopeed-transfer", "Gopeed Bridge", False),
             FeatureStatus("p2p-transfer", "P2P Transfer", False),
             FeatureStatus("automation", "Automation", False),
         ),
     )
-    assert len(rows) == 30
+    assert len(rows) == 32
     assert all(row.available for row in rows)
     assert sum(row.enabled for row in rows) == 6
     player = next(row for row in rows if row.provider_id == "youtube-player")
@@ -80,11 +82,13 @@ def test_builtin_mod_rows_keep_missing_expected_mod_visible() -> None:
         "facebook",
         "mega",
         "direct-http",
+        "podcast-import",
         "instagram",
         "threads",
         "twitter",
         "youtube-search",
         "bilibili-search",
+        "peertube-search",
         "musicbrainz-metadata",
         "bilibili-danmaku",
         "youtube-player",
@@ -166,6 +170,7 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
                 for provider_id in (
                     "youtube-search",
                     "bilibili-search",
+                    "peertube-search",
                     "musicbrainz-metadata",
                     "youtube-player",
                     "youtube-history",
@@ -191,6 +196,7 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
                 FeatureStatus(
                     "media-ad-trim", "Local Ad Segment Trim", False
                 ),
+                FeatureStatus("podcast-import", "Podcast / RSS", False),
                 FeatureStatus("speech-to-text", "Speech to Text", False),
                 FeatureStatus("gopeed-transfer", "Gopeed Bridge", False),
                 FeatureStatus("p2p-transfer", "P2P Transfer", False),
@@ -205,17 +211,17 @@ def test_builtin_mod_panel_renders_all_expected_rows(monkeypatch) -> None:
         for label in panel.findChildren(QLabel)
         if label.objectName() == "dependencySummary"
     )
-    assert tree.topLevelItemCount() == 14 + len(PLANNED_MODS)
+    assert tree.topLevelItemCount() == 16 + len(PLANNED_MODS)
     assert tree.accessibleName() == "依網站分組的內建 MOD 清單"
     toggles = [
         toggle
         for toggle in panel.findChildren(QCheckBox)
         if toggle.accessibleName().endswith("啟用狀態")
     ]
-    assert len(toggles) == 20
+    assert len(toggles) == 22
     assert {toggle.text() for toggle in toggles} == {"啟用"}
     assert summary.text() == (
-        "內建 MOD 30/30 已載入 · 9 個已啟用 · "
+        "內建 MOD 32/32 已載入 · 10 個已啟用 · "
         f"7 個網站父 MOD · 規劃中 {len(PLANNED_MODS)} 個"
     )
     youtube = next(

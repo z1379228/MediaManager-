@@ -231,6 +231,7 @@ class SearchAdapterRegistry:
                         if cursor_map is not None
                         else validated_query.cursor
                     ),
+                    validated_query.source_scope,
                 ).normalized(capability)
                 page = adapter(normalized)
                 if page.provider_id != provider_id:

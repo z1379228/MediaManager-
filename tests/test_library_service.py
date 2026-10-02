@@ -96,6 +96,32 @@ def test_library_preserves_metadata_when_file_becomes_unavailable(
     assert retained.last_played == 123.0
 
 
+def test_unchanged_rescan_avoids_per_item_database_writes(
+    library: LibraryService,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "music"
+    root.mkdir()
+    first = root / "first.mp3"
+    second = root / "second.flac"
+    first.write_bytes(b"first")
+    second.write_bytes(b"second")
+    library.scan(root)
+    statements: list[str] = []
+    library._connection.set_trace_callback(statements.append)
+
+    rescanned = library.scan(root)
+
+    library._connection.set_trace_callback(None)
+    assert {item.name for item in rescanned} == {"first.mp3", "second.flac"}
+    item_writes = tuple(
+        statement
+        for statement in statements
+        if statement.startswith(("INSERT INTO items", "UPDATE items"))
+    )
+    assert item_writes == ()
+
+
 def test_duplicate_review_confirms_partial_candidates_with_full_sha256(
     library: LibraryService, tmp_path: Path
 ) -> None:

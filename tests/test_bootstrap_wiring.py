@@ -23,6 +23,7 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     assert isinstance(context.library, LibraryService)
     assert isinstance(context.features, FeatureModRegistry)
     assert context.conversion is not None
+    assert context.podcast_import is not None
     feature_statuses = {
         status.provider_id: status for status in context.features.statuses()
     }
@@ -117,6 +118,7 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     assert {status.provider_id for status in context.discovery.statuses()} == {
         "youtube-search",
         "bilibili-search",
+        "peertube-search",
         "youtube-player",
         "youtube-history",
         "youtube-recovery",
@@ -126,6 +128,7 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     }
     assert context.discovery.is_enabled("youtube-search")
     assert context.discovery.is_enabled("bilibili-search")
+    assert context.discovery.is_enabled("peertube-search")
     assert set(feature_statuses) == {
         "bilibili-danmaku",
         "instagram",
@@ -139,6 +142,7 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
         "twitter-export",
         "media-convert",
         "media-ad-trim",
+        "podcast-import",
         "speech-to-text",
         "gopeed-transfer",
         "p2p-transfer",
@@ -150,6 +154,7 @@ def test_bootstrap_plugin_service_types_are_wired_by_name(
     assert context.features.is_enabled("threads-page")
     assert context.features.is_enabled("twitter")
     assert context.features.is_enabled("twitter-page")
+    assert context.features.is_enabled("podcast-import")
 
 
 def test_bootstrap_ignores_retired_ani_gamer_state_without_mutating_other_mods(
@@ -338,6 +343,7 @@ def test_clean_bootstrap_starts_no_optional_provider_process(
         for provider_id in ("media-convert", "media-ad-trim"):
             assert feature_statuses[provider_id].available is conversion_available
             assert feature_statuses[provider_id].enabled is conversion_available
+        assert context.features.is_enabled("podcast-import")
         assert context.features.is_enabled("gopeed-transfer")
         assert context.features.is_enabled("p2p-transfer")
         assert not context.gopeed.is_configured

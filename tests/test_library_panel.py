@@ -163,6 +163,54 @@ def test_duplicate_verification_runs_off_gui_thread_and_reports_progress(
         context.lifecycle.shutdown()
 
 
+def test_library_rescan_runs_off_gui_thread_without_watcher(
+    tmp_path, monkeypatch
+) -> None:
+    app = QApplication.instance() or QApplication([])
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    media_root = tmp_path / "music"
+    media_root.mkdir()
+    started = Event()
+    release = Event()
+
+    def scan(root):
+        assert root == media_root.resolve()
+        started.set()
+        release.wait(timeout=2)
+        return ()
+
+    monkeypatch.setattr(context.library, "scan", scan)
+    panel = create_library_panel(context)
+    try:
+        started_at = time.monotonic()
+        panel.start_scan(media_root)
+        app.processEvents()
+
+        assert started.wait(timeout=1)
+        assert time.monotonic() - started_at < 0.5
+        assert not panel.rescan_button.isEnabled()
+        assert "掃描中" in panel.folder_status.text()
+
+        release.set()
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and not panel.rescan_button.isEnabled():
+            app.processEvents()
+            time.sleep(0.01)
+
+        assert panel.current_root == media_root.resolve()
+        assert panel.rescan_button.isEnabled()
+        assert not panel.scan_busy
+    finally:
+        release.set()
+        panel.shutdown()
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
 def test_musicbrainz_lookup_runs_off_gui_thread_and_can_stop_waiting(
     tmp_path, monkeypatch
 ) -> None:

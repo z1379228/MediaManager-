@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import threading
+import time
+
 from core.dependency_health import DependencyReport, DependencyStatus
+from core.dependency_snapshot import DependencySnapshotService
 from trusted_ui.dependency_dialog import (
     dependency_table_row,
     dependency_presentation,
     optional_dependency_install_html,
     startup_dependency_prompt_required,
+    unchecked_dependency_presentation,
 )
 
 
@@ -46,6 +51,13 @@ def test_dependency_badge_separates_optional_mod_tools() -> None:
     assert dependency_presentation(DependencyReport(statuses))[0] == (
         "核心 4/4｜選用 MOD 工具 0/3"
     )
+
+
+def test_unchecked_dependency_badge_explains_deferred_cli_probe() -> None:
+    label, state, tip = unchecked_dependency_presentation()
+
+    assert (label, state) == ("環境尚未檢查", "unknown")
+    assert "避免啟動時開啟外部 CLI" in tip
 
 
 def test_dependency_rows_distinguish_missing_optional_tools_from_core_faults() -> None:
@@ -120,6 +132,54 @@ def test_dependency_dialog_exposes_full_detected_path_and_copy_action(
         assert copy.isEnabled()
         copy.click()
         assert QApplication.clipboard().text() == detected
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
+def test_cold_dependency_dialog_checks_tools_outside_gui_thread(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import pytest
+
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QTableWidget
+
+    from trusted_ui.dependency_dialog import create_dependency_dialog
+
+    gui_thread = threading.get_ident()
+    worker_threads: list[int] = []
+    report = _report((True, True, True, True))
+
+    def factory(_application, _data):
+        worker_threads.append(threading.get_ident())
+        return report
+
+    service = DependencySnapshotService(
+        tmp_path,
+        tmp_path / "data",
+        report_factory=factory,
+    )
+    app = QApplication.instance() or QApplication([])
+    dialog = create_dependency_dialog(
+        tmp_path,
+        snapshot_service=service,
+    )
+    table = dialog.findChild(QTableWidget, "dependencyTable")
+    summary = dialog.findChild(QLabel, "dependencySummary")
+    try:
+        deadline = time.monotonic() + 2
+        while table.rowCount() == 0 and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(0.01)
+
+        assert worker_threads
+        assert worker_threads[0] != gui_thread
+        assert table.rowCount() == 4
+        assert "核心 4/4" in summary.text()
     finally:
         dialog.close()
         dialog.deleteLater()

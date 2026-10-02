@@ -7,7 +7,7 @@ import hashlib
 import os
 from pathlib import Path
 import shutil
-from threading import RLock
+from threading import Lock, RLock
 from typing import Callable
 
 from core.builtin_mod_catalog import BUILTIN_MOD_CATALOG
@@ -57,6 +57,7 @@ class DependencySnapshotService:
         self._report_factory = report_factory
         self._cached: DependencySnapshot | None = None
         self._lock = RLock()
+        self._refresh_lock = Lock()
 
     def _fingerprint(self) -> str:
         digest = hashlib.sha256()
@@ -128,13 +129,17 @@ class DependencySnapshotService:
         return tuple(readiness)
 
     def refresh(self) -> DependencySnapshot:
-        with self._lock:
+        # External version probes can take several seconds.  Serialize those
+        # probes without holding the cache lock so GUI ``peek`` calls always
+        # remain immediate while a refresh is in progress.
+        with self._refresh_lock:
             report = self._report_factory(self.application_root, self.data_root)
             snapshot = DependencySnapshot(
                 report,
                 self._readiness(report),
                 self._fingerprint(),
             )
+        with self._lock:
             self._cached = snapshot
             return snapshot
 

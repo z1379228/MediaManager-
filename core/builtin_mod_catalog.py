@@ -56,6 +56,13 @@ BUILTIN_MOD_CATALOG = (
         "direct-http",
     ),
     BuiltinModDescriptor(
+        "podcast-import", "Podcast / RSS", "feature",
+        "匯入本機 RSS／Atom 並預覽單集、逐字稿與章節資訊",
+        "啟用後顯示 Podcast / RSS 工作區；不連線、不訂閱或自動下載",
+        True,
+        "podcast-import",
+    ),
+    BuiltinModDescriptor(
         "instagram", "Instagram", "feature", "官方公開媒體頁與帳號資料匯出入口",
         "啟用後顯示 Instagram 官方工具工作區", True, "instagram",
     ),
@@ -75,6 +82,12 @@ BUILTIN_MOD_CATALOG = (
     BuiltinModDescriptor(
         "bilibili-search", "Bilibili Search", "discovery", "獨立搜尋 Bilibili 公開影片",
         "網站搜尋 → 搜尋 MOD", True, parent_provider_id="bilibili",
+    ),
+    BuiltinModDescriptor(
+        "peertube-search", "PeerTube Search", "discovery",
+        "搜尋使用者指定 PeerTube 實例中的公開本機影片",
+        "網站搜尋 → 搜尋 MOD；每次明確輸入 HTTPS 實例，不保存帳號或權杖",
+        True,
     ),
     BuiltinModDescriptor(
         "musicbrainz-metadata", "MusicBrainz Metadata", "discovery",

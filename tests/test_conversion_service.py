@@ -1552,7 +1552,7 @@ def test_ffprobe_rejects_oversized_json_before_parsing(
     assert diagnostic == "ffprobe output exceeded the size limit"
 
 
-def test_gpu_failure_falls_back_to_cpu_and_commits_without_overwrite(
+def test_gpu_failure_never_silently_falls_back_to_cpu(
     service: ConversionService, tmp_path: Path, monkeypatch
 ) -> None:
     source = tmp_path / "source.mp4"
@@ -1567,17 +1567,72 @@ def test_gpu_failure_falls_back_to_cpu_and_commits_without_overwrite(
 
     def fake_run(command, _cancel_event):
         calls.append(command)
-        if len(calls) == 2:
-            Path(command[-1]).write_bytes(b"converted")
-            return 0, ""
         return 1, "GPU encoder unavailable"
 
     monkeypatch.setattr(service, "_run", fake_run)
     monkeypatch.setattr(service, "_verify_output", lambda _path, **_kwargs: None)
-    assert service._execute(task, plan) == output
-    assert output.read_bytes() == b"converted"
-    assert len(calls) == 2
+    with pytest.raises(RuntimeError, match="GPU encoder unavailable"):
+        service._execute(task, plan)
+
+    assert not output.exists()
+    assert len(calls) == 1
     assert not list(tmp_path.glob("*.part.mp4"))
+
+
+def test_failed_gpu_task_requires_explicit_cpu_retry(
+    service: ConversionService,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"media")
+    output = tmp_path / "output.mp4"
+    service.set_enabled(True)
+    monkeypatch.setattr(
+        service,
+        "capabilities",
+        lambda **_kwargs: ConversionCapabilities(
+            encoders=frozenset({"h264_nvenc"})
+        ),
+    )
+    attempts: list[bool] = []
+
+    def execute(task: ConversionTask, plan) -> Path:
+        attempts.append(plan.request.hardware_acceleration)
+        if plan.request.hardware_acceleration:
+            raise RuntimeError("GPU encoder unavailable")
+        output.write_bytes(b"cpu output")
+        return output
+
+    monkeypatch.setattr(service, "_execute_serialized", execute)
+    task_id = service.submit(
+        ConversionRequest(
+            (source,),
+            output,
+            "video-h264",
+            hardware_acceleration=True,
+        )
+    )
+    deadline = time.monotonic() + 2
+    while (
+        service.snapshots()[0].state is not ConversionState.FAILED
+        and time.monotonic() < deadline
+    ):
+        time.sleep(0.01)
+
+    assert service.can_retry_with_cpu(task_id)
+    assert service.retry_with_cpu(task_id)
+    deadline = time.monotonic() + 2
+    while (
+        service.snapshots()[0].state is not ConversionState.COMPLETED
+        and time.monotonic() < deadline
+    ):
+        time.sleep(0.01)
+
+    retried = service.snapshots()[0]
+    assert retried.state is ConversionState.COMPLETED
+    assert retried.request.hardware_acceleration is False
+    assert attempts == [True, False]
 
 
 def test_cancelled_conversion_removes_partial_output(

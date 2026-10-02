@@ -157,6 +157,33 @@ def test_registry_rejects_duplicate_provider_selection_before_dispatch() -> None
     search.assert_not_called()
 
 
+def test_search_source_scope_is_explicit_and_capability_bound() -> None:
+    scoped = SearchCapabilityV2.from_dict(
+        {
+            "provider_id": "scoped",
+            "sites": ["peertube"],
+            "content_types": ["all", "video"],
+            "max_page_size": 20,
+            "pagination": "offset",
+            "audio_preview": False,
+            "video_preview": False,
+            "source_scope": "https-origin",
+        }
+    )
+
+    assert SearchQueryV2(
+        "video", source_scope="  https://video.example  "
+    ).normalized(scoped).source_scope == "https://video.example"
+    with pytest.raises(SearchContractV2Error, match="requires an HTTPS origin"):
+        SearchQueryV2("video").normalized(scoped)
+    with pytest.raises(SearchContractV2Error, match="does not accept"):
+        SearchQueryV2(
+            "video", source_scope="https://video.example"
+        ).normalized(_capability("one"))
+    with pytest.raises(SearchContractV2Error, match="source scope"):
+        SearchQueryV2("video", source_scope="https://video.example\nnext").validated()
+
+
 @pytest.mark.parametrize("provider_id", ("", 42))
 def test_registry_rejects_invalid_provider_selection(
     provider_id: object,

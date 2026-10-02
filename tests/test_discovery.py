@@ -488,7 +488,7 @@ def test_discovery_service_binds_opaque_cursor_to_search(tmp_path) -> None:
     )
     token = first.next_cursors[0][1]
 
-    assert token.startswith("sc1.")
+    assert token.startswith("sc2.")
     assert "provider-secret-cursor" not in token
     second = service.federated_search(
         "synth wave",
@@ -512,6 +512,70 @@ def test_discovery_service_binds_opaque_cursor_to_search(tmp_path) -> None:
             provider_ids=(provider.provider_id,),
             content_type="music",
             cursor=token[:-1] + ("A" if token[-1] != "A" else "B"),
+        )
+    service.close()
+
+
+def test_discovery_service_binds_scoped_search_and_excludes_it_from_aggregate(
+    tmp_path,
+) -> None:
+    class ScopedProvider:
+        provider_id = "scoped-search"
+        display_name = "Scoped Search"
+        search_capability = SearchCapabilityV2(
+            provider_id,
+            ("scoped",),
+            ("all",),
+            10,
+            "offset",
+            False,
+            False,
+            "https-origin",
+        )
+
+        def __init__(self) -> None:
+            self.received = []
+
+        def search_page(self, query):
+            self.received.append((query.cursor, query.source_scope))
+            return SearchPageV2(
+                self.provider_id,
+                (DiscoveryItemV1.from_dict(item(video_id="scoped-result")),),
+                "10" if not query.cursor else "",
+            )
+
+        def close(self) -> None:
+            pass
+
+    provider = ScopedProvider()
+    service = DiscoveryService(tmp_path / "discovery-state.json")
+    service.register(provider, enabled=True)
+
+    assert service.federated_search("example").items == ()
+    assert provider.received == []
+    first = service.federated_search(
+        "example",
+        provider_ids=(provider.provider_id,),
+        source_scope="https://video.example",
+    )
+    token = first.next_cursors[0][1]
+    assert token.startswith("sc2.")
+    service.federated_search(
+        "example",
+        provider_ids=(provider.provider_id,),
+        cursor=token,
+        source_scope="https://video.example",
+    )
+    assert provider.received == [
+        ("", "https://video.example"),
+        ("10", "https://video.example"),
+    ]
+    with pytest.raises(ValueError, match="does not match"):
+        service.federated_search(
+            "example",
+            provider_ids=(provider.provider_id,),
+            cursor=token,
+            source_scope="https://other.example",
         )
     service.close()
 
@@ -713,6 +777,105 @@ def test_discovery_service_preserves_failed_federated_cursor_for_retry(
     assert recovered.next_cursors == ()
     assert retriable.received == ["", "retry-me", "retry-me"]
     assert exhausted.received == [""]
+    service.close()
+
+
+def test_discovery_service_retries_only_failed_initial_sources(tmp_path) -> None:
+    class InitiallyAvailableProvider:
+        provider_id = "available-search"
+        display_name = "Available Search"
+        search_capability = SearchCapabilityV2(
+            provider_id,
+            ("available",),
+            ("all",),
+            7,
+            "cursor",
+            False,
+            False,
+        )
+
+        def __init__(self) -> None:
+            self.received: list[str] = []
+
+        def search_page(self, query):
+            self.received.append(query.cursor)
+            suffix = "next" if query.cursor else "first"
+            return SearchPageV2(
+                self.provider_id,
+                (DiscoveryItemV1.from_dict(item(video_id=f"available-{suffix}")),),
+                "" if query.cursor else "available-next",
+            )
+
+        def close(self) -> None:
+            pass
+
+    class InitiallyUnavailableProvider:
+        provider_id = "unavailable-search"
+        display_name = "Unavailable Search"
+        search_capability = SearchCapabilityV2(
+            provider_id,
+            ("unavailable",),
+            ("all",),
+            7,
+            "cursor",
+            False,
+            False,
+        )
+
+        def __init__(self) -> None:
+            self.received: list[str] = []
+
+        def search_page(self, query):
+            self.received.append(query.cursor)
+            if len(self.received) == 1:
+                raise ConnectionError("temporary outage")
+            suffix = "next" if query.cursor else "first"
+            return SearchPageV2(
+                self.provider_id,
+                (DiscoveryItemV1.from_dict(item(video_id=f"recovered-{suffix}")),),
+                "" if query.cursor else "recovered-next",
+            )
+
+        def close(self) -> None:
+            pass
+
+    available = InitiallyAvailableProvider()
+    unavailable = InitiallyUnavailableProvider()
+    provider_ids = (available.provider_id, unavailable.provider_id)
+    service = DiscoveryService(tmp_path / "discovery-state.json")
+    service.register(available, enabled=True)
+    service.register(unavailable, enabled=True)
+
+    first = service.federated_search("music", provider_ids=provider_ids)
+    assert tuple(failure.provider_id for failure in first.failures) == (
+        unavailable.provider_id,
+    )
+
+    recovered = service.federated_search(
+        "music",
+        provider_ids=provider_ids,
+        retry_provider_ids=(unavailable.provider_id,),
+        preserve_cursor=first.next_cursors[0][1],
+    )
+
+    assert tuple(result.video_id for result in recovered.items) == (
+        "recovered-first",
+    )
+    assert recovered.failures == ()
+    assert available.received == [""]
+    assert unavailable.received == ["", ""]
+
+    next_page = service.federated_search(
+        "music",
+        provider_ids=provider_ids,
+        cursor=recovered.next_cursors[0][1],
+    )
+    assert tuple(result.video_id for result in next_page.items) == (
+        "available-next",
+        "recovered-next",
+    )
+    assert available.received == ["", "available-next"]
+    assert unavailable.received == ["", "", "recovered-next"]
     service.close()
 
 

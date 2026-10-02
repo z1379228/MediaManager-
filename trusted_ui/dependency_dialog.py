@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 from typing import Callable
 
 from core.dependency_health import DependencyReport, DependencyStatus, check_dependencies
@@ -23,6 +24,16 @@ def dependency_presentation(report: DependencyReport) -> tuple[str, str, str]:
         )
     missing = core_total - report.core_ready_count
     return label, "warning", f"缺少 {missing} 項核心依賴，請開啟環境檢查。"
+
+
+def unchecked_dependency_presentation() -> tuple[str, str, str]:
+    """Describe a deliberately deferred dependency scan."""
+
+    return (
+        "環境尚未檢查",
+        "unknown",
+        "為避免啟動時開啟外部 CLI，請按此執行一次完整環境檢查。",
+    )
 
 
 _OPTIONAL_DEPENDENCY_MOD = {
@@ -92,7 +103,7 @@ def create_dependency_dialog(
     report_factory: Callable[[Path], DependencyReport] = check_dependencies,
     snapshot_service: DependencySnapshotService | None = None,
 ) -> object:
-    from PySide6.QtCore import Qt
+    from PySide6.QtCore import QObject, Qt, Signal
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QApplication,
@@ -106,6 +117,9 @@ def create_dependency_dialog(
         QTextBrowser,
         QVBoxLayout,
     )
+
+    class DependencyBridge(QObject):
+        finished = Signal(int, object, str)
 
     dialog = QDialog(parent)
     dialog.setWindowTitle("執行環境")
@@ -128,6 +142,7 @@ def create_dependency_dialog(
 
     summary = QLabel()
     summary.setObjectName("dependencySummary")
+    summary.setAccessibleName("執行環境檢查狀態")
     page.addWidget(summary)
 
     table = QTableWidget(0, 5)
@@ -158,6 +173,7 @@ def create_dependency_dialog(
     controls.addWidget(install_help)
     controls.addStretch()
     refresh = QPushButton("重新檢查")
+    refresh.setObjectName("dependencyRefresh")
     close = QPushButton("關閉")
     close.clicked.connect(dialog.accept)
     controls.addWidget(refresh)
@@ -197,14 +213,10 @@ def create_dependency_dialog(
     table.itemSelectionChanged.connect(update_copy_state)
     copy_path.clicked.connect(copy_selected_path)
 
-    def populate(*, force: bool = False) -> None:
-        report = (
-            snapshot_service.refresh().report
-            if snapshot_service is not None and force
-            else snapshot_service.snapshot().report
-            if snapshot_service is not None
-            else report_factory(application_root)
-        )
+    bridge = DependencyBridge(dialog)
+    refresh_state = {"generation": 0, "busy": False, "open": True}
+
+    def render(report: DependencyReport) -> None:
         label, state, tip = dependency_presentation(report)
         summary.setText(f"{label}　{tip}")
         summary.setProperty("dependencyState", state)
@@ -224,6 +236,79 @@ def create_dependency_dialog(
                 table.setItem(row, column, item)
             table.setRowHeight(row, 42)
         update_copy_state()
+
+    def finish_refresh(
+        generation: int,
+        report: object,
+        error: str,
+    ) -> None:
+        if (
+            not refresh_state["open"]
+            or generation != refresh_state["generation"]
+        ):
+            return
+        refresh_state["busy"] = False
+        refresh.setEnabled(True)
+        close.setEnabled(True)
+        if isinstance(report, DependencyReport):
+            render(report)
+            return
+        summary.setText(f"環境檢查失敗：{error or '未知錯誤'}")
+        summary.setProperty("dependencyState", "warning")
+        summary.style().unpolish(summary)
+        summary.style().polish(summary)
+
+    bridge.finished.connect(finish_refresh)
+
+    def start_refresh() -> None:
+        if refresh_state["busy"]:
+            return
+        if snapshot_service is None:
+            render(report_factory(application_root))
+            return
+        refresh_state["generation"] += 1
+        generation = refresh_state["generation"]
+        refresh_state["busy"] = True
+        refresh.setEnabled(False)
+        summary.setText(
+            "正在背景檢查 FFmpeg、ffprobe 與選用 MOD 工具；可關閉視窗，"
+            "檢查不會阻塞主介面。"
+        )
+        summary.setProperty("dependencyState", "checking")
+        summary.style().unpolish(summary)
+        summary.style().polish(summary)
+
+        def worker() -> None:
+            try:
+                report = snapshot_service.refresh().report
+                error = ""
+            except (OSError, RuntimeError, ValueError) as exc:
+                report = None
+                error = " ".join(str(exc).split())[:300]
+            bridge.finished.emit(generation, report, error)
+
+        threading.Thread(
+            target=worker,
+            name="dependency-health-check",
+            daemon=True,
+        ).start()
+
+    def populate(*, force: bool = False) -> None:
+        if snapshot_service is None:
+            render(report_factory(application_root))
+            return
+        cached = None if force else snapshot_service.peek()
+        if cached is not None:
+            render(cached.report)
+            return
+        start_refresh()
+
+    def mark_closed(_result: object = None) -> None:
+        refresh_state["open"] = False
+        refresh_state["generation"] += 1
+
+    dialog.finished.connect(mark_closed)
+    dialog.destroyed.connect(mark_closed)
 
     refresh.clicked.connect(lambda: populate(force=True))
     populate()

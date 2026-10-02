@@ -18,7 +18,10 @@ from core.downloads.builtin import (
     BuiltinProviderIntegrityError,
     ensure_builtin_provider,
 )
-from core.dependency_health import find_executable, find_javascript_runtime
+from core.dependency_health import (
+    find_executable,
+    find_startup_javascript_runtime,
+)
 from core.dependency_snapshot import DependencySnapshotService
 from core.builtin_mod_snapshot import BuiltinModSnapshot
 from core.discovery.service import DiscoveryService
@@ -42,6 +45,7 @@ from core.downloads.models import DownloadRequest
 from core.logging.audit_log import AuditLog
 from core.logging.logger import configure_logging
 from core.library import LibraryService
+from core.podcast_import import PodcastImportService
 from core.plugins.cleanup import PluginCleanupManager
 from core.plugins.installer import PluginInstaller
 from core.plugins.lifecycle import PluginLifecycleLock
@@ -158,6 +162,7 @@ class AppContext:
     features: FeatureModRegistry
     builtin_mod_errors: dict[str, str]
     conversion: ConversionService | None
+    podcast_import: PodcastImportService | None
     transcription: TranscriptionService | None
     automation: AutomationService | None
     gopeed: GopeedBridgeService | None
@@ -259,13 +264,14 @@ class Bootstrap:
         )
         features = FeatureModRegistry(paths.mod / "feature-state.json")
         conversion: ConversionService | None = None
+        podcast_import: PodcastImportService | None = None
         transcription: TranscriptionService | None = None
         automation: AutomationService | None = None
         gopeed: GopeedBridgeService | None = None
         p2p_transfer: P2PTransferService | None = None
         builtin_mod_errors: dict[str, str] = {}
         discovery = DiscoveryService(paths.mod / "discovery-state.json")
-        javascript_runtime = find_javascript_runtime(paths.application)
+        javascript_runtime = find_startup_javascript_runtime(paths.application)
 
         def record_builtin_failure(provider_id: str, error: Exception) -> None:
             reason = " ".join(str(error).split())[:240]
@@ -461,6 +467,21 @@ class Bootstrap:
                 enabled=builtin_default_enabled("bilibili-search"),
             )
 
+        peertube_search = load_builtin(
+            "peertube-search",
+            lambda provider_root: SubprocessDownloadProvider(
+                provider_root,
+                application_root=paths.application,
+                expected_hashes=BUILTIN_PROVIDER_HASHES["peertube-search"],
+                runtime_home=(paths.temp / "provider-runtime" / "peertube-search"),
+            ),
+        )
+        if peertube_search is not None:
+            discovery.register(
+                peertube_search,
+                enabled=builtin_default_enabled("peertube-search"),
+            )
+
         musicbrainz_metadata = load_builtin(
             "musicbrainz-metadata",
             lambda provider_root: SubprocessDownloadProvider(
@@ -619,6 +640,16 @@ class Bootstrap:
                     media_ad_trim,
                     enabled=builtin_default_enabled("media-ad-trim"),
                 )
+
+        podcast_import = load_builtin(
+            "podcast-import",
+            lambda _provider_root: PodcastImportService(),
+        )
+        if podcast_import is not None:
+            features.register(
+                podcast_import,
+                enabled=builtin_default_enabled("podcast-import"),
+            )
 
         transcription = load_builtin(
             "speech-to-text",
@@ -925,6 +956,7 @@ class Bootstrap:
             features=features,
             builtin_mod_errors=builtin_mod_errors,
             conversion=conversion,
+            podcast_import=podcast_import,
             transcription=transcription,
             automation=automation,
             gopeed=gopeed,

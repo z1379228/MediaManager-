@@ -80,3 +80,47 @@ def test_direct_http_workspace_is_enabled_by_default_and_builds_isolated_request
         panel.deleteLater()
         context.lifecycle.shutdown()
         app.processEvents()
+
+
+def test_direct_http_workspace_prefill_does_not_queue_or_analyze(
+    tmp_path: Path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+    _use_current_builtin_hashes(monkeypatch)
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    panel = create_direct_http_workspace(context)
+    panel.timer.stop()
+    queued = Mock()
+    analyzed = Mock()
+    monkeypatch.setattr(context.download_queue, "add_batch", queued)
+    monkeypatch.setattr(context.download_providers, "analyze", analyzed)
+    try:
+        assert panel.prefill_urls(
+            ("https://cdn.example.org/episodes/one.mp3",),
+            source_label="Podcast：範例節目",
+        ) == 1
+        app.processEvents()
+
+        assert panel._urls() == ("https://cdn.example.org/episodes/one.mp3",)
+        assert "範例節目" in panel.preview.text()
+        queued.assert_not_called()
+        analyzed.assert_not_called()
+
+        with pytest.raises(ValueError, match="不符合規則"):
+            panel.prefill_urls(
+                ("https://www.youtube.com/media/episode.mp3",),
+                source_label="Podcast：拒絕來源",
+            )
+    finally:
+        panel.shutdown()
+        panel.close()
+        panel.deleteLater()
+        context.lifecycle.shutdown()
+        app.processEvents()

@@ -95,6 +95,7 @@ def test_feature_manifests_match_new_profile_defaults() -> None:
         "media-ad-trim",
         "gopeed-transfer",
         "p2p-transfer",
+        "podcast-import",
     ):
         document = json.loads(
             (ROOT / "mod" / "builtin" / name / "feature.json").read_text(

@@ -51,6 +51,27 @@ def test_find_executable_accepts_official_windows_megacmd_batch_client(
     assert health.find_executable(tmp_path, "mega-get") == str(client.resolve())
 
 
+def test_startup_runtime_uses_verified_bundled_deno_without_spawning_probe(
+    tmp_path: Path, monkeypatch
+) -> None:
+    bundled = (tmp_path / "tools" / "deno.exe").resolve()
+    bundled.parent.mkdir()
+    bundled.write_bytes(b"verified-bundled-runtime")
+    monkeypatch.setattr(
+        health,
+        "find_executable",
+        lambda _root, name: str(bundled) if name == "deno" else None,
+    )
+
+    def unexpected_probe(_command: tuple[str, ...]) -> tuple[int, str]:
+        raise AssertionError("verified bundled runtime must not be executed at startup")
+
+    assert health.find_startup_javascript_runtime(
+        tmp_path,
+        runner=unexpected_probe,
+    ) == ("deno", str(bundled))
+
+
 def test_dependency_report_marks_full_support_ready(
     tmp_path: Path, monkeypatch
 ) -> None:

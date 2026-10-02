@@ -539,10 +539,11 @@ class ConversionService:
             )
             preparatory_commands = (tuple(command + list(first_pass)),)
         if request.hardware_acceleration and definition.get("gpu_args"):
-            gpu_command = tuple(command + [str(value) for value in definition["gpu_args"]] + ["@OUTPUT@"])
-            fallback = tuple(command + list(args) + ["@OUTPUT@"])
+            gpu_command = tuple(
+                command + [str(value) for value in definition["gpu_args"]] + ["@OUTPUT@"]
+            )
             final_command = gpu_command
-            strategy = f"{definition['strategy']}（GPU，失敗時回退 CPU）"
+            strategy = f"{definition['strategy']}（GPU；失敗後可手動改用 CPU 重試）"
         else:
             final_command = tuple(command + list(args) + ["@OUTPUT@"])
             strategy = str(definition["strategy"])
@@ -575,10 +576,63 @@ class ConversionService:
                 raise RuntimeError("conversion service is closed")
             self._tasks[task_id] = task
             self._queue.append(task_id)
-            if self._worker is None or not self._worker.is_alive():
-                self._worker = Thread(target=self._work, name="media-convert", daemon=True)
-                self._worker.start()
+            self._ensure_worker_locked()
         return task_id
+
+    def can_retry_with_cpu(self, task_id: str) -> bool:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            return bool(
+                task is not None
+                and task.state is ConversionState.FAILED
+                and task.request.preset == "video-h264"
+                and task.request.hardware_acceleration
+            )
+
+    def retry_with_cpu(self, task_id: str) -> bool:
+        """Explicitly requeue one failed optional-GPU H.264 task on CPU."""
+
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if (
+                self._closed
+                or task is None
+                or task.state is not ConversionState.FAILED
+                or task.request.preset != "video-h264"
+                or not task.request.hardware_acceleration
+            ):
+                return False
+            previous_request = task.request
+        cpu_request = replace(previous_request, hardware_acceleration=False)
+        plan = self.preview(cpu_request)
+        self._validate_runtime_requirements(plan)
+        self._preflight_output(plan)
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if (
+                self._closed
+                or task is None
+                or task.state is not ConversionState.FAILED
+                or task.request != previous_request
+            ):
+                return False
+            task.request = plan.request
+            task.state = ConversionState.QUEUED
+            task.error = ""
+            task.output_path = ""
+            task.cancel_event = Event()
+            self._queue.append(task_id)
+            self._ensure_worker_locked()
+        return True
+
+    def _ensure_worker_locked(self) -> None:
+        if self._worker is None or not self._worker.is_alive():
+            self._worker = Thread(
+                target=self._work,
+                name="media-convert",
+                daemon=True,
+            )
+            self._worker.start()
 
     def snapshots(self) -> tuple[ConversionTask, ...]:
         with self._lock:
@@ -714,6 +768,7 @@ class ConversionService:
         while True:
             with self._lock:
                 if not self._queue:
+                    self._worker = None
                     return
                 task_id = self._queue.pop(0)
                 task = self._tasks[task_id]
@@ -774,20 +829,6 @@ class ConversionService:
                 passlog,
             )
             return_code, diagnostic = self._run(command, task.cancel_event)
-            if (
-                return_code != 0
-                and not task.cancel_event.is_set()
-                and plan.fallback_command is not None
-            ):
-                part.unlink(missing_ok=True)
-                command = self._materialize(
-                    plan.fallback_command,
-                    plan,
-                    part,
-                    concat,
-                    passlog,
-                )
-                return_code, diagnostic = self._run(command, task.cancel_event)
             if task.cancel_event.is_set():
                 raise RuntimeError("conversion cancelled")
             if return_code != 0 or not part.is_file():

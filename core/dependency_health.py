@@ -287,6 +287,32 @@ def find_javascript_runtime(
     return None
 
 
+def find_startup_javascript_runtime(
+    application_root: Path,
+    *,
+    runner: Runner = _run_version,
+) -> tuple[str, str] | None:
+    """Resolve the bundled Deno without opening a version-probe process.
+
+    ``find_executable`` already verifies the pinned SHA-256 when Deno lives in
+    the application ``tools`` directory.  Executing that same binary again at
+    GUI startup adds no trust signal and can briefly create a console surface
+    on some Windows hosts.  PATH-provided runtimes still use the existing
+    version check because their identity is not pinned by the release.
+    """
+
+    root = application_root.resolve()
+    bundled = (root / "tools" / ("deno.exe" if os.name == "nt" else "deno")).resolve()
+    detected = find_executable(root, "deno")
+    if detected:
+        try:
+            if Path(detected).resolve() == bundled:
+                return "deno", detected
+        except OSError:
+            pass
+    return find_javascript_runtime(root, runner=runner)
+
+
 def check_dependencies(
     application_root: Path,
     *,

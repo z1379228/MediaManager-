@@ -16,7 +16,7 @@ WORKSPACE_GROUPS = (
             }
         ),
     ),
-    ("搜尋與媒體", frozenset({"search", "library"})),
+    ("搜尋與媒體", frozenset({"search", "library", "podcast-import"})),
     (
         "工具",
         frozenset({"media-convert", "gopeed-transfer", "speech-to-text"}),

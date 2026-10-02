@@ -11,13 +11,44 @@ from unittest.mock import Mock
 import pytest
 
 from core.bootstrap.bootstrap import Bootstrap
+from core.downloads.models import DownloadRequest, DownloadState, DownloadTask
 from core.storage.paths import AppPaths
 from trusted_ui.main_window import (
     CORE_LANGUAGE_LABELS,
+    download_tray_presentation,
     populate_core_language_menu,
     run_main_window,
     security_presentation,
 )
+
+
+def test_download_tray_presentation_exposes_quick_control_state(
+    tmp_path: Path,
+) -> None:
+    tasks = tuple(
+        DownloadTask(
+            state.value.lower(),
+            DownloadRequest(f"https://youtu.be/{state.value}", tmp_path),
+            state=state,
+            retryable=(state is DownloadState.FAILED),
+        )
+        for state in (
+            DownloadState.RUNNING,
+            DownloadState.PAUSED,
+            DownloadState.FAILED,
+        )
+    )
+
+    text, can_pause, can_resume, can_retry = download_tray_presentation(tasks)
+
+    assert text == "下載：進行中 1 · 暫停 1 · 失敗 1"
+    assert (can_pause, can_resume, can_retry) == (True, True, True)
+    assert download_tray_presentation(()) == (
+        "下載：目前無工作",
+        False,
+        False,
+        False,
+    )
 
 
 def test_security_presentation_is_explicit_and_fail_closed() -> None:
@@ -84,6 +115,14 @@ def test_complete_main_window_builds_at_supported_minimum_size(
     app = QApplication.instance() or QApplication([])
     context = Bootstrap(portable=True).initialize(start_background=False)
     context.settings.initial_mod_setup_completed = True
+    podcast_feed = tmp_path / "main-window-podcast.rss"
+    podcast_feed.write_text(
+        """<rss version="2.0"><channel><title>主視窗測試</title>
+        <item><title>第一集</title><enclosure
+        url="https://cdn.example.org/audio/main-window.mp3"
+        type="audio/mpeg" /></item></channel></rss>""",
+        encoding="utf-8",
+    )
     observed: dict[str, object] = {}
 
     def inspect_then_exit(_app: QApplication) -> int:
@@ -118,6 +157,11 @@ def test_complete_main_window_builds_at_supported_minimum_size(
             close_behavior_accessible=(
                 window.close_behavior_select.accessibleName()
             ),
+            feature_introduction_button=(
+                window.feature_introduction_button.text(),
+                window.feature_introduction_button.accessibleName(),
+                window.feature_introduction_button.toolTip(),
+            ),
             lazy_core_initial=tuple(window.core_workspace_manager.panels),
             lazy_optional_initial=tuple(window.optional_workspace_manager.panels),
             lazy_placeholder_count=len(
@@ -136,6 +180,15 @@ def test_complete_main_window_builds_at_supported_minimum_size(
         observed["lazy_panel_retained"] = (
             window.core_workspace_manager.panels["bilibili"] is bilibili_panel
         )
+        podcast_panel = window.optional_workspace_manager.ensure("podcast-import")
+        podcast_panel.source.setText(str(podcast_feed))
+        podcast_panel.load_feed()
+        podcast_panel.select_visible()
+        podcast_panel.handoff_selected()
+        app.processEvents()
+        direct_http_panel = window.optional_workspace_manager.panels["direct-http"]
+        observed["podcast_handoff"] = direct_http_panel._urls()
+        observed["podcast_did_not_queue"] = context.download_queue.snapshots() == ()
         navigator_menu = window.workspace_navigator.menu()
         navigator_menu.aboutToShow.emit()
         observed["navigator_accessible"] = (
@@ -184,11 +237,20 @@ def test_complete_main_window_builds_at_supported_minimum_size(
         assert observed["idle_text"] == "使用中"
         assert observed["close_behavior"] == "minimize-to-tray"
         assert observed["close_behavior_accessible"] == "關閉按鈕行為"
+        assert observed["feature_introduction_button"] == (
+            "功能簡介",
+            "開啟功能簡介",
+            "查看功能、必要依賴、操作後果與安全界線（Ctrl+I）",
+        )
         assert observed["lazy_core_initial"] == ()
         assert observed["lazy_optional_initial"] == ()
         assert observed["lazy_placeholder_count"] >= 3
         assert observed["lazy_core_after_select"] == ("bilibili",)
         assert observed["lazy_panel_retained"] is True
+        assert observed["podcast_handoff"] == (
+            "https://cdn.example.org/audio/main-window.mp3",
+        )
+        assert observed["podcast_did_not_queue"] is True
         assert observed["navigator_accessible"] == "切換工作區"
         assert observed["navigator_groups"][:2] == ("下載", "搜尋與媒體")
         assert observed["navigator_selected"] == "library"
@@ -223,6 +285,7 @@ def test_clean_main_window_startup_defers_multimedia_import(tmp_path: Path) -> N
             "trusted_ui.library_panel",
             "trusted_ui.mega_workspace",
             "trusted_ui.official_social_workspace",
+            "trusted_ui.podcast_workspace",
             "trusted_ui.search_panel",
             "trusted_ui.transcription_panel",
             "trusted_ui.transfer_panel",
@@ -355,13 +418,19 @@ def test_startup_opens_main_window_without_modal_prompts(
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
 
-    from PySide6.QtWidgets import QApplication, QDialog, QMainWindow
+    from PySide6.QtWidgets import QApplication, QDialog, QMainWindow, QPushButton
 
     paths = AppPaths.discover(portable=True, app_root=tmp_path)
     monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
     app = QApplication.instance() or QApplication([])
     context = Bootstrap(portable=True).initialize(start_background=False)
     assert context.settings.initial_mod_setup_completed is False
+    context.dependencies.invalidate()
+
+    def unexpected_dependency_probe(_application_root, _data_root):
+        raise AssertionError("startup must not execute dependency tools")
+
+    context.dependencies._report_factory = unexpected_dependency_probe
     modal_titles: list[str] = []
 
     def record_modal(dialog: QDialog) -> int:
@@ -378,6 +447,7 @@ def test_startup_opens_main_window_without_modal_prompts(
             and widget.settings_root == Path(context.paths.settings)
             and widget.isVisible()
         )
+        assert window.findChild(QPushButton, "environment").text() == "環境尚未檢查"
         monkeypatch.setattr(window, "ensure_system_tray", lambda: None)
         window.close()
         app.processEvents()

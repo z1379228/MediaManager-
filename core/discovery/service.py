@@ -69,6 +69,7 @@ class SearchProvider(Protocol):
         *,
         limit: int = 12,
         content_type: str = "all",
+        source_scope: str = "",
     ) -> tuple[DiscoveryItemV1, ...]: ...
 
     def search_page(self, query: SearchQueryV2) -> SearchPageV2: ...
@@ -327,22 +328,27 @@ class DiscoveryService:
         limit: int = 50,
         content_type: str = "all",
         cursor: str = "",
+        source_scope: str = "",
+        retry_provider_ids: Iterable[str] | None = None,
+        preserve_cursor: str = "",
     ) -> FederatedSearchResult:
         bounded_limit = self._search_adapters.normalize_result_limit(limit)
         validated_query = SearchQueryV2(
             query,
             content_type,
             bounded_limit,
+            source_scope=source_scope,
         ).validated()
         normalized_query = validated_query.query
         normalized_content_type = validated_query.content_type
-        if not isinstance(cursor, str):
+        if not isinstance(cursor, str) or not isinstance(preserve_cursor, str):
             raise ValueError("search cursor invalid")
         requested_provider_ids = (
             (
                 capability.provider_id
                 for capability in self.search_capabilities()
                 if self._registry.is_enabled(capability.provider_id)
+                and capability.source_scope == "none"
             )
             if provider_ids is None
             else provider_ids
@@ -350,6 +356,17 @@ class DiscoveryService:
         selected = self._search_adapters.normalize_provider_selection(
             requested_provider_ids
         )
+        retry_selected: tuple[str, ...] | None = None
+        if retry_provider_ids is not None:
+            retry_selected = self._search_adapters.normalize_provider_selection(
+                retry_provider_ids
+            )
+            if not retry_selected:
+                raise ValueError("failed search MOD selection is empty")
+            if any(provider_id not in selected for provider_id in retry_selected):
+                raise ValueError("failed search MOD selection is invalid")
+        elif preserve_cursor:
+            raise ValueError("preserved search cursor requires a retry selection")
         available = {
             capability.provider_id for capability in self.search_capabilities()
         }
@@ -365,6 +382,24 @@ class DiscoveryService:
         )
         if disabled:
             raise RuntimeError(f"search MOD is disabled: {disabled[0]}")
+        capabilities = {
+            capability.provider_id: capability
+            for capability in self.search_capabilities()
+        }
+        if len(selected) > 1 and any(
+            capabilities[provider_id].source_scope != "none"
+            for provider_id in selected
+        ):
+            raise ValueError("scoped search MODs cannot be used in aggregate search")
+        if len(selected) != 1 and validated_query.source_scope:
+            raise ValueError("search source scope requires exactly one MOD")
+        if len(selected) == 1:
+            SearchQueryV2(
+                normalized_query,
+                normalized_content_type,
+                bounded_limit,
+                source_scope=validated_query.source_scope,
+            ).normalized(capabilities[selected[0]])
         provider_cursor = ""
         provider_cursors: dict[str, str] | None = None
         if cursor:
@@ -374,6 +409,7 @@ class DiscoveryService:
                     provider_id=selected[0],
                     query=normalized_query,
                     content_type=normalized_content_type,
+                    source_scope=validated_query.source_scope,
                 )
             else:
                 provider_cursors = dict(
@@ -384,14 +420,45 @@ class DiscoveryService:
                         content_type=normalized_content_type,
                     )
                 )
+                if retry_selected is not None:
+                    provider_cursors = {
+                        provider_id: provider_cursors[provider_id]
+                        for provider_id in retry_selected
+                        if provider_id in provider_cursors
+                    }
+                    if not provider_cursors:
+                        raise ValueError("failed search MOD cursor is unavailable")
+        preserved_raw_cursors: dict[str, str] = {}
+        if preserve_cursor:
+            if len(selected) == 1:
+                preserved_raw_cursors[selected[0]] = self._decode_search_cursor(
+                    preserve_cursor,
+                    provider_id=selected[0],
+                    query=normalized_query,
+                    content_type=normalized_content_type,
+                    source_scope=validated_query.source_scope,
+                )
+            else:
+                preserved_raw_cursors = dict(
+                    self._decode_federated_search_cursor(
+                        preserve_cursor,
+                        provider_ids=selected,
+                        query=normalized_query,
+                        content_type=normalized_content_type,
+                    )
+                )
+        attempted_selection = retry_selected or selected
         result = self._search_adapters.search(
             SearchQueryV2(
                 normalized_query,
                 normalized_content_type,
                 bounded_limit,
                 provider_cursor,
+                validated_query.source_scope,
             ),
-            provider_ids=selected,
+            provider_ids=(
+                selected if provider_cursors is not None else attempted_selection
+            ),
             limit=bounded_limit,
             provider_cursors=provider_cursors,
         )
@@ -401,7 +468,7 @@ class DiscoveryService:
         attempted_provider_ids = (
             tuple(provider_cursors)
             if provider_cursors is not None
-            else selected
+            else attempted_selection
         )
         for provider_id in attempted_provider_ids:
             health = self._search_health.setdefault(provider_id, _SearchHealth())
@@ -416,7 +483,11 @@ class DiscoveryService:
                     health.successful_searches + 1, 1_000_000
                 )
                 health.message = ""
-        raw_next_cursors = dict(result.next_cursors)
+        raw_next_cursors = preserved_raw_cursors
+        if retry_selected is not None:
+            for provider_id in retry_selected:
+                raw_next_cursors.pop(provider_id, None)
+        raw_next_cursors.update(result.next_cursors)
         if provider_cursors is not None:
             for failure in result.failures:
                 if failure.provider_id in provider_cursors:
@@ -453,6 +524,7 @@ class DiscoveryService:
                         query=normalized_query,
                         content_type=normalized_content_type,
                         provider_cursor=next_cursor,
+                        source_scope=validated_query.source_scope,
                     ),
                 )
                 for provider_id, next_cursor in ordered_next_cursors
@@ -480,6 +552,7 @@ class DiscoveryService:
         query: str,
         content_type: str,
         provider_cursor: str,
+        source_scope: str = "",
     ) -> str:
         payload = json.dumps(
             [
@@ -488,6 +561,7 @@ class DiscoveryService:
                 self._normalized_search_text(query),
                 content_type,
                 provider_cursor,
+                source_scope,
             ],
             ensure_ascii=True,
             separators=(",", ":"),
@@ -497,7 +571,7 @@ class DiscoveryService:
         ).digest()[:16]
         encoded_payload = base64.urlsafe_b64encode(payload).rstrip(b"=")
         encoded_signature = base64.urlsafe_b64encode(signature).rstrip(b"=")
-        token = b"sc1." + encoded_payload + b"." + encoded_signature
+        token = b"sc2." + encoded_payload + b"." + encoded_signature
         if len(token) > 2048:
             raise ValueError("search cursor is too large")
         return token.decode("ascii")
@@ -509,12 +583,13 @@ class DiscoveryService:
         provider_id: str,
         query: str,
         content_type: str,
+        source_scope: str = "",
     ) -> str:
         if not isinstance(token, str) or not 1 <= len(token) <= 2048:
             raise ValueError("search cursor invalid")
         try:
             prefix, payload_text, signature_text = token.split(".")
-            if prefix != "sc1":
+            if prefix != "sc2":
                 raise ValueError
             payload = base64.urlsafe_b64decode(
                 payload_text + "=" * (-len(payload_text) % 4)
@@ -547,13 +622,14 @@ class DiscoveryService:
             raise ValueError("search cursor invalid") from None
         if (
             not isinstance(values, list)
-            or len(values) != 5
+            or len(values) != 6
             or values[0] != 1
             or values[1] != provider_id
             or values[2] != self._normalized_search_text(query)
             or values[3] != content_type
             or not isinstance(values[4], str)
             or len(values[4]) > 500
+            or values[5] != source_scope
         ):
             raise ValueError("search cursor does not match this search")
         return values[4]

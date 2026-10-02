@@ -48,7 +48,6 @@ def create_library_panel(context: object, parent: object = None) -> object:
     from PySide6.QtCore import QObject, Qt, QUrl, Signal
     from PySide6.QtGui import QAction, QDesktopServices
     from PySide6.QtWidgets import (
-        QApplication,
         QCheckBox,
         QDialog,
         QDialogButtonBox,
@@ -78,6 +77,9 @@ def create_library_panel(context: object, parent: object = None) -> object:
     panel.musicbrainz_generation = 0
     panel.musicbrainz_cancel = None
     panel.musicbrainz_item_id = ""
+    panel.scan_generation = 0
+    panel.scan_busy = False
+    panel.pending_scan_root = None
     panel.closing = False
 
     class DuplicateBridge(QObject):
@@ -87,8 +89,12 @@ def create_library_panel(context: object, parent: object = None) -> object:
     class MusicBrainzBridge(QObject):
         finished = Signal(int, object, str)
 
+    class ScanBridge(QObject):
+        finished = Signal(int, object, str)
+
     duplicate_bridge = DuplicateBridge(panel)
     musicbrainz_bridge = MusicBrainzBridge(panel)
+    scan_bridge = ScanBridge(panel)
     page = QVBoxLayout(panel)
     page.setContentsMargins(2, 4, 2, 2)
     page.setSpacing(12)
@@ -115,6 +121,10 @@ def create_library_panel(context: object, parent: object = None) -> object:
     tools.setContentsMargins(14, 12, 14, 12)
     choose = QPushButton("選擇媒體資料夾")
     choose.setObjectName("primary")
+    rescan = QPushButton("重新掃描")
+    rescan.setObjectName("ghost")
+    rescan.setEnabled(False)
+    rescan.setToolTip("手動比對新增、變更與離線項目；不啟動常駐檔案監看")
     search = QLineEdit()
     search.setPlaceholderText("搜尋名稱、歌手或標籤")
     search.setClearButtonEnabled(True)
@@ -159,6 +169,7 @@ def create_library_panel(context: object, parent: object = None) -> object:
     folder.setObjectName("muted")
     folder.setMinimumWidth(220)
     tools.addWidget(choose)
+    tools.addWidget(rescan)
     tools.addWidget(folder, 1)
     tools.addWidget(search, 1)
     tools.addWidget(include_offline)
@@ -287,23 +298,65 @@ def create_library_panel(context: object, parent: object = None) -> object:
             )
         stack.setCurrentWidget(table if panel.items else empty)
 
+    def start_scan(root: Path) -> None:
+        if panel.scan_busy:
+            return
+        selected_root = Path(root).expanduser().resolve(strict=False)
+        panel.scan_generation += 1
+        generation = panel.scan_generation
+        panel.pending_scan_root = selected_root
+        panel.scan_busy = True
+        choose.setEnabled(False)
+        rescan.setEnabled(False)
+        folder.setText(f"掃描中：{selected_root}")
+        folder.setToolTip(str(selected_root))
+
+        def worker() -> None:
+            try:
+                result = context.library.scan(selected_root)
+            except (OSError, RuntimeError, ValueError) as error:
+                scan_bridge.finished.emit(generation, None, str(error))
+            else:
+                scan_bridge.finished.emit(generation, result, "")
+
+        threading.Thread(
+            target=worker,
+            name="library-incremental-scan",
+            daemon=True,
+        ).start()
+
+    def finish_scan(generation: int, result: object, error: str) -> None:
+        if panel.closing or generation != panel.scan_generation:
+            return
+        selected_root = panel.pending_scan_root
+        panel.pending_scan_root = None
+        panel.scan_busy = False
+        choose.setEnabled(True)
+        if error:
+            folder.setText(
+                str(panel.current_root) if panel.current_root else "尚未選擇資料夾"
+            )
+            rescan.setEnabled(panel.current_root is not None)
+            QMessageBox.warning(panel, "媒體庫掃描", f"掃描未完成：{error}")
+            return
+        if isinstance(selected_root, Path):
+            panel.current_root = selected_root
+        folder.setText(str(panel.current_root))
+        folder.setToolTip(str(panel.current_root))
+        rescan.setEnabled(panel.current_root is not None)
+        refresh()
+
     def choose_folder() -> None:
         selected = QFileDialog.getExistingDirectory(
             panel, "選擇媒體資料夾", str(panel.current_root or Path.home())
         )
         if not selected:
             return
-        panel.current_root = Path(selected).resolve()
-        folder.setText(selected)
-        folder.setToolTip(selected)
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        try:
-            context.library.scan(panel.current_root)
-        except (OSError, ValueError) as error:
-            QMessageBox.warning(panel, "媒體庫掃描", f"掃描未完成：{error}")
-        finally:
-            QApplication.restoreOverrideCursor()
-        refresh()
+        start_scan(Path(selected))
+
+    def rescan_folder() -> None:
+        if panel.current_root is not None:
+            start_scan(panel.current_root)
 
     def open_item() -> None:
         item = selected_one("開啟媒體")
@@ -733,6 +786,8 @@ def create_library_panel(context: object, parent: object = None) -> object:
             QMessageBox.warning(panel, "匯出播放清單", str(error))
 
     choose.clicked.connect(choose_folder)
+    rescan.clicked.connect(rescan_folder)
+    scan_bridge.finished.connect(finish_scan)
     search.textChanged.connect(refresh)
     include_offline.toggled.connect(refresh)
     table.itemDoubleClicked.connect(open_item)
@@ -757,6 +812,7 @@ def create_library_panel(context: object, parent: object = None) -> object:
 
     def shutdown() -> None:
         panel.closing = True
+        panel.scan_generation += 1
         panel.duplicate_generation += 1
         if panel.duplicate_cancel is not None:
             panel.duplicate_cancel.set()
@@ -765,6 +821,10 @@ def create_library_panel(context: object, parent: object = None) -> object:
             panel.musicbrainz_cancel.set()
 
     panel.shutdown = shutdown
+    panel.start_scan = start_scan
+    panel.rescan_button = rescan
+    panel.folder_status = folder
+    panel.scan_bridge = scan_bridge
     panel.duplicates_action = duplicates_action
     panel.duplicate_card = duplicate_card
     panel.duplicate_status = duplicate_status

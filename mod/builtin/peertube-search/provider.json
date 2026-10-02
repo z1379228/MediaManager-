@@ -1,0 +1,17 @@
+{
+  "provider_id": "peertube-search",
+  "display_name": "PeerTube Search",
+  "entry_point": "provider.py",
+  "url_hosts": [],
+  "permissions": ["network.peertube"],
+  "search_capability": {
+    "provider_id": "peertube-search",
+    "sites": ["peertube"],
+    "content_types": ["all", "video", "live"],
+    "max_page_size": 50,
+    "pagination": "offset",
+    "audio_preview": false,
+    "video_preview": false,
+    "source_scope": "https-origin"
+  }
+}

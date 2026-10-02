@@ -49,6 +49,17 @@ def test_rejects_provider_entry_path_escape(tmp_path: Path) -> None:
         SubprocessDownloadProvider(root, application_root=tmp_path)
 
 
+def test_rejects_empty_provider_hosts_without_scoped_search(tmp_path: Path) -> None:
+    root = make_provider(tmp_path, "")
+    manifest_path = root / "provider.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["url_hosts"] = []
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ProviderProtocolError, match="HTTPS-origin search scope"):
+        SubprocessDownloadProvider(root, application_root=tmp_path)
+
+
 @pytest.mark.skipif(os.name != "nt", reason="official Windows MEGAcmd uses batch clients")
 def test_mega_provider_accepts_only_its_official_named_batch_client(
     tmp_path: Path,

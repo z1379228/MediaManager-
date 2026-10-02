@@ -28,6 +28,48 @@ def external_mod_record_status(record: object, mode: object) -> str:
     return "已停用（可啟用）"
 
 
+def external_mod_health_state(record: object) -> str:
+    """Classify persisted health without starting or probing a plugin."""
+
+    if str(getattr(record, "quarantine_reason", "") or "").strip():
+        return "quarantined"
+    if max(0, int(getattr(record, "failure_count", 0) or 0)):
+        return "warning"
+    return "healthy"
+
+
+def external_mod_health_detail(record: object) -> str:
+    state = external_mod_health_state(record)
+    if state == "quarantined":
+        reason = " ".join(
+            str(getattr(record, "quarantine_reason", "") or "").split()
+        )[:160]
+        return f"已隔離 · {reason}"
+    if state == "warning":
+        failures = max(0, int(getattr(record, "failure_count", 0) or 0))
+        return f"需注意 · 啟動失敗 {failures} 次"
+    return "正常"
+
+
+def external_mod_health_summary(records: object) -> str:
+    counts = {"healthy": 0, "warning": 0, "quarantined": 0}
+    for record in records:
+        counts[external_mod_health_state(record)] += 1
+    return (
+        f"健康 {counts['healthy']} · 需注意 {counts['warning']} · "
+        f"已隔離 {counts['quarantined']}"
+    )
+
+
+def external_mod_matches_health_filter(record: object, filter_id: str) -> bool:
+    state = external_mod_health_state(record)
+    if filter_id == "attention":
+        return state in {"warning", "quarantined"}
+    if filter_id == "quarantined":
+        return state == "quarantined"
+    return True
+
+
 def create_plugin_panel(context: object, parent: object = None) -> object:
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import (
@@ -35,6 +77,7 @@ def create_plugin_panel(context: object, parent: object = None) -> object:
         QHeaderView,
         QLabel,
         QMessageBox,
+        QComboBox,
         QPushButton,
         QTableWidget,
         QTableWidgetItem,
@@ -62,13 +105,34 @@ def create_plugin_panel(context: object, parent: object = None) -> object:
             self.empty.setObjectName("sectionSubtitle")
             self.empty.setWordWrap(True)
             layout.addWidget(self.empty)
-            self.table = QTableWidget(0, 4)
-            self.table.setHorizontalHeaderLabels(["插件 ID", "版本", "發布者", "狀態"])
+            health_row = QHBoxLayout()
+            self.health_summary = QLabel()
+            self.health_summary.setObjectName("pluginHealthSummary")
+            self.health_summary.setAccessibleName("外部 MOD 健康摘要")
+            health_row.addWidget(self.health_summary)
+            health_row.addStretch()
+            health_row.addWidget(QLabel("顯示"))
+            self.health_filter = QComboBox()
+            self.health_filter.setObjectName("pluginHealthFilter")
+            self.health_filter.setAccessibleName("外部 MOD 健康狀態篩選")
+            self.health_filter.addItem("全部", "all")
+            self.health_filter.addItem("需注意", "attention")
+            self.health_filter.addItem("已隔離", "quarantined")
+            self.health_filter.currentIndexChanged.connect(self.refresh)
+            health_row.addWidget(self.health_filter)
+            layout.addLayout(health_row)
+            self.table = QTableWidget(0, 5)
+            self.table.setHorizontalHeaderLabels(
+                ["插件 ID", "版本", "發布者", "狀態", "健康"]
+            )
             self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
             self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
             self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
             self.table.horizontalHeader().setSectionResizeMode(
                 0, QHeaderView.ResizeMode.Stretch
+            )
+            self.table.horizontalHeader().setSectionResizeMode(
+                4, QHeaderView.ResizeMode.Stretch
             )
             layout.addWidget(self.table)
             actions = QHBoxLayout()
@@ -90,8 +154,22 @@ def create_plugin_panel(context: object, parent: object = None) -> object:
             layout.addLayout(actions)
             self.refresh()
 
-        def refresh(self) -> None:
-            records = context.plugin_registry.list_all()
+        def refresh(self, _index: int = -1) -> None:
+            all_records = context.plugin_registry.list_all()
+            filter_id = str(self.health_filter.currentData() or "all")
+            records = tuple(
+                record
+                for record in all_records
+                if external_mod_matches_health_filter(record, filter_id)
+            )
+            self.health_summary.setText(external_mod_health_summary(all_records))
+            if not all_records:
+                self.empty.setText(
+                    "尚未安裝外部 MOD。可使用「安裝 .modpkg」加入已簽章套件；"
+                    "安裝後會依安全模式與簽章狀態決定是否可啟用。"
+                )
+            else:
+                self.empty.setText("目前篩選沒有符合的外部 MOD。")
             self.empty.setVisible(not records)
             self.table.setRowCount(len(records))
             for row, record in enumerate(records):
@@ -105,6 +183,9 @@ def create_plugin_panel(context: object, parent: object = None) -> object:
                     context.security.mode,
                 )
                 self.table.setItem(row, 3, QTableWidgetItem(status))
+                health = QTableWidgetItem(external_mod_health_detail(record))
+                health.setToolTip(external_mod_health_detail(record))
+                self.table.setItem(row, 4, health)
 
         def selected_id(self) -> str | None:
             row = self.table.currentRow()

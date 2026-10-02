@@ -97,6 +97,8 @@ def test_federated_results_show_source_and_partial_failure(monkeypatch) -> None:
     assert panel.table.item(0, 5).text() == "youtube-search"
     assert "1 個來源失敗" in panel.status.text()
     assert "offline-search: temporary outage" in panel.status.toolTip()
+    assert panel.retry_failure_button.isVisibleTo(panel)
+    assert panel.retry_failure_button.text() == "只重試失敗來源"
 
     panel.shutdown()
     panel.close()

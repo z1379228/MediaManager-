@@ -276,6 +276,36 @@ def create_direct_http_workspace(context: object, parent: object = None) -> obje
             )
             self.urls.setFocus()
 
+        def prefill_urls(
+            self,
+            values: tuple[str, ...],
+            *,
+            source_label: str,
+        ) -> int:
+            """Prefill explicit files without analyzing, queuing, or downloading."""
+
+            label = " ".join(source_label.split())
+            if not label or len(label) > 120 or any(ord(char) < 32 for char in label):
+                raise ValueError("Direct HTTP 來源標籤無效")
+            unique_values = tuple(dict.fromkeys(values))
+            if not unique_values or len(unique_values) > 100:
+                raise ValueError("Direct HTTP 預填數量必須介於 1 到 100")
+            if any(not direct_http_url_candidate(url) for url in unique_values):
+                raise ValueError("預填內容包含不符合規則的 Direct HTTP 網址")
+            merged = merge_direct_http_drop(
+                self._urls(),
+                DropIntake(urls=unique_values),
+            )
+            self.urls.setPlainText("\n".join(merged))
+            self.output_filename.clear()
+            self.expected_sha256.clear()
+            self.preview.setText(
+                f"已從「{label}」帶入 {len(unique_values)} 個網址；"
+                "請確認輸出位置後再加入佇列。"
+            )
+            self.urls.setFocus()
+            return len(unique_values)
+
         def apply_language(self, _payload: object = None) -> None:
             locale = normalized_core_locale(
                 getattr(getattr(context, "settings", None), "language", "zh-TW")

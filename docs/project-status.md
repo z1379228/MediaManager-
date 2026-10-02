@@ -1,10 +1,10 @@
 # 目前專案狀態
 
-狀態日期：2026-09-11
+狀態日期：2026-09-12
 
 ## 結論
 
-MediaManager 目前工作來源為 Development `39.0.113`。39.0.107 先完成三個下載工作流
+MediaManager 目前工作來源為 Development `39.0.119`。39.0.107 先完成三個下載工作流
 基礎：手動貼入與 TXT／CSV 共用可信下載收件匣；瀏覽器交付只接受有界、已知且
 可下載的公開 HTTPS 頁面，開啟對應工作區但不自動排隊；資源模式提升為所有下載
 頁共用，省資源／平衡／高速分別預設 1／2／4 個全域工作，YouTube 再於核心套用
@@ -14,8 +14,8 @@ MediaManager 目前工作來源為 Development `39.0.113`。39.0.107 先完成�
 按需建立的「工作區」分類選單，直接切換並沿用既有 lazy 工作區；它不新增背景
 timer，第三方未知工作區仍保留在「其他」。
 先前由 39.0.112 建立的 Testing `1.2.4` 本機 EXE／ZIP 已因外部 ICU DLL 污染
-判定無效且不得散布。39.0.113 來源修正尚待新的乾淨 source freeze、build receipt、
-stage 與 ZIP 驗證。Testing `1.2.3` 不覆寫，且本輪不 push、不簽署、不發布。
+判定無效且不得散布；其後已由 39.0.113 乾淨 source freeze 在本機重建並通過
+Qt runtime gate，但仍未簽署、push 或發布。Testing `1.2.3` 不覆寫。
 格式工廠另完成無損軌道工作流：單一來源由背景 ffprobe 列出音訊／字幕軌，
 明確選取後輸出 `.mka`／`.mks`，排隊前重查軌道與副檔名，完成前驗證 codec 及
 來源／輸出封包 SHA-256；不在 GUI thread 等待探測，也不重新編碼所選軌道。
@@ -61,6 +61,33 @@ Windows、目前 Python 與 venv 的受控搜尋路徑，spec 在 Analysis 前�
 避免受管理程序宿主重新注入 Poppler／libheif 路徑。copied-folder smoke 新增
 `--ui-runtime-check`，實際載入 QtCore、QtWidgets 與 offscreen platform plugin；
 因此只通過 version、verify-only、headless 的 EXE 不再能進入可散布候選。
+39.0.114 新增可由頁尾或 `Ctrl+I` 開啟、可搜尋且不改變設定的功能簡介。
+39.0.115 新增只讀取使用者所選本機 RSS 2.0／Atom 檔案的 Podcast / RSS 匯入
+MOD；它不訂閱或連線 Feed 內資源，只有符合 Direct HTTP 既有規則的附件可由
+使用者明確送入下載工作區，仍不自動分析或排隊。
+39.0.116 新增具 HTTPS 實例範圍的 PeerTube 官方 API 搜尋 MOD。它只搜尋指定
+實例的本機公開影片，不進入聚合搜尋；DNS、TLS、重新導向、回應大小及游標均有
+明確邊界，結果只供系統瀏覽器開啟，不解析串流或加入下載佇列。
+39.0.117 將完整外部工具健康檢查延後到使用者開啟「環境」視窗時才執行；乾淨
+主視窗先顯示尚未檢查，不再於建立 UI 時依序開啟 FFmpeg、ffprobe 與 runtime
+版本探測子程序。發行資料夾內已通過固定 SHA-256 身分檢查的 Deno 由 Bootstrap
+直接採用，不再重複執行版本命令；未固定身分的 PATH runtime 仍維持最低版本閘。
+39.0.118 將使用者觸發的完整環境檢查移到單一背景工作；視窗立即顯示檢查中，
+使用者關閉視窗只停止等待晚到結果，不會讓主介面卡在外部版本命令。依賴快取與
+外部探測改用分離鎖，檢查進行中的 `peek()` 保持立即返回。品質稽核另以 AST
+掃描 `main.py`、`desktop.py`、`core/`、`trusted_ui/`、`plugin_host/` 與 `mod/`
+正式執行期來源；新增或修改 `subprocess.run/Popen` 若無法證明帶有 Windows
+`CREATE_NO_WINDOW` 政策便失敗關閉，避免其他功能再次引入空白命令視窗。
+39.0.119 完成後續工作中心改善：聚合搜尋在首次只有部分來源失敗時保留成功結果，
+並可只重試失敗來源；下載清單與系統匣可依狀態檢視、暫停／繼續佇列並批次重試
+provider 明確標示可恢復的失敗。格式工廠的 H.264 GPU 工作失敗後保持失敗與原始
+診斷，使用者確認才會以同來源、輸出與參數建立 CPU 重試，絕不靜默改寫策略。
+媒體庫增加背景手動重新掃描，未變更的已索引檔不再重寫 SQLite。外部 MOD 頁只讀
+既有失敗次數與隔離原因，顯示健康摘要、需注意與已隔離篩選，沒有探測、輪詢或
+自動重啟。Podcast / RSS 對已載入的本機 Feed 提供 M3U／CSV 匯出與逐字稿／章節
+宣告資訊預覽；匯出 CSV 會中和試算表公式字首，所有 URL 保持未讀取狀態。
+Provider 取消時先以 Windows 原生樹狀終止收束仍在執行的 host 與子程序，Job Object
+的 kill-on-close 仍是後備；兩者均套用隱藏視窗政策。
 完整 Repository runner 為 `1792 passed, 9 skipped`；九項 skip 均是目前 Windows
 帳號缺少建立測試用 link 權限，其中兩項覆蓋拖放與試轉暫存目錄的 link 拒絕
 路徑。Quality audit 通過 Ruff `392` 個 Python 檔與文字污染掃描 `503` 個受控
@@ -97,7 +124,10 @@ p50／p95 分別為 `23.956 / 27.657 ms` 與 `31.106 / 34.020 ms`。照搬上述
 layout 候選後 p95 退為 `34.463 / 37.354 ms`，故已撤回；撤回確認為
 `23.855 / 24.438 ms` 與 `30.305 / 33.399 ms`，縮圖請求均維持 `9 / 18`。
 基準 schema 現為 4，後續不應把通用搜尋的收益未經量測外推到專用工作區。
-這些來源修改尚未 build、stage、commit、push 或發布。
+39.0.114～39.0.119 的來源修改尚未 build、stage、commit、push 或發布。39.0.119
+最新完整 Repository runner 為 `1839 passed, 9 skipped`；九項 skip 均是目前
+Windows 帳號缺少建立測試用 link 權限。Quality audit 通過 Ruff `402` 個
+Python 檔、文字污染掃描 `516` 個受控檔案，以及 `0` 個子程序視窗政策問題。
 
 `39.0.106` 讓配置比較器
 在 build 前先拒絕 Repository 內、既存或 link-like 證據路徑，並以 Windows

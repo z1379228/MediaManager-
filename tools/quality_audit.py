@@ -8,7 +8,6 @@ import subprocess
 import sys
 from typing import Callable, Iterable, Sequence
 
-
 DIRECTORY_TARGETS = (
     ".github/workflows",
     "contracts",
@@ -88,6 +87,21 @@ class TextPollutionIssue:
 
 def repository_root() -> Path:
     return Path(__file__).resolve().parents[1]
+
+
+def _audit_subprocess_window_policy(root: Path):
+    """Load the trusted sibling audit under both ``-m`` and isolated script use."""
+
+    trusted_root = repository_root()
+    trusted_root_text = str(trusted_root)
+    if trusted_root_text not in sys.path:
+        # ``audit_text_pollution.ps1`` intentionally uses ``python -I`` and a
+        # direct trusted script path.  Only add this script's own Repository;
+        # the user-selected audit target never enters the import path.
+        sys.path.insert(0, trusted_root_text)
+    from tools.subprocess_policy_audit import audit_subprocess_window_policy
+
+    return audit_subprocess_window_policy(root)
 
 
 def _is_link_like(path: Path) -> bool:
@@ -302,10 +316,11 @@ def run_quality_audit(
     *,
     run_ruff: bool = True,
     run_text: bool = True,
+    run_subprocess: bool = True,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
     ruff_argv_budget: int = RUFF_ARGV_BUDGET,
 ) -> int:
-    if not run_ruff and not run_text:
+    if not run_ruff and not run_text and not run_subprocess:
         raise ValueError("at least one quality audit must be enabled")
     scope = build_quality_scope(root)
     print(
@@ -338,6 +353,17 @@ def run_quality_audit(
         else:
             print(f"TEXT_POLLUTION_SCAN=PASS files={len(scope.text_files)}")
 
+    if run_subprocess:
+        process_issues = _audit_subprocess_window_policy(scope.root)
+        for issue in process_issues:
+            print(issue.render())
+        if process_issues:
+            failed = True
+        print(
+            "SUBPROCESS_WINDOW_AUDIT="
+            f"{'FAIL' if process_issues else 'PASS'} issues={len(process_issues)}"
+        )
+
     print(f"QUALITY_AUDIT={'FAIL' if failed else 'PASS'}")
     return 1 if failed else 0
 
@@ -350,6 +376,7 @@ def _parser() -> argparse.ArgumentParser:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--ruff-only", action="store_true")
     mode.add_argument("--text-only", action="store_true")
+    mode.add_argument("--subprocess-only", action="store_true")
     return parser
 
 
@@ -358,8 +385,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         return run_quality_audit(
             args.root,
-            run_ruff=not args.text_only,
-            run_text=not args.ruff_only,
+            run_ruff=not args.text_only and not args.subprocess_only,
+            run_text=not args.ruff_only and not args.subprocess_only,
+            run_subprocess=not args.ruff_only and not args.text_only,
         )
     except (OSError, QualityScopeError, ValueError) as exc:
         print(f"QUALITY_SCOPE=FAIL {exc}", file=sys.stderr)

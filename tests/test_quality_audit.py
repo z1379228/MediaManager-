@@ -170,6 +170,23 @@ def test_runner_uses_repository_cwd_and_propagates_ruff_failure(tmp_path: Path) 
     assert "." not in captured["command"][4:]
 
 
+def test_quality_audit_includes_runtime_subprocess_window_policy(
+    tmp_path: Path,
+) -> None:
+    root = _repository(tmp_path)
+    (root / "core" / "visible_child.py").write_text(
+        "import subprocess\nsubprocess.Popen(['helper'])\n",
+        encoding="utf-8",
+    )
+
+    assert run_quality_audit(
+        root,
+        run_ruff=False,
+        run_text=False,
+        run_subprocess=True,
+    ) == 1
+
+
 def test_ruff_commands_respect_budget_and_include_each_file_once(
     tmp_path: Path,
 ) -> None:

@@ -5,13 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from core.dependency_health import check_dependencies
 from core.localization import CORE_LOCALES
 from core.downloads.notifications import (
     DownloadCompletionTracker,
     DownloadNotificationCoalescer,
     completion_message,
 )
+from core.downloads.models import DownloadState, DownloadTask
 from core.settings import (
     SettingsService,
     SettingsWriteBlockedError,
@@ -31,8 +31,10 @@ from trusted_ui.background import (
 from trusted_ui.dependency_dialog import (
     dependency_presentation,
     show_dependency_dialog,
+    unchecked_dependency_presentation,
 )
 from trusted_ui.download_panel import create_download_panel
+from trusted_ui.feature_introduction import show_feature_introduction
 from trusted_ui.idle_state import IdleResourceController
 from trusted_ui.optional_workspace_manager import (
     OptionalWorkspaceManager,
@@ -80,6 +82,41 @@ def configure_workspace_tabs(tabs: object) -> None:
 CORE_LANGUAGE_LABELS = tuple(
     (locale.display_name, locale.code) for locale in CORE_LOCALES
 )
+
+
+def download_tray_presentation(
+    tasks: tuple[DownloadTask, ...],
+) -> tuple[str, bool, bool, bool]:
+    """Return compact queue status and safe tray action availability."""
+
+    active = sum(
+        task.state
+        in {
+            DownloadState.QUEUED,
+            DownloadState.RUNNING,
+            DownloadState.RETRYING,
+        }
+        for task in tasks
+    )
+    paused = sum(task.state is DownloadState.PAUSED for task in tasks)
+    failed = sum(task.state is DownloadState.FAILED for task in tasks)
+    retryable = any(
+        task.state is DownloadState.FAILED and task.retryable for task in tasks
+    )
+    parts = []
+    if active:
+        parts.append(f"進行中 {active}")
+    if paused:
+        parts.append(f"暫停 {paused}")
+    if failed:
+        parts.append(f"失敗 {failed}")
+    if not parts:
+        completed = sum(task.state is DownloadState.COMPLETED for task in tasks)
+        cancelled = sum(task.state is DownloadState.CANCELLED for task in tasks)
+        if completed or cancelled:
+            parts.append(f"已結束 {completed + cancelled}")
+    text = "下載：" + (" · ".join(parts) if parts else "目前無工作")
+    return text, bool(active), bool(paused), retryable
 
 
 def populate_core_language_menu(
@@ -242,6 +279,10 @@ def run_main_window(
             context.download_queue.subscribe(self.notification_bridge.submit)
             self.system_tray = None
             self.tray_menu = None
+            self.tray_download_status_action = None
+            self.tray_pause_downloads_action = None
+            self.tray_resume_downloads_action = None
+            self.tray_retry_downloads_action = None
             self.idle_resources = IdleResourceController()
             self._shutdown_started = False
             self._force_exit = False
@@ -287,25 +328,47 @@ def run_main_window(
             header.addWidget(mode)
 
             dependency_service = getattr(context, "dependencies", None)
-            dependency_report = (
-                dependency_service.snapshot().report
+            dependency_snapshot = (
+                dependency_service.peek()
                 if dependency_service is not None
-                else check_dependencies(Path(context.paths.application))
+                else None
             )
-            dependency_text, dependency_state, dependency_tip = dependency_presentation(
-                dependency_report
+            dependency_text, dependency_state, dependency_tip = (
+                dependency_presentation(dependency_snapshot.report)
+                if dependency_snapshot is not None
+                else unchecked_dependency_presentation()
             )
             environment = QPushButton(dependency_text)
             environment.setObjectName("environment")
             environment.setProperty("dependencyState", dependency_state)
             environment.setToolTip(dependency_tip + "（Ctrl+E）")
-            environment.clicked.connect(
-                lambda: show_dependency_dialog(
+
+            def apply_dependency_status() -> None:
+                latest = (
+                    dependency_service.peek()
+                    if dependency_service is not None
+                    else None
+                )
+                text, state, tip = (
+                    dependency_presentation(latest.report)
+                    if latest is not None
+                    else unchecked_dependency_presentation()
+                )
+                environment.setText(text)
+                environment.setProperty("dependencyState", state)
+                environment.setToolTip(tip + "（Ctrl+E）")
+                environment.style().unpolish(environment)
+                environment.style().polish(environment)
+
+            def open_dependency_dialog() -> None:
+                show_dependency_dialog(
                     Path(context.paths.application),
                     self,
                     snapshot_service=dependency_service,
                 )
-            )
+                apply_dependency_status()
+
+            environment.clicked.connect(open_dependency_dialog)
             header.addWidget(environment)
 
             appearance = QPushButton("設定")
@@ -511,6 +574,31 @@ def run_main_window(
 
                 return create_direct_http_workspace(context, self)
 
+            def handoff_podcast_urls(
+                urls: tuple[str, ...],
+                feed_title: str,
+            ) -> bool:
+                if not context.download_providers.is_enabled("direct-http"):
+                    return False
+                panel = self.optional_workspace_manager.ensure("direct-http")
+                if panel is None:
+                    return False
+                prefill = getattr(panel, "prefill_urls", None)
+                if not callable(prefill):
+                    return False
+                prefill(urls, source_label=f"Podcast：{feed_title}")
+                tabs.setCurrentWidget(panel)
+                return True
+
+            def create_podcast_workspace_panel() -> object:
+                from trusted_ui.podcast_workspace import create_podcast_workspace
+
+                return create_podcast_workspace(
+                    context,
+                    handoff_podcast_urls,
+                    self,
+                )
+
             def create_conversion_workspace() -> object:
                 from trusted_ui.conversion_panel import create_conversion_panel
 
@@ -598,6 +686,15 @@ def run_main_window(
                         lambda panel: panel.title.text(),
                         "明確 HTTPS 檔案、續傳與 SHA-256 驗證；不接管網站 MOD",
                         "Direct HTTP 下載",
+                    ),
+                    OptionalWorkspaceSpec(
+                        "podcast-import",
+                        lambda: feature_enabled("podcast-import"),
+                        lambda: context.podcast_import is not None,
+                        create_podcast_workspace_panel,
+                        lambda _panel: "Podcast / RSS",
+                        "本機 RSS／Atom 單集、逐字稿與章節預覽；不連線或自動下載",
+                        "Podcast / RSS",
                     ),
                     OptionalWorkspaceSpec(
                         "media-convert",
@@ -741,10 +838,20 @@ def run_main_window(
             footer_layout = QHBoxLayout(footer)
             footer_layout.setContentsMargins(4, 0, 4, 0)
             footer_layout.setSpacing(10)
-            hint = QLabel("Ctrl+1／2／3 切換工作區　Ctrl+M 開啟 MOD 管理")
+            hint = QLabel("Ctrl+1／2／3 切換工作區　Ctrl+M MOD 管理　Ctrl+I 功能簡介")
             hint.setObjectName("muted")
             footer_layout.addWidget(hint)
             footer_layout.addStretch()
+            self.feature_introduction_button = QPushButton("功能簡介")
+            self.feature_introduction_button.setObjectName("ghost")
+            self.feature_introduction_button.setAccessibleName("開啟功能簡介")
+            self.feature_introduction_button.setToolTip(
+                "查看功能、必要依賴、操作後果與安全界線（Ctrl+I）"
+            )
+            self.feature_introduction_button.clicked.connect(
+                lambda: show_feature_introduction(self)
+            )
+            footer_layout.addWidget(self.feature_introduction_button)
             self.idle_status = QLabel("使用中")
             self.idle_status.setObjectName("muted")
             self.idle_status.setAccessibleName("應用程式狀態：使用中")
@@ -986,11 +1093,17 @@ def run_main_window(
             environment_shortcut = QShortcut(QKeySequence("Ctrl+E"), self)
             environment_shortcut.activated.connect(environment.click)
             self.shortcuts.append(environment_shortcut)
+            introduction_shortcut = QShortcut(QKeySequence("Ctrl+I"), self)
+            introduction_shortcut.activated.connect(
+                self.feature_introduction_button.click
+            )
+            self.shortcuts.append(introduction_shortcut)
 
             self.setCentralWidget(root)
 
         def ensure_system_tray(self) -> object | None:
             if self.system_tray is not None:
+                self.refresh_tray_download_actions()
                 return self.system_tray
             if not QSystemTrayIcon.isSystemTrayAvailable():
                 return None
@@ -1005,6 +1118,23 @@ def run_main_window(
             restore_action = menu.addAction("開啟 MediaManager")
             restore_action.triggered.connect(self.restore_from_background)
             menu.addSeparator()
+            self.tray_download_status_action = menu.addAction("下載：目前無工作")
+            self.tray_download_status_action.setEnabled(False)
+            self.tray_pause_downloads_action = menu.addAction("暫停全部下載")
+            self.tray_pause_downloads_action.triggered.connect(
+                self.pause_downloads_from_tray
+            )
+            self.tray_resume_downloads_action = menu.addAction("繼續全部下載")
+            self.tray_resume_downloads_action.triggered.connect(
+                self.resume_downloads_from_tray
+            )
+            self.tray_retry_downloads_action = menu.addAction(
+                "重試暫時性失敗"
+            )
+            self.tray_retry_downloads_action.triggered.connect(
+                self.retry_downloads_from_tray
+            )
+            menu.addSeparator()
             exit_action = menu.addAction("完全結束")
             exit_action.triggered.connect(self.request_full_exit)
             tray.setContextMenu(menu)
@@ -1012,7 +1142,57 @@ def run_main_window(
             tray.show()
             self.tray_menu = menu
             self.system_tray = tray
+            menu.aboutToShow.connect(self.refresh_tray_download_actions)
+            self.refresh_tray_download_actions()
             return tray
+
+        def refresh_tray_download_actions(self) -> None:
+            actions = (
+                self.tray_download_status_action,
+                self.tray_pause_downloads_action,
+                self.tray_resume_downloads_action,
+                self.tray_retry_downloads_action,
+            )
+            if any(action is None for action in actions):
+                return
+            presentation = download_tray_presentation(
+                context.download_queue.snapshots()
+            )
+            text, can_pause, can_resume, can_retry = presentation
+            self.tray_download_status_action.setText(text)
+            self.tray_pause_downloads_action.setEnabled(can_pause)
+            self.tray_resume_downloads_action.setEnabled(can_resume)
+            self.tray_retry_downloads_action.setEnabled(can_retry)
+
+        def show_tray_download_error(self, message: str) -> None:
+            if self.system_tray is not None:
+                self.system_tray.showMessage(
+                    "MediaManager 下載工作",
+                    message[:500],
+                    QSystemTrayIcon.MessageIcon.Warning,
+                    5000,
+                )
+
+        def pause_downloads_from_tray(self) -> None:
+            try:
+                context.download_queue.pause_all()
+            except (OSError, RuntimeError) as error:
+                self.show_tray_download_error(str(error))
+            self.refresh_tray_download_actions()
+
+        def resume_downloads_from_tray(self) -> None:
+            try:
+                context.download_queue.resume_all()
+            except (OSError, RuntimeError) as error:
+                self.show_tray_download_error(str(error))
+            self.refresh_tray_download_actions()
+
+        def retry_downloads_from_tray(self) -> None:
+            try:
+                context.download_queue.retry_failed()
+            except (OSError, RuntimeError) as error:
+                self.show_tray_download_error(str(error))
+            self.refresh_tray_download_actions()
 
         def remove_system_tray(self) -> None:
             if self.system_tray is not None:
@@ -1022,6 +1202,10 @@ def run_main_window(
             if self.tray_menu is not None:
                 self.tray_menu.deleteLater()
                 self.tray_menu = None
+            self.tray_download_status_action = None
+            self.tray_pause_downloads_action = None
+            self.tray_resume_downloads_action = None
+            self.tray_retry_downloads_action = None
 
         def handle_tray_activation(self, reason: object) -> None:
             if reason in {
@@ -1081,6 +1265,7 @@ def run_main_window(
             self.remove_system_tray()
 
         def handle_download_change(self, task: object) -> None:
+            self.refresh_tray_download_actions()
             summary = self.notification_tracker.observe(task)
             if summary is None or not (summary.completed or summary.failed):
                 return

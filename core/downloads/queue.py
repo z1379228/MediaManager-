@@ -217,6 +217,7 @@ class DownloadQueue:
             task.error = ""
             task.automatic_retries = 0
             task.next_retry_seconds = 0
+            task.retryable = False
             task.cancel_event = threading.Event()
             task.pause_requested = threading.Event()
             try:
@@ -230,6 +231,7 @@ class DownloadQueue:
                 task.error = previous.error
                 task.automatic_retries = previous.automatic_retries
                 task.next_retry_seconds = previous.next_retry_seconds
+                task.retryable = previous.retryable
                 task.cancel_event = previous.cancel_event
                 task.pause_requested = previous.pause_requested
                 raise
@@ -335,6 +337,16 @@ class DownloadQueue:
         self._notify(snapshot)
         return True
 
+    def retry_failed(self) -> int:
+        """Retry only failed tasks whose provider marked the failure temporary."""
+
+        task_ids = tuple(
+            task.task_id
+            for task in self.snapshots()
+            if task.state is DownloadState.FAILED and task.retryable
+        )
+        return sum(self.retry(task_id) for task_id in task_ids)
+
     def cancel_all(self) -> int:
         task_ids = tuple(
             task.task_id
@@ -406,6 +418,7 @@ class DownloadQueue:
                     self._persist_locked()
                 except OSError as persist_error:
                     task.state = DownloadState.FAILED
+                    task.retryable = False
                     task.error = _safe_task_error(
                         f"queue state write failed: {persist_error}"
                     )
@@ -420,6 +433,7 @@ class DownloadQueue:
             output_path = ""
             terminal_state = DownloadState.COMPLETED
             error_text = ""
+            retryable_failure = False
             try:
                 while True:
                     try:
@@ -438,6 +452,10 @@ class DownloadQueue:
                             attempt=task.automatic_retries + 1,
                         )
                         if not decision.retry or task.cancel_event.is_set():
+                            retryable_failure = (
+                                provider_error.failure.retryable
+                                and not task.cancel_event.is_set()
+                            )
                             raise
                         with self._lock:
                             task.automatic_retries += 1
@@ -491,6 +509,9 @@ class DownloadQueue:
                 task.state = terminal_state
                 task.error = error_text
                 task.next_retry_seconds = 0
+                task.retryable = (
+                    task.state is DownloadState.FAILED and retryable_failure
+                )
                 if task.state is DownloadState.QUEUED:
                     task.progress = 0.0
                     task.speed = ""
@@ -682,9 +703,10 @@ class DownloadQueue:
         state = DownloadState(item.get("state", "QUEUED"))
         pause_requested = item.get("pause_requested", False)
         cancel_requested = item.get("cancel_requested", False)
+        retryable = item.get("retryable", False)
         if not isinstance(pause_requested, bool) or not isinstance(
             cancel_requested, bool
-        ):
+        ) or not isinstance(retryable, bool):
             raise ValueError("queue task requested action is invalid")
         if pause_requested:
             state = DownloadState.PAUSED
@@ -720,6 +742,7 @@ class DownloadQueue:
             next_retry_seconds=integer_value(
                 "next_retry_seconds", minimum=0, maximum=30
             ),
+            retryable=(state is DownloadState.FAILED and retryable),
         )
 
     def _persist(self) -> None:
@@ -759,6 +782,7 @@ class DownloadQueue:
                 "error": task.error,
                 "automatic_retries": task.automatic_retries,
                 "next_retry_seconds": task.next_retry_seconds,
+                "retryable": task.retryable,
                 "pause_requested": task.pause_requested.is_set(),
                 "cancel_requested": (
                     task.cancel_event.is_set()

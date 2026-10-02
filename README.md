@@ -1,7 +1,8 @@
 # MediaManager v1.0
 
 MediaManager 是免費、無廣告、Windows 優先且本機運作的模組化媒體管理工具，
-整合 YouTube、YouTube Music、Bilibili、MEGA、Direct HTTP 與本機媒體庫。
+整合 YouTube、YouTube Music、Bilibili、PeerTube 公開實例搜尋、Podcast / RSS、
+MEGA、Direct HTTP 與本機媒體庫。
 核心負責下載佇列、媒體整理、安全邊界與可信 UI；網站解析、格式轉換、語音
 轉文字及自動化等功能由可個別停用的內建或第三方 MOD 提供。
 
@@ -10,19 +11,52 @@ Cloudflare、廣告、付費、地區或其他網站限制。
 
 ## 目前狀態
 
-- 目前來源版本為開發版 39.0（核心相容版本 39.0.113）。
+- 目前來源版本為開發版 39.0（核心相容版本 39.0.119）。
 - 最新公開下載是未簽署的
   [Testing 1.2.2 prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.2)，
   對應 Development `39.0.39`。
-- Development `39.0.40`～`39.0.113` 的修改尚未包含在公開 Testing ZIP。
+- Development `39.0.40`～`39.0.119` 的修改尚未包含在公開 Testing ZIP。
 - 先前由 Development `39.0.112` 建立的本機 Testing `1.2.4` 因建置環境誤包
-  外部 ICU DLL，已判定無效且不得散布。來源已於 `39.0.113` 修正；必須由新的
-  乾淨 source freeze 重建並通過 Qt runtime gate。Testing `1.2.3` 保持不可變。
+  外部 ICU DLL，已判定無效且清除。其後已由 `39.0.113` 乾淨 source freeze
+  在本機重建並通過 Qt runtime gate，但仍未簽署、push 或發布；Testing `1.2.3`
+  保持不可變。
 - 尚未發布已簽署的 Stable 套件；`MediaManager v1.0` 是產品顯示名稱，不代表
   Stable 已發布。
 
 ### 最近來源變更
 
+- `39.0.119`：搜尋首次查詢若只有部分來源失敗，保留已成功的結果與游標，並可
+  只重試失敗來源；下載工作中心與系統匣加入篩選、可恢復失敗的批次重試與佇列
+  操作。格式工廠的硬體 H.264 失敗不再靜默改寫成 CPU 轉檔，改由使用者確認後
+  以相同參數明確重試。媒體庫的手動重新掃描在背景執行，只寫入新增、變更或
+  遺失項目。外部 MOD 管理新增使用既有失敗／隔離紀錄的健康摘要與篩選，不探測、
+  不重啟 MOD。Podcast / RSS 只能將已解析的本機 Feed 匯出 M3U／CSV，並預覽
+  Feed 宣告的逐字稿／章節資源資訊；不訂閱、不下載或連線該等網址。
+
+- `39.0.118`：「執行環境」改為背景檢查，不再於 GUI thread 等待 FFmpeg、
+  ffprobe 或其他 CLI；檢查期間的快取讀取保持非阻塞。品質稽核新增正式
+  執行期子程序視窗政策，拒絕未套用 Windows 隱藏旗標的
+  `subprocess.run/Popen`，避免其他功能再次引入空白命令視窗。
+- `39.0.117`：乾淨啟動不再同步執行 FFmpeg、ffprobe 等環境探測；環境按鈕先
+  顯示「尚未檢查」，由使用者開啟時才執行完整檢查。版本 ZIP 內已經由 SHA-256
+  固定身分的 Deno 直接採用，不再為相同身分額外開啟版本探測子程序；PATH 中的
+  runtime 仍保留版本驗證。這可移除啟動時連續出現空白 CLI 視窗的來源，不會
+  自動安裝、下載或降低外部工具版本檢查。
+- `39.0.116`：新增預設啟用、按需執行的 PeerTube 公開實例搜尋 MOD。使用者必須
+  指定不含路徑或帳密的 HTTPS 實例根網址，搜尋只呼叫該實例的官方
+  `/api/v1/search/videos`，並固定限制為本機公開、已發布且非 NSFW 的影片；
+  PeerTube 不混入跨來源聚合搜尋。連線前會解析並拒絕任何非公開位址，TLS 連線
+  固定到已驗證位址且不跟隨重新導向，回應限制 2 MiB。結果只供使用者在系統
+  瀏覽器開啟，不解析串流、不下載縮圖、不傳送登入資料，也不加入下載佇列。
+- `39.0.115`：新增預設啟用、延遲載入的 Podcast / RSS 本機匯入 MOD。只解析
+  使用者選取且最大 2 MiB 的 RSS 2.0／Atom 檔案，最多預覽 500 集及
+  Podcasting 2.0 逐字稿／章節連結；不訂閱、不刷新，也不向 Feed 內網址連線。
+  DTD／實體宣告與過深 XML 會直接拒絕。只有符合 Direct HTTP 明確 HTTPS
+  檔案規則的附件可由使用者選取後預填到下載工作區，仍不會自動分析、排隊或下載。
+- `39.0.114`：主視窗頁尾新增可由 `Ctrl+I` 開啟的「功能簡介」。可捲動且可搜尋
+  的 11 類說明集中列出目前下載、媒體庫、格式工廠、Gopeed、Speech to Text、
+  Automation、背景待機與 MOD 能力，並明示必要依賴、操作後果、安全及版本界線；
+  開啟或搜尋說明不會啟用 MOD、下載工具、連線網站或改變設定。
 - `39.0.113`：隔離 PyInstaller 原生 DLL 搜尋路徑，避免建置主機上的 Poppler、
   libheif 或其他外部工具 DLL 污染 EXE；copied-folder smoke 新增 Qt Widgets
   runtime 實際載入 gate，避免只驗證 headless CLI 而漏掉 GUI 啟動錯誤。

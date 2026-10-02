@@ -106,6 +106,23 @@ def has_unfinished_downloads(tasks: tuple[DownloadTask, ...]) -> bool:
     )
 
 
+def download_task_matches_filter(task: DownloadTask, filter_id: str) -> bool:
+    """Group queue states for a presentation-only work-center filter."""
+
+    if filter_id == "active":
+        return task.state in {
+            DownloadState.QUEUED,
+            DownloadState.RUNNING,
+            DownloadState.RETRYING,
+            DownloadState.PAUSED,
+        }
+    if filter_id == "failed":
+        return task.state is DownloadState.FAILED
+    if filter_id == "completed":
+        return task.state is DownloadState.COMPLETED
+    return filter_id == "all"
+
+
 def context_youtube_performance_profile(context: object) -> str:
     settings = getattr(context, "settings", None)
     return normalized_youtube_performance_profile(
@@ -258,6 +275,7 @@ def download_render_signature(
             task.error,
             task.output_path,
             task.request.priority,
+            task.retryable,
             task.pause_requested.is_set(),
             task.cancel_event.is_set(),
         )
@@ -911,6 +929,23 @@ def create_download_panel(
                 self.stat_values[key] = value
             page.addLayout(stats)
 
+            task_filter_row = QHBoxLayout()
+            task_filter_label = QLabel("顯示工作")
+            task_filter_label.setObjectName("fieldLabel")
+            self.task_filter = QComboBox()
+            self.task_filter.setAccessibleName("下載工作狀態篩選")
+            for label, value in (
+                ("全部", "all"),
+                ("進行中與暫停", "active"),
+                ("失敗", "failed"),
+                ("已完成", "completed"),
+            ):
+                self.task_filter.addItem(label, value)
+            task_filter_row.addWidget(task_filter_label)
+            task_filter_row.addWidget(self.task_filter)
+            task_filter_row.addStretch()
+            page.addLayout(task_filter_row)
+
             self.table = QTableWidget(0, 6)
             self.table.setAccessibleName("下載工作佇列")
             self.table.setAccessibleDescription(
@@ -990,6 +1025,11 @@ def create_download_panel(
             self.cancel_all_action = QAction("取消全部未結束任務", batch_menu)
             self.cancel_all_action.triggered.connect(self.cancel_all_tasks)
             batch_menu.addAction(self.cancel_all_action)
+            self.retry_failed_action = QAction(
+                "重試全部暫時性失敗", batch_menu
+            )
+            self.retry_failed_action.triggered.connect(self.retry_failed_tasks)
+            batch_menu.addAction(self.retry_failed_action)
             batch_menu.addSeparator()
             export_archive = QAction("匯出下載封存 ID…", batch_menu)
             export_archive.triggered.connect(self.export_archive_file)
@@ -1019,6 +1059,7 @@ def create_download_panel(
             page.addLayout(actions)
             self.table.itemSelectionChanged.connect(self.update_action_state)
             self.table.itemDoubleClicked.connect(self.open_selected_output)
+            self.task_filter.currentIndexChanged.connect(self.change_task_filter)
 
             self.update_provider_badge()
             self.timer = QTimer(self)
@@ -1356,6 +1397,12 @@ def create_download_panel(
                         DownloadState.RETRYING,
                         DownloadState.PAUSED,
                     }
+                    for item in tasks
+                )
+            )
+            self.retry_failed_action.setEnabled(
+                any(
+                    item.state is DownloadState.FAILED and item.retryable
                     for item in tasks
                 )
             )
@@ -2622,25 +2669,34 @@ def create_download_panel(
 
         def refresh(self) -> None:
             selected_task_ids = set(self.selected_task_ids())
-            tasks = context.download_queue.snapshots()
+            all_tasks = context.download_queue.snapshots()
             refresh_interval = download_refresh_interval(
-                tasks, visible=self.isVisible()
+                all_tasks, visible=self.isVisible()
             )
             if self.timer.interval() != refresh_interval:
                 self.timer.setInterval(refresh_interval)
-            signature = download_render_signature(tasks)
+            filter_id = str(self.task_filter.currentData() or "all")
+            signature = (filter_id, download_render_signature(all_tasks))
             if signature == self.render_signature:
                 return
             self.render_signature = signature
+            tasks = tuple(
+                task
+                for task in all_tasks
+                if download_task_matches_filter(task, filter_id)
+            )
             counts = {
-                "all": len(tasks),
+                "all": len(all_tasks),
                 "active": sum(
                     str(task.state) in {"QUEUED", "RUNNING", "RETRYING"}
-                    for task in tasks
+                    for task in all_tasks
                 ),
-                "done": sum(str(task.state) == "COMPLETED" for task in tasks),
+                "done": sum(
+                    str(task.state) == "COMPLETED" for task in all_tasks
+                ),
                 "failed": sum(
-                    str(task.state) in {"FAILED", "CANCELLED"} for task in tasks
+                    str(task.state) in {"FAILED", "CANCELLED"}
+                    for task in all_tasks
                 ),
             }
             for key, value in counts.items():
@@ -2740,6 +2796,10 @@ def create_download_panel(
                 self.table.setUpdatesEnabled(True)
                 self.table.viewport().update()
             self.update_action_state()
+
+        def change_task_filter(self, _index: int = -1) -> None:
+            self.render_signature = None
+            self.refresh()
 
         def showEvent(self, event: object) -> None:
             """Refresh immediately when returning from another workspace."""
@@ -2868,6 +2928,20 @@ def create_download_panel(
                     "重試任務",
                     "只有失敗或已取消的任務可以重試。",
                 )
+
+        def retry_failed_tasks(self) -> None:
+            try:
+                retried = context.download_queue.retry_failed()
+            except (OSError, RuntimeError) as error:
+                QMessageBox.warning(self, "批次重試失敗", str(error))
+                return
+            if not retried:
+                QMessageBox.information(
+                    self,
+                    "批次重試",
+                    "目前沒有明確標記為暫時性錯誤的失敗工作。",
+                )
+            self.refresh()
 
         def toggle_pause_selected(self) -> None:
             task = self.selected_task()

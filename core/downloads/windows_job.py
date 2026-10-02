@@ -107,6 +107,19 @@ class ProviderJob:
         )
         self._handle = None
 
+    def terminate(self, exit_code: int = 1) -> None:
+        """Synchronously end the contained tree before releasing its handle."""
+
+        if self._handle is None:
+            return
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        if not kernel32.TerminateJobObject(
+            wintypes.HANDLE(self._handle), wintypes.UINT(exit_code)
+        ):
+            raise ProviderJobError(
+                f"TerminateJobObject failed: {ctypes.get_last_error()}"
+            )
+
     def __enter__(self) -> "ProviderJob":
         return self
 

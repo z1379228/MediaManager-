@@ -19,7 +19,7 @@ from urllib.parse import parse_qsl, urlparse
 
 from core.downloads.models import DownloadRequest
 from core.downloads.direct_http_policy import direct_http_url_candidate
-from core.downloads.windows_job import ProviderJob
+from core.downloads.windows_job import ProviderJob, ProviderJobError
 from contracts.discovery_v1 import DiscoveryItemV1
 from contracts.history_v1 import HistoryEventV1, HistoryPreferencesV1
 from contracts.media_analysis_v1 import parse_media_formats, parse_media_languages
@@ -45,6 +45,31 @@ from core.site_routing import classify_site_url
 _MAX_PROVIDER_MESSAGE_CHARS = 1024 * 1024
 _MAX_PROVIDER_STDERR_CHARS = 64 * 1024
 _PROVIDER_MESSAGE_BACKLOG = 128
+
+
+def _terminate_windows_process_tree(process_id: int) -> None:
+    """Use Windows' native tree terminator when a contained host is still live."""
+
+    if os.name != "nt" or process_id <= 0:
+        return
+    system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+    taskkill = system_root / "System32" / "taskkill.exe"
+    if not taskkill.is_file():
+        return
+    try:
+        subprocess.run(
+            [str(taskkill), "/PID", str(process_id), "/T", "/F"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=5,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+    except (OSError, subprocess.SubprocessError):
+        # ProviderJob remains the primary containment mechanism and kill-on-
+        # close is retained if taskkill is unavailable or is already too late.
+        return
 
 
 def _soundcloud_widget_url_candidate(value: str) -> bool:
@@ -250,7 +275,6 @@ class SubprocessDownloadProvider:
         hosts = raw["url_hosts"]
         if (
             not isinstance(hosts, list)
-            or not hosts
             or len(hosts) > 32
             or len(hosts) != len(set(hosts))
             or not all(
@@ -275,6 +299,7 @@ class SubprocessDownloadProvider:
             "youtube-search": {"network.youtube", "process.javascript"},
             "bilibili-search": {"network.bilibili"},
             "musicbrainz-metadata": {"network.musicbrainz"},
+            "peertube-search": {"network.peertube"},
             "youtube-player": {
                 "network.youtube",
                 "storage.temp.write",
@@ -343,6 +368,13 @@ class SubprocessDownloadProvider:
                 ) from error
             if search_capability.provider_id != provider_id:
                 raise ProviderProtocolError("search capability provider mismatch")
+        if not hosts and (
+            search_capability is None
+            or search_capability.source_scope != "https-origin"
+        ):
+            raise ProviderProtocolError(
+                "empty provider URL hosts require an HTTPS-origin search scope"
+            )
         search_visibility = raw.get("search_visibility", "federated")
         if search_visibility not in {"federated", "manual"}:
             raise ProviderProtocolError("search visibility is invalid")
@@ -435,6 +467,7 @@ class SubprocessDownloadProvider:
             "youtube-search": "network.youtube",
             "bilibili-search": "network.bilibili",
             "musicbrainz-metadata": "network.musicbrainz",
+            "peertube-search": "network.peertube",
             "test": "network.youtube",
         }.get(self.provider_id)
         if permission is None:
@@ -506,6 +539,7 @@ class SubprocessDownloadProvider:
         *,
         limit: int = 12,
         content_type: str = "all",
+        source_scope: str = "",
     ) -> tuple[DiscoveryItemV1, ...]:
         capability = self.search_capability or SearchCapabilityV2(
             self.provider_id,
@@ -516,7 +550,12 @@ class SubprocessDownloadProvider:
             False,
             False,
         )
-        normalized = SearchQueryV2(query, content_type, limit).normalized(capability)
+        normalized = SearchQueryV2(
+            query,
+            content_type,
+            limit,
+            source_scope=source_scope,
+        ).normalized(capability)
         return self.search_page(normalized).items
 
     def search_page(self, query: SearchQueryV2) -> SearchPageV2:
@@ -538,6 +577,7 @@ class SubprocessDownloadProvider:
             "limit": normalized.page_size,
             "content_type": normalized.content_type,
             "cursor": normalized.cursor,
+            "source_scope": normalized.source_scope,
         }
         result = self._execute(
             payload,
@@ -1092,6 +1132,14 @@ class SubprocessDownloadProvider:
             # provider host. Terminating only the host can leave those child
             # processes downloading after the UI says the task has stopped.
             if os.name == "nt":
+                if process.poll() is None:
+                    _terminate_windows_process_tree(process.pid)
+                try:
+                    job.terminate()
+                except ProviderJobError:
+                    # Keep kill-on-close as a fallback even when an already
+                    # exiting Job rejects a redundant explicit termination.
+                    pass
                 job.close()
             if process.poll() is None:
                 try:
@@ -1289,6 +1337,11 @@ class SubprocessDownloadProvider:
             stderr_thread.join(timeout=0.5)
             with self._lock:
                 self._processes.discard(process)
+            if os.name == "nt":
+                try:
+                    job.terminate()
+                except ProviderJobError:
+                    pass
             job.close()
 
     def close(self) -> None:

@@ -1,4 +1,6 @@
 from pathlib import Path
+from threading import Event, Thread
+import time
 
 from core.dependency_health import DependencyReport, DependencyStatus
 from core.dependency_snapshot import DependencySnapshotService
@@ -83,6 +85,34 @@ def test_peek_and_invalidate_never_probe_or_refresh(tmp_path: Path) -> None:
     assert calls == 1
 
 
+def test_peek_does_not_wait_for_an_in_progress_refresh(tmp_path: Path) -> None:
+    started = Event()
+    release = Event()
+
+    def factory(_application: Path, _data: Path) -> DependencyReport:
+        started.set()
+        assert release.wait(timeout=2)
+        return _report("yt-dlp")
+
+    service = DependencySnapshotService(
+        tmp_path,
+        tmp_path / "data",
+        report_factory=factory,
+    )
+    worker = Thread(target=service.refresh, daemon=True)
+    worker.start()
+    assert started.wait(timeout=1)
+
+    before = time.monotonic()
+    assert service.peek() is None
+    assert time.monotonic() - before < 0.1
+
+    release.set()
+    worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert service.peek() is not None
+
+
 def test_snapshot_derives_readiness_for_each_catalog_mod(tmp_path: Path) -> None:
     service = DependencySnapshotService(
         tmp_path,
@@ -98,7 +128,7 @@ def test_snapshot_derives_readiness_for_each_catalog_mod(tmp_path: Path) -> None
 
     snapshot = service.refresh()
 
-    assert len(snapshot.readiness) == 30
+    assert len(snapshot.readiness) == 32
     assert snapshot.readiness_for("youtube").ready
     assert snapshot.readiness_for("mega").ready
     assert snapshot.readiness_for("speech-to-text").ready

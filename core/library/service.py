@@ -187,49 +187,72 @@ class LibraryService:
                 (str(root), now),
             )
             rows = self._connection.execute(
-                "SELECT item_id, path FROM items WHERE available=1"
+                "SELECT item_id, path, media_type, size, modified, available "
+                "FROM items"
             ).fetchall()
-            unavailable = [row["item_id"] for row in rows if _is_within(Path(row["path"]), root)]
-            self._connection.executemany(
-                "UPDATE items SET available=0 WHERE item_id=?",
-                ((item_id,) for item_id in unavailable),
-            )
+            existing_by_path = {
+                row["path"]: row
+                for row in rows
+                if _is_within(Path(row["path"]), root)
+            }
+            discovered_paths: set[str] = set()
+            inserts: list[tuple[object, ...]] = []
+            changed_updates: list[tuple[object, ...]] = []
+            restored: list[tuple[str]] = []
             for media in discovered:
-                existing = self._connection.execute(
-                    "SELECT item_id, size, modified FROM items WHERE path=?",
-                    (str(media.path),),
-                ).fetchone()
+                media_path = str(media.path)
+                discovered_paths.add(media_path)
+                existing = existing_by_path.get(media_path)
                 if existing is None:
-                    self._connection.execute(
-                        "INSERT INTO items(item_id,path,media_type,size,modified,available) "
-                        "VALUES(?,?,?,?,?,1)",
+                    inserts.append(
                         (
                             uuid.uuid4().hex,
-                            str(media.path),
+                            media_path,
                             media.media_type,
                             media.size,
                             media.modified,
-                        ),
+                        )
                     )
                 else:
                     changed = (
-                        existing["size"] != media.size
+                        existing["media_type"] != media.media_type
+                        or existing["size"] != media.size
                         or existing["modified"] != media.modified
                     )
-                    self._connection.execute(
-                        "UPDATE items SET media_type=?,size=?,modified=?,available=1,"
-                        "fingerprint=CASE WHEN ? THEN NULL ELSE fingerprint END,"
-                        "content_sha256=CASE WHEN ? THEN NULL ELSE content_sha256 END "
-                        "WHERE item_id=?",
-                        (
-                            media.media_type,
-                            media.size,
-                            media.modified,
-                            int(changed),
-                            int(changed),
-                            existing["item_id"],
-                        ),
-                    )
+                    if changed:
+                        changed_updates.append(
+                            (
+                                media.media_type,
+                                media.size,
+                                media.modified,
+                                existing["item_id"],
+                            )
+                        )
+                    elif not existing["available"]:
+                        restored.append((existing["item_id"],))
+            unavailable = [
+                (row["item_id"],)
+                for path, row in existing_by_path.items()
+                if row["available"] and path not in discovered_paths
+            ]
+            self._connection.executemany(
+                "INSERT INTO items(item_id,path,media_type,size,modified,available) "
+                "VALUES(?,?,?,?,?,1)",
+                inserts,
+            )
+            self._connection.executemany(
+                "UPDATE items SET media_type=?,size=?,modified=?,available=1,"
+                "fingerprint=NULL,content_sha256=NULL WHERE item_id=?",
+                changed_updates,
+            )
+            self._connection.executemany(
+                "UPDATE items SET available=1 WHERE item_id=?",
+                restored,
+            )
+            self._connection.executemany(
+                "UPDATE items SET available=0 WHERE item_id=?",
+                unavailable,
+            )
         return self.search(root=root)
 
     def roots(self) -> tuple[Path, ...]:

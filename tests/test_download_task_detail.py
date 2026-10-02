@@ -15,6 +15,7 @@ from trusted_ui.download_panel import (
     create_download_panel,
     download_refresh_interval,
     download_render_signature,
+    download_task_matches_filter,
     safe_task_output_path,
     task_detail_summary,
 )
@@ -95,6 +96,25 @@ def test_download_refresh_interval_adapts_to_visibility_and_queue_state(
     )
 
 
+def test_download_task_filter_groups_queue_states(tmp_path: Path) -> None:
+    task = DownloadTask(
+        "task",
+        DownloadRequest("https://youtu.be/example", tmp_path),
+    )
+    assert download_task_matches_filter(task, "all")
+    assert download_task_matches_filter(task, "active")
+    assert not download_task_matches_filter(task, "failed")
+
+    task.state = DownloadState.PAUSED
+    assert download_task_matches_filter(task, "active")
+    task.state = DownloadState.FAILED
+    assert download_task_matches_filter(task, "failed")
+    assert not download_task_matches_filter(task, "completed")
+    task.state = DownloadState.COMPLETED
+    assert download_task_matches_filter(task, "completed")
+    assert not download_task_matches_filter(task, "active")
+
+
 def test_download_panel_reuses_progress_widget_for_incremental_updates(
     tmp_path: Path,
     monkeypatch,
@@ -129,6 +149,60 @@ def test_download_panel_reuses_progress_widget_for_incremental_updates(
         assert panel.table.cellWidget(0, 2) is progress
         assert progress.value() == 425
         assert panel.table.item(0, 3).text() == "1.2 MiB/s"
+    finally:
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
+def test_download_panel_filters_failed_tasks_without_mutating_queue(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    tasks = (
+        DownloadTask(
+            "queued",
+            DownloadRequest("https://youtu.be/queued", tmp_path),
+        ),
+        DownloadTask(
+            "failed",
+            DownloadRequest("https://youtu.be/failed", tmp_path),
+            state=DownloadState.FAILED,
+            error="temporary outage",
+            retryable=True,
+        ),
+        DownloadTask(
+            "completed",
+            DownloadRequest("https://youtu.be/completed", tmp_path),
+            state=DownloadState.COMPLETED,
+            progress=100.0,
+        ),
+    )
+    monkeypatch.setattr(context.download_queue, "snapshots", lambda: tasks)
+    panel = create_download_panel(context)
+    panel.timer.stop()
+    try:
+        failed_index = panel.task_filter.findData("failed")
+        panel.task_filter.setCurrentIndex(failed_index)
+        app.processEvents()
+
+        assert panel.table.rowCount() == 1
+        assert (
+            panel.table.item(0, 0).data(Qt.ItemDataRole.UserRole) == "failed"
+        )
+        assert panel.retry_failed_action.isEnabled()
+        assert panel.stat_values["all"].text() == "3"
     finally:
         panel.close()
         panel.deleteLater()

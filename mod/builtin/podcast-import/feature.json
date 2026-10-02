@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "provider_id": "podcast-import",
+  "display_name": "Podcast / RSS",
+  "kind": "local-feature",
+  "default_enabled": true,
+  "permissions": ["storage.user-selected.read"],
+  "network_access": false,
+  "automatic_download": false,
+  "maximum_feed_bytes": 2097152
+}

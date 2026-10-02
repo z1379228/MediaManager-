@@ -1283,6 +1283,7 @@ def test_search_panel_exposes_selected_provider_content_types(
             capability.pagination,
             capability.audio_preview,
             capability.video_preview,
+            capability.source_scope,
         )
         for capability in context.discovery.search_capabilities()
     )
@@ -1399,6 +1400,43 @@ def test_search_panel_falls_back_to_an_enabled_source_when_selection_disappears(
 
         assert panel.search_source.currentData() == "bilibili-search"
         assert panel.search_button.isEnabled()
+    finally:
+        panel.close()
+        panel.deleteLater()
+        app.processEvents()
+        context.lifecycle.shutdown()
+
+
+def test_search_panel_requires_peer_tube_instance_and_excludes_it_from_aggregate(
+    tmp_path, monkeypatch
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    paths = AppPaths.discover(portable=True, app_root=tmp_path)
+    monkeypatch.setattr(AppPaths, "discover", lambda **_: paths)
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    context = Bootstrap(portable=True).initialize(start_background=False)
+    panel = create_search_panel(context)
+    try:
+        peer_tube_index = panel.search_source.findData("peertube-search")
+        assert peer_tube_index >= 0
+        assert "peertube-search" not in panel.aggregate_provider_ids
+
+        panel.search_source.setCurrentIndex(peer_tube_index)
+        app.processEvents()
+        assert panel.source_scope.isVisibleTo(panel)
+        assert not panel.search_button.isEnabled()
+
+        panel.source_scope.setText("https://video.example")
+        app.processEvents()
+        assert panel.search_button.isEnabled()
+        assert [
+            panel.search_scope.itemData(index)
+            for index in range(panel.search_scope.count())
+        ] == ["all", "video", "live"]
     finally:
         panel.close()
         panel.deleteLater()
@@ -1686,6 +1724,7 @@ def test_search_panel_routes_all_enabled_sources_with_shared_content_types(
             capability.pagination,
             capability.audio_preview,
             capability.video_preview,
+            capability.source_scope,
         )
         for capability in context.discovery.search_capabilities()
     )

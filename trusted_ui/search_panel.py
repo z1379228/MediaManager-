@@ -87,11 +87,22 @@ def shared_search_content_types(
 
 
 @dataclass(frozen=True, slots=True)
+class _SearchRequest:
+    query: str
+    provider_ids: tuple[str, ...]
+    limit: int
+    content_type: str
+    cursor: str = ""
+    source_scope: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class _SearchResponse:
     generation: int
     value: object
     history_query: str = ""
     append: bool = False
+    request: _SearchRequest | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +149,12 @@ def explicit_search_source_name(
             "zh-CN": "Bilibili 搜索",
             "ja": "Bilibili 検索",
             "en": "Bilibili Search",
+        },
+        "peertube-search": {
+            "zh-TW": "PeerTube 搜尋",
+            "zh-CN": "PeerTube 搜索",
+            "ja": "PeerTube 検索",
+            "en": "PeerTube Search",
         },
     }
     provider_labels = labels.get(str(provider_id))
@@ -243,6 +260,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.search_enabled_provider_ids: tuple[str, ...] = ()
             self.aggregate_content_types: tuple[str, ...] = ()
             self.last_search_failures: tuple[object, ...] = ()
+            self.last_search_request: _SearchRequest | None = None
             self.busy_action = ""
             self.generation = 0
             self.results_generation = 0
@@ -326,6 +344,14 @@ def create_search_panel(context: object, parent: object = None) -> object:
                     module_names.get("bilibili-search", "Bilibili 搜尋"),
                 ),
                 "bilibili-search",
+            )
+            self.peertube_search_enabled = create_feature_action(
+                explicit_search_source_name(
+                    "peertube-search",
+                    current_locale,
+                    module_names.get("peertube-search", "PeerTube 搜尋"),
+                ),
+                "peertube-search",
             )
             self.history_enabled = create_feature_action(
                 "記錄搜尋偏好", "youtube-history"
@@ -454,6 +480,17 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.search_source_summary = QLabel()
             self.search_source_summary.setObjectName("searchSourceSummary")
             self.search_source_summary.setWordWrap(True)
+            self.source_scope_label = QLabel("PeerTube 實例")
+            self.source_scope_label.setObjectName("fieldLabel")
+            self.source_scope = QLineEdit()
+            self.source_scope.setAccessibleName("PeerTube HTTPS 實例")
+            self.source_scope.setPlaceholderText("https://video.example")
+            self.source_scope.setClearButtonEnabled(True)
+            self.source_scope.setToolTip(
+                "只接受公開 HTTPS PeerTube 實例根網址；不保存帳號、Cookie 或權杖"
+            )
+            self.source_scope_label.hide()
+            self.source_scope.hide()
             try:
                 source_statuses = tuple(
                     status
@@ -518,6 +555,29 @@ def create_search_panel(context: object, parent: object = None) -> object:
 
             self.refresh_search_scopes = refresh_search_scopes
 
+            def refresh_source_scope() -> None:
+                provider_id = str(self.search_source.currentData() or "")
+                try:
+                    capability = next(
+                        (
+                            item
+                            for item in context.discovery.search_capabilities()
+                            if item.provider_id == provider_id
+                        ),
+                        None,
+                    )
+                except (AttributeError, RuntimeError, ValueError):
+                    capability = None
+                visible = bool(
+                    capability is not None
+                    and capability.source_scope == "https-origin"
+                )
+                self.source_scope_required = visible
+                self.source_scope_label.setVisible(visible)
+                self.source_scope.setVisible(visible)
+
+            self.refresh_source_scope = refresh_source_scope
+
             def refresh_search_sources() -> None:
                 selected = self.search_source.currentData()
                 previous_block = self.search_source.blockSignals(True)
@@ -545,9 +605,22 @@ def create_search_panel(context: object, parent: object = None) -> object:
                         capabilities = tuple(context.discovery.search_capabilities())
                     except (AttributeError, RuntimeError, ValueError):
                         capabilities = ()
+                    aggregate_capabilities = tuple(
+                        capability
+                        for capability in capabilities
+                        if capability.source_scope == "none"
+                    )
+                    self.aggregate_provider_ids = tuple(
+                        provider_id
+                        for provider_id in self.search_enabled_provider_ids
+                        if any(
+                            capability.provider_id == provider_id
+                            for capability in aggregate_capabilities
+                        )
+                    )
                     self.aggregate_content_types = shared_search_content_types(
-                        capabilities,
-                        self.search_enabled_provider_ids,
+                        aggregate_capabilities,
+                        self.aggregate_provider_ids,
                     )
                     localized_names = localized_site_module_names(
                         getattr(
@@ -636,6 +709,11 @@ def create_search_panel(context: object, parent: object = None) -> object:
                         )
                         + ("、".join(source_names) if source_names else "目前沒有可用來源")
                         + hidden_hint
+                        + (
+                            "；PeerTube 需指定 HTTPS 實例並單獨搜尋"
+                            if "peertube-search" in self.search_provider_ids
+                            else ""
+                        )
                     )
                     index = self.search_source.findData(selected)
                     if index < 0:
@@ -653,6 +731,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 finally:
                     self.search_source.blockSignals(previous_block)
                 self.refresh_search_scopes()
+                self.refresh_source_scope()
 
             self.refresh_search_sources = refresh_search_sources
             refresh_search_sources()
@@ -675,6 +754,9 @@ def create_search_panel(context: object, parent: object = None) -> object:
             query_row.addWidget(self.query, 1)
             query_row.addWidget(self.search_source)
             query_row.addWidget(self.search_scope)
+            source_scope_row = QHBoxLayout()
+            source_scope_row.addWidget(self.source_scope_label)
+            source_scope_row.addWidget(self.source_scope, 1)
             filter_row.addWidget(self.duration_filter)
             filter_row.addWidget(self.language_filter)
             filter_row.addWidget(self.limit)
@@ -683,6 +765,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
             filter_row.addWidget(self.search_button)
             filter_row.addWidget(self.next_page_button)
             search_layout.addLayout(query_row)
+            search_layout.addLayout(source_scope_row)
             search_layout.addLayout(filter_row)
             search_layout.addWidget(self.search_source_summary)
             page.addWidget(search_card)
@@ -697,6 +780,17 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.failure_button.clicked.connect(self.show_search_failures)
             self.failure_button.hide()
             status_row.addWidget(self.failure_button)
+            self.retry_failure_button = QPushButton("只重試失敗來源")
+            self.retry_failure_button.setObjectName("ghost")
+            self.retry_failure_button.setAccessibleName("只重試失敗的搜尋來源")
+            self.retry_failure_button.setToolTip(
+                "保留目前成功結果，只重新連線失敗的搜尋 MOD"
+            )
+            self.retry_failure_button.clicked.connect(
+                self.retry_failed_search_sources
+            )
+            self.retry_failure_button.hide()
+            status_row.addWidget(self.retry_failure_button)
             page.addLayout(status_row)
 
             self.table = QTableWidget(0, 7)
@@ -773,12 +867,15 @@ def create_search_panel(context: object, parent: object = None) -> object:
             for search_action in (
                 self.enabled,
                 self.bilibili_search_enabled,
+                self.peertube_search_enabled,
             ):
                 search_action.toggled.connect(self.refresh_search_sources)
 
             def invalidate_search_cursor() -> None:
                 self.next_search_cursor = ""
                 self.last_federated_result = None
+                self.last_search_request = None
+                self.set_search_failures(())
                 if self.busy_action == "search":
                     self.generation += 1
                     self.results_generation += 1
@@ -796,11 +893,13 @@ def create_search_panel(context: object, parent: object = None) -> object:
             for search_action in (
                 self.enabled,
                 self.bilibili_search_enabled,
+                self.peertube_search_enabled,
             ):
                 search_action.toggled.connect(self.invalidate_search_cursor)
 
             def handle_search_source_changed(_index: int = -1) -> None:
                 self.refresh_search_scopes()
+                self.refresh_source_scope()
                 self.invalidate_search_cursor()
 
             self.search_source.currentIndexChanged.connect(
@@ -809,6 +908,8 @@ def create_search_panel(context: object, parent: object = None) -> object:
             self.search_scope.currentIndexChanged.connect(invalidate_search_cursor)
             self.limit.currentIndexChanged.connect(invalidate_search_cursor)
             self.query.textEdited.connect(invalidate_search_cursor)
+            self.source_scope.textEdited.connect(invalidate_search_cursor)
+            self.source_scope.textChanged.connect(self.update_action_state)
             self.video_enabled.toggled.connect(self.handle_video_toggle)
             self.update_action_state()
             events = getattr(context, "events", None)
@@ -835,6 +936,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
                     "bilibili",
                     "youtube-search",
                     "bilibili-search",
+                    "peertube-search",
                 }
             )
             if search_configuration_changed:
@@ -849,6 +951,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
             for provider_id in (
                 "youtube-search",
                 "bilibili-search",
+                "peertube-search",
                 "youtube-player",
                 "youtube-history",
                 "youtube-recovery",
@@ -858,6 +961,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 if provider_id in {
                     "youtube-search",
                     "bilibili-search",
+                    "peertube-search",
                 }:
                     name = explicit_search_source_name(
                         provider_id, locale, name or provider_id
@@ -875,7 +979,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
             selected_search_source = str(self.search_source.currentData() or "")
             if selected_search_source == _ALL_ENABLED_SEARCH_SOURCES:
                 search_source_ready = (
-                    len(self.search_enabled_provider_ids) >= 2
+                    len(self.aggregate_provider_ids) >= 2
                     and bool(self.aggregate_content_types)
                 )
             else:
@@ -886,6 +990,10 @@ def create_search_panel(context: object, parent: object = None) -> object:
                     )
                 except (AttributeError, KeyError, RuntimeError, ValueError):
                     search_source_ready = False
+            scope_required = self.source_scope_required
+            search_source_ready = search_source_ready and (
+                not scope_required or bool(self.source_scope.text().strip())
+            )
             try:
                 youtube_search_ready = context.discovery.is_enabled(
                     "youtube-search"
@@ -923,6 +1031,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
                         audio_preview_ready = selected_source == "youtube-search"
             busy = bool(self.busy_action)
             self.query.setEnabled(not busy)
+            self.source_scope.setEnabled(not busy)
             self.search_scope.setEnabled(not busy)
             self.duration_filter.setEnabled(not busy)
             self.language_filter.setEnabled(not busy)
@@ -938,6 +1047,12 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 not busy
                 and search_source_ready
                 and bool(self.next_search_cursor)
+            )
+            self.retry_failure_button.setEnabled(
+                not busy
+                and bool(self.last_search_failures)
+                and self.last_federated_result is not None
+                and self.last_search_request is not None
             )
             self.download_button.setEnabled(selected and download_ready)
             self.download_button.setToolTip(
@@ -1109,7 +1224,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
             if selected_source == _ALL_ENABLED_SEARCH_SOURCES:
                 provider_ids = tuple(
                     provider_id
-                    for provider_id in self.search_enabled_provider_ids
+                    for provider_id in self.aggregate_provider_ids
                     if context.discovery.is_enabled(provider_id)
                 )
                 if len(provider_ids) < 2:
@@ -1127,6 +1242,18 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 return
             else:
                 provider_ids = (selected_source,)
+            source_scope = (
+                self.source_scope.text().strip()
+                if self.source_scope_required
+                else ""
+            )
+            if self.source_scope_required and not source_scope:
+                QMessageBox.information(
+                    self,
+                    "PeerTube 實例",
+                    "請輸入公開 PeerTube 實例的 HTTPS 根網址。",
+                )
+                return
             append = bool(cursor)
             generation = self.begin_action(
                 "search",
@@ -1140,6 +1267,14 @@ def create_search_panel(context: object, parent: object = None) -> object:
             history_enabled = (
                 self.history_enabled.isChecked() and self.search_uses_youtube_only()
             )
+            request = _SearchRequest(
+                query=query,
+                provider_ids=provider_ids,
+                limit=int(self.limit.currentData()),
+                content_type=content_type,
+                cursor=cursor,
+                source_scope=source_scope,
+            )
             correction_label = (
                 f"（已在本機修正：{'、'.join(prepared.corrections)}）"
                 if prepared.corrections
@@ -1150,12 +1285,16 @@ def create_search_panel(context: object, parent: object = None) -> object:
 
             def worker() -> None:
                 try:
+                    search_options = {
+                        "provider_ids": provider_ids,
+                        "limit": request.limit,
+                        "content_type": content_type,
+                        "cursor": cursor,
+                    }
+                    if source_scope:
+                        search_options["source_scope"] = source_scope
                     results = context.discovery.federated_search(
-                        query,
-                        provider_ids=provider_ids,
-                        limit=int(self.limit.currentData()),
-                        content_type=content_type,
-                        cursor=cursor,
+                        query, **search_options
                     )
                     if not self.closing:
                         self.bridge.finished.emit(
@@ -1164,13 +1303,19 @@ def create_search_panel(context: object, parent: object = None) -> object:
                                 results,
                                 query if history_enabled and not cursor else "",
                                 append,
+                                request,
                             ),
                             "",
                         )
                 except Exception as error:
                     if not self.closing:
                         self.bridge.finished.emit(
-                            _SearchResponse(generation, None, append=append),
+                            _SearchResponse(
+                                generation,
+                                None,
+                                append=append,
+                                request=request,
+                            ),
                             str(error),
                         )
 
@@ -1320,6 +1465,7 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 tuple(failures)[:16] if isinstance(failures, (list, tuple)) else ()
             )
             self.failure_button.setVisible(bool(self.last_search_failures))
+            self.retry_failure_button.setVisible(bool(self.last_search_failures))
             self.status.setToolTip(
                 "\n".join(
                     f"{getattr(failure, 'provider_id', 'unknown')}: "
@@ -1348,16 +1494,84 @@ def create_search_panel(context: object, parent: object = None) -> object:
                 lines.append(f"{source}（{label}）\n{message}")
             QMessageBox.warning(self, "搜尋來源錯誤", "\n\n".join(lines))
 
+        def retry_failed_search_sources(self) -> None:
+            request = self.last_search_request
+            existing = self.last_federated_result
+            if request is None or existing is None or not self.last_search_failures:
+                return
+            failed = {
+                str(getattr(failure, "provider_id", ""))
+                for failure in self.last_search_failures
+            }
+            retry_provider_ids = tuple(
+                provider_id
+                for provider_id in request.provider_ids
+                if provider_id in failed
+            )
+            if not retry_provider_ids:
+                return
+            generation = self.begin_action(
+                "search",
+                preserve_search_results=True,
+            )
+            if generation is None:
+                return
+            self.status.setText(
+                f"正在只重試 {len(retry_provider_ids)} 個失敗來源…"
+            )
+
+            def worker() -> None:
+                try:
+                    search_options = {
+                        "provider_ids": request.provider_ids,
+                        "limit": request.limit,
+                        "content_type": request.content_type,
+                        "cursor": request.cursor,
+                        "retry_provider_ids": retry_provider_ids,
+                        "preserve_cursor": self.next_search_cursor,
+                    }
+                    if request.source_scope:
+                        search_options["source_scope"] = request.source_scope
+                    results = context.discovery.federated_search(
+                        request.query,
+                        **search_options,
+                    )
+                    if not self.closing:
+                        self.bridge.finished.emit(
+                            _SearchResponse(
+                                generation,
+                                results,
+                                append=True,
+                                request=request,
+                            ),
+                            "",
+                        )
+                except Exception as error:
+                    if not self.closing:
+                        self.bridge.finished.emit(
+                            _SearchResponse(
+                                generation,
+                                None,
+                                append=True,
+                                request=request,
+                            ),
+                            str(error),
+                        )
+
+            threading.Thread(target=worker, daemon=True).start()
+
         def show_results(self, results: object, error: str) -> None:
             if self.closing:
                 return
             history_query = ""
             append = False
+            search_request = None
             if isinstance(results, _SearchResponse):
                 if results.generation != self.generation:
                     return
                 history_query = results.history_query
                 append = results.append
+                search_request = results.request
                 results = results.value
             self.thumbnail_loader.cancel_pending()
             self.busy_action = ""
@@ -1406,6 +1620,8 @@ def create_search_panel(context: object, parent: object = None) -> object:
                         results,
                     )
                 self.last_federated_result = results
+                if search_request is not None:
+                    self.last_search_request = search_request
                 self.set_search_failures(results.failures)
                 minimum_duration, maximum_duration = self.duration_filter.currentData()
                 matched = matching_search_indices(

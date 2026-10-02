@@ -2102,6 +2102,125 @@ prerelease 與全部附件 digest 均已驗證；Testing 1.2.1 的目錄、tag �
 - 39.0.112 建立的本機 Testing 1.2.4 EXE／ZIP 已判定無效，不得散布；任何
   修正版都必須由 39.0.113 source freeze 重新建立，不得覆寫 Testing 1.2.3。
 
+## 39.0.114（可搜尋的功能簡介）
+
+- 主視窗頁尾新增「功能簡介」與 `Ctrl+I` 快捷鍵，不擠入 940×620 最小尺寸的
+  頂部工具列。入口具可存取名稱與工具提示，既有工作區導覽與 MOD 管理快捷鍵
+  維持不變。
+- 簡介以 11 個可捲動、可搜尋的分類卡片集中說明目前的下載、收件匣、其他來源、
+  本機媒體庫、格式工廠、Gopeed／P2P、Speech to Text、Automation、背景待機、
+  MOD 架構及安全／版本界線；規劃中或未實作的 MOD 不會冒充現有功能。
+- 每個分類明示必要依賴、會修改的資料、可能留下的檔案、外部工具責任與不可
+  繞過的限制。對話框是唯讀說明，開啟、搜尋及關閉都不會啟用 MOD、下載工具、
+  連線網站或改變設定。
+- 新增內容完整性、搜尋篩選、可存取名稱與主視窗入口回歸。完整 Repository
+  runner 為 `1794 passed, 9 skipped`；九項 skip 均為目前 Windows 帳號缺少建立
+  link 權限。Quality audit 通過 Ruff `394` 個 Python 檔與文字污染掃描 `505`
+  個受控檔案，diff 格式檢查通過。
+- 本次未 build、stage、commit、push 或發布，沒有建立或覆寫 Testing／Stable。
+
+## 39.0.115（Podcast / RSS 本機匯入）
+
+- 新增預設啟用的 `podcast-import` 內建功能 MOD 與延遲載入工作區，支援使用者
+  手動選取本機 RSS 2.0／Atom 檔案，預覽節目、單集、附件、作者、日期，以及
+  Podcasting 2.0 `podcast:transcript`／`podcast:chapters` 可用狀態。
+- 解析器不發出網路請求、不訂閱或刷新來源。輸入限制為 `.rss`、`.xml`、`.atom`
+  一般本機檔案、最大 2 MiB、500 集、20,000 XML 節點與 32 層深度；符號連結、
+  DTD、實體宣告、無效 XML 與不安全 HTTPS 資源網址一律拒絕或明確列為略過。
+- 單集附件只有在同時符合既有 Direct HTTP 明確 HTTPS 檔案白名單時才可選取。
+  「送至 Direct HTTP」只預填網址並切換工作區，不分析、不加入佇列、不開始下載；
+  使用者仍須確認輸出位置並通過原有網域、DNS、重新導向與下載前檢查。
+- 功能簡介、內建 MOD 清單、分類導覽與依賴延遲載入同步更新。定向回歸通過
+  `42 passed`；完整 Repository runner 為 `1805 passed, 9 skipped`。九項 skip
+  均是目前 Windows 帳號缺少建立測試用 link 權限。Quality audit 通過 Ruff
+  `398` 個 Python 檔與文字污染掃描 `510` 個受控檔案。
+- 本次未 build、stage、commit、push 或發布，沒有建立或覆寫 Testing／Stable。
+
+## 39.0.116（PeerTube 公開實例搜尋）
+
+- 新增預設啟用、按需執行的 `peertube-search` 內建搜尋 MOD。使用者在網站搜尋
+  選取 PeerTube 後必須明確輸入 HTTPS 實例根網址；具實例範圍的來源不會混入
+  「全部來源」聚合搜尋，也不能和其他 provider 共用同一搜尋請求。
+- Search v2 capability 新增向後相容的 `source_scope`。未宣告的既有 provider
+  維持 `none`；PeerTube 使用 `https-origin`。新版單一來源游標綁定 provider、
+  查詢、內容類型、頁面大小與實例範圍，切換實例後不能重用舊游標。
+- Provider 只呼叫使用者指定實例的官方 `/api/v1/search/videos`，固定採
+  `searchTarget=local`、`isLocal=true`，每頁最多 50 筆及總視窗 200 筆；回應
+  再限縮為該站本機、公開、已發布且非 NSFW 的影片。文字搜尋拒絕網址，不啟用
+  PeerTube 遠端 URL 搜尋或第三方搜尋索引。
+- 實例網址拒絕帳密、非預設連接埠、路徑、查詢、fragment 與非公開 IP。DNS
+  任一結果不公開即拒絕；HTTPS socket 固定到已驗證 IP，同時保留主機名 TLS
+  驗證與 SNI。請求不跟隨重新導向、不傳送登入資料，timeout 為 20 秒且 JSON
+  上限為 2 MiB。
+- 為避免結果顯示產生第二個隱含網路請求，MOD 不載入實例縮圖。動態實例也不
+  擴張下載 provider 的靜態主機白名單；結果只能由使用者明確在系統瀏覽器開啟，
+  不解析串流、不預填下載、不排隊或下載檔案。
+- 功能簡介、內建 MOD 目錄、啟用摘要、語系文字、版本文件及安全邊界文件同步
+  更新；新增 Search v2 相容性、實例範圍、游標、DNS／重新導向及結果正規化
+  回歸。定向回歸為 `219 passed`；完整 Repository runner 為
+  `1820 passed, 9 skipped`，九項 skip 均是目前 Windows 帳號缺少建立測試用
+  link 權限。Quality audit 通過 Ruff `400` 個 Python 檔與文字污染掃描 `514`
+  個受控檔案。
+- 本次未 build、stage、commit、push 或發布，沒有建立或覆寫 Testing／Stable。
+
+## 39.0.117（啟動外部 CLI 探測延後）
+
+- Root Cause：主視窗建立環境狀態按鈕時呼叫完整依賴快照，會依序執行 FFmpeg、
+  ffprobe 與 JavaScript runtime 版本命令；Bootstrap 另會先執行 runtime 探測。
+  Windows GUI 啟動因而建立多個短命 CLI 子程序，即使個別工具已要求隱藏視窗，
+  仍可能在特定宿主上短暫呈現一連串空白框。
+- 主視窗改為只讀取已存在的程序內依賴快照。沒有快照時顯示「環境尚未檢查」，
+  直到使用者按下環境按鈕才執行完整檢查；關閉詳細視窗後，主按鈕立即套用最新
+  結果。啟動仍不自動彈出設定或環境對話框。
+- 發行資料夾 `tools/deno.exe` 已由既有 pinned SHA-256 驗證身分，Bootstrap 直接
+  採用該路徑，不再額外執行版本命令。外部 PATH 提供的 Deno／Node.js／QuickJS
+  沒有固定發行身分，仍沿用原本最低版本檢查，不降低相容性閘。
+- Regression-first 兩個案例修正前為 `2 failed`，分別證明內附 Deno 仍需要新
+  啟動解析入口，以及主視窗會在沒有快照時實際呼叫外部依賴探測；修正後啟動、
+  依賴、Bootstrap 與版本文件定向回歸為 `48 passed`。完整 Repository runner
+  為 `1822 passed, 9 skipped`，九項 skip 仍為 Windows link 建立權限限制。
+  Quality audit 通過 Ruff `400` 個 Python 檔與文字污染掃描 `514` 個受控檔案。
+- 本次不 build、stage、commit、push 或發布，沒有建立或覆寫 Testing／Stable。
+
+## 39.0.118（非阻塞環境檢查與子程序視窗政策）
+
+- 「執行環境」視窗在沒有暖快取時立即顯示檢查中，再由 daemon 背景工作執行
+  完整依賴探測；GUI thread 不再同步等待 FFmpeg、ffprobe 或 runtime 版本命令。
+  使用者可直接關閉視窗，晚到結果不會寫回已關閉介面。
+- `DependencySnapshotService` 將外部探測序列鎖與快取鎖分離；完整檢查進行時，
+  主視窗的 `peek()` 仍會立即取得舊快取或 `None`，不會因關閉環境視窗再次凍結。
+- 新增正式執行期子程序視窗政策稽核，掃描入口、核心、可信 UI、Plugin Host 與
+  內建 MOD；`subprocess.run/Popen` 必須以直接旗標或可追蹤常數套用 Windows
+  `CREATE_NO_WINDOW`，否則品質稽核失敗。測試與維護工具不屬於發行時 UI 路徑，
+  維持各自的隔離執行需求。
+- Regression-first 先以缺少稽核模組及 GUI thread 同步檢查重現失敗；完成後
+  定向回歸為 `60 passed, 1 skipped`。完整 Repository runner 為
+  `1828 passed, 9 skipped`，九項 skip 均為既有 Windows link 權限限制；
+  Quality audit 通過 Ruff `402` 個 Python 檔、文字污染掃描 `516` 個受控檔案，
+  子程序視窗政策稽核為 `0` 個問題。
+- 本輪不 build、stage、commit、push 或發布，不覆寫任何 Testing／Stable 產物。
+
+## 39.0.119（工作中心可靠性與本機資料工作流）
+
+- 聚合搜尋首次只有部分來源失敗時保留成功來源的結果與不透明游標；使用者可
+  明確選擇「只重試失敗來源」，只呼叫原始失敗 provider，不重送已成功來源。
+- 下載工作中心新增狀態篩選、可恢復失敗批次重試；系統匣同步提供暫停全部、
+  繼續全部與重試暫時性失敗。只接受 provider 已明確標示 `retryable` 的終態，
+  不把不支援、授權或內容限制誤列為可重試。
+- 格式工廠移除 H.264 GPU 失敗時的自動 CPU fallback。失敗保留原始原因，只有
+  使用者確認「使用 CPU 重試」後才重建同一工作，避免背景輸出與使用者選擇不符。
+- 媒體庫的手動重新掃描移至背景；只更新新增、變更、恢復可用或遺失的項目，
+  未變更列不會重寫資料庫。外部 MOD 管理頁以既有失敗與隔離紀錄顯示健康摘要、
+  篩選與原因，不啟動、探測或自動重啟外部程序。
+- Windows Provider 取消時先使用系統原生樹狀終止收束 host 與其子程序，並保留
+  Job Object 的 kill-on-close 作為後備；兩條路徑均不開啟可見命令視窗。
+- Podcast / RSS 對使用者已解析的本機 Feed 提供 M3U／CSV 原子匯出，CSV 會中和
+  試算表公式字首；逐字稿／章節僅預覽 Feed 宣告的 URL 與格式，不連線或下載。
+- 定向回歸：Podcast core `11 passed`、Podcast／MOD 離線 UI `4 passed`；本輪不
+  build、stage、commit、push 或發布，不覆寫任何 Testing／Stable 產物。完整
+  Repository runner 為 `1839 passed, 9 skipped`；skip 均為 Windows 帳號無建立
+  symbolic link 權限。
+
 ## 40.0
 
 沒有獨立 material delta，狀態為

@@ -5,6 +5,13 @@ BUILTIN_PROVIDER_HASHES: dict[str, dict[str, str]] = {
         "provider.py": "aeeeb1b19f0d3708c265f86491c9f1c996802113167ff3d08c16eb411df25bdc",
         "provider.json": "001b249260a75bb7f284b4cbc53b0d91a646a35d4dfc7027e3a273a757d448c7",
     },
+    "podcast-import": {
+        "feature.json": "861ab6823834c2ce3888aa17e5b3d738df5db2202a7873f3faf9834547d4a9b1",
+    },
+    "peertube-search": {
+        "provider.py": "9cb5ddc1b43c132bb3ff90c4ffda0a32be10003366502fedc24332f285c326e0",
+        "provider.json": "4c8ee72c4510f5a1f5353386fc355091cfac4f393a93f3f8e29fadab2ea13da2",
+    },
     "automation": {
         "feature.json": "47fe2b5f6277a064ae404b466819e4383b5928862698a4a0c7f44675ff144f4e",
         "policy.json": "3f73591d23b4b01f49abb2e9812710d23e07c8cd219d1e52f37715b22dca380f",

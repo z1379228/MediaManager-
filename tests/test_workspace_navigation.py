@@ -15,6 +15,7 @@ from trusted_ui.workspace_navigation import (
 def test_workspace_groups_are_shallow_and_stable() -> None:
     assert workspace_group("youtube") == "下載"
     assert workspace_group("library") == "搜尋與媒體"
+    assert workspace_group("podcast-import") == "搜尋與媒體"
     assert workspace_group("media-convert") == "工具"
     assert workspace_group("automation") == "自動化"
     assert workspace_group("instagram") == "官方工具"
@@ -27,6 +28,7 @@ def test_workspace_navigation_lists_tabs_by_group_and_switches() -> None:
     entries = (
         ("youtube", "YouTube 下載工作區"),
         ("library", "本機媒體庫"),
+        ("podcast-import", "Podcast / RSS"),
         ("media-convert", "格式工廠"),
         ("automation", "Automation"),
         ("instagram", "Instagram 官方工具"),

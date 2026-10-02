@@ -502,6 +502,43 @@ def test_permanent_provider_failure_is_not_automatically_retried(
     downloads.shutdown()
 
 
+def test_retry_failed_only_requeues_explicitly_retryable_failures(
+    tmp_path: Path,
+) -> None:
+    retryable_backend = RetryableProviderBackend(failures=3)
+    retryable = DownloadQueue(
+        retryable_backend,
+        workers=1,
+        state_path=tmp_path / "retryable.json",
+        retry_wait=lambda _delay, _event: False,
+    )
+    retryable.add(DownloadRequest("https://youtu.be/retryable", tmp_path))
+    retryable.start()
+    wait_for(lambda: retryable.snapshots()[0].state is DownloadState.FAILED)
+
+    failed = retryable.snapshots()[0]
+    assert failed.retryable is True
+    assert retryable.retry_failed() == 1
+    wait_for(lambda: retryable.snapshots()[0].state is DownloadState.COMPLETED)
+    assert retryable.snapshots()[0].retryable is False
+    retryable.shutdown()
+
+    permanent_backend = RetryableProviderBackend(failures=1, retryable=False)
+    permanent = DownloadQueue(
+        permanent_backend,
+        workers=1,
+        retry_wait=lambda _delay, _event: False,
+    )
+    permanent.add(DownloadRequest("https://youtu.be/permanent", tmp_path))
+    permanent.start()
+    wait_for(lambda: permanent.snapshots()[0].state is DownloadState.FAILED)
+
+    assert permanent.snapshots()[0].retryable is False
+    assert permanent.retry_failed() == 0
+    assert permanent_backend.calls == 1
+    permanent.shutdown()
+
+
 def test_retry_rejects_equivalent_active_request(tmp_path: Path) -> None:
     backend = FailThenBlockBackend()
     downloads = DownloadQueue(backend, workers=1)
