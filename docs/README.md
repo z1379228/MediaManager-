@@ -23,9 +23,9 @@
   隱藏視窗政策的正式執行期子程序；39.0.119 完成搜尋失敗來源手動重試、
   下載工作中心與系統匣控制、明確 CPU 重試、媒體庫增量重掃、外部 MOD 健康摘要，
   以及 Podcast 本機匯出與資源預覽。
-  原先無效的本機 Testing `1.2.4` 已清除並由
-  39.0.113 重建，但仍未簽署、push 或發布。Development 40.0 仍是
-  `NO RELEASE`，不因規劃文件建立空版本。
+  原先無效的本機 Testing `1.2.4` 已清除；新的 Testing `1.2.5` 由 Development
+  `39.0.119` 的乾淨 source freeze 建立，仍須通過未簽署 runtime、ZIP 與雜湊
+  驗證才可發布。Development 40.0 仍是 `NO RELEASE`，不因規劃文件建立空版本。
 - Testing `1.2.0` 已由 Development `39.0.11` 建立本機歷史封存，保留於
   `Version/Testing/1.2`，未建立 GitHub Release。
 - [Testing `1.2.2`](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.2)
@@ -68,7 +68,7 @@
 - [版本資料夾與三軌政策](version-layout.md)
 - [GitHub 免安裝自包含 ZIP](self-contained-zip.md)
 - [Development 39.0–40.0 更新紀錄](release-39.0-40.0.md)
-- [Testing 1.2.4 候選與 1.2.x 發行紀錄](release-testing-1.2.md)
+- [Testing 1.2.5 候選與 1.2.x 發行紀錄](release-testing-1.2.md)
 - [Testing 1.1 說明](release-testing-1.1.md)
 - [簽章與發行 Gate](release-signing.md)
 - [GitHub 自動檢查與合併](github-auto-merge.md)

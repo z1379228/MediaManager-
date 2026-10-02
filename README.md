@@ -15,11 +15,12 @@ Cloudflare、廣告、付費、地區或其他網站限制。
 - 最新公開下載是未簽署的
   [Testing 1.2.2 prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.2)，
   對應 Development `39.0.39`。
-- Development `39.0.40`～`39.0.119` 的修改尚未包含在公開 Testing ZIP。
+- Development `39.0.40`～`39.0.119` 的修改將由 Testing `1.2.5` 納入；公開前
+  必須完成未簽署 EXE、staged runtime、ZIP 與雜湊驗證。
 - 先前由 Development `39.0.112` 建立的本機 Testing `1.2.4` 因建置環境誤包
   外部 ICU DLL，已判定無效且清除。其後已由 `39.0.113` 乾淨 source freeze
-  在本機重建並通過 Qt runtime gate，但仍未簽署、push 或發布；Testing `1.2.3`
-  保持不可變。
+  在本機重建並通過 Qt runtime gate，但不再作為候選散布；Testing `1.2.5` 使用
+  Development `39.0.119` 的乾淨 source freeze 建立，既有 Testing 版本保持不可變。
 - 尚未發布已簽署的 Stable 套件；`MediaManager v1.0` 是產品顯示名稱，不代表
   Stable 已發布。
 

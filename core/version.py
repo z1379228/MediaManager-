@@ -5,7 +5,7 @@ from __future__ import annotations
 CORE_VERSION = "39.0.119"
 BUILD_CHANNEL = "development"
 DEVELOPMENT_GENERATION = "39.0"
-TESTING_VERSION = "1.2.4"
+TESTING_VERSION = "1.2.5"
 STABLE_VERSION = "1.0.0"
 SUPPORTED_BUILD_CHANNELS = frozenset({"development", "testing", "stable"})
 

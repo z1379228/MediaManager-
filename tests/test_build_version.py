@@ -473,7 +473,7 @@ def test_release_build_excludes_foreign_native_dll_paths(
         tmp_path,
         CORE_VERSION,
         channel="testing",
-        release_version="1.2.4",
+        release_version="1.2.5",
         attempt_id="isolatedpath",
     )
     observed_environments: list[dict[str, str]] = []

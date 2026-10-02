@@ -17,7 +17,7 @@ def test_development_display_and_release_tracks_are_explicit() -> None:
     assert release_track("testing") == "Testing"
     assert release_track("stable") == "Stable"
     assert release_identity_version("development") == "39.0.119"
-    assert release_identity_version("testing") == "1.2.4"
+    assert release_identity_version("testing") == "1.2.5"
     assert release_identity_version("stable") == "1.0.0"
     with pytest.raises(ValueError):
         release_track("preview")
@@ -44,7 +44,7 @@ def test_testing_display_preserves_the_correction_number(
 ) -> None:
     monkeypatch.setattr(version_module, "BUILD_CHANNEL", "testing")
 
-    assert version_module.display_version() == "測試版 1.2.4"
+    assert version_module.display_version() == "測試版 1.2.5"
 
 
 def test_development_39_rejects_manifest_upper_bound_32_1() -> None:

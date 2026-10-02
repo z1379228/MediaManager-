@@ -14,8 +14,9 @@ MediaManager 目前工作來源為 Development `39.0.119`。39.0.107 先完成�
 按需建立的「工作區」分類選單，直接切換並沿用既有 lazy 工作區；它不新增背景
 timer，第三方未知工作區仍保留在「其他」。
 先前由 39.0.112 建立的 Testing `1.2.4` 本機 EXE／ZIP 已因外部 ICU DLL 污染
-判定無效且不得散布；其後已由 39.0.113 乾淨 source freeze 在本機重建並通過
-Qt runtime gate，但仍未簽署、push 或發布。Testing `1.2.3` 不覆寫。
+判定無效且不得散布；新的 Testing `1.2.5` 改由 Development `39.0.119` 的乾淨
+source freeze 建立，仍須通過未簽署 runtime、ZIP 與雜湊驗證才可發布。既有
+Testing 版本不覆寫。
 格式工廠另完成無損軌道工作流：單一來源由背景 ffprobe 列出音訊／字幕軌，
 明確選取後輸出 `.mka`／`.mks`，排隊前重查軌道與副檔名，完成前驗證 codec 及
 來源／輸出封包 SHA-256；不在 GUI thread 等待探測，也不重新編碼所選軌道。

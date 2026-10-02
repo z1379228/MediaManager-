@@ -7,9 +7,9 @@ portable runtime 必須全部來自同一個已稽核 staged release。
 目前最新公開附件是 Testing `1.2.2`，由 Development `39.0.39` 的乾淨 source
 freeze 建立於 `Version/Testing/1.2.2`，並使用唯一 tag `test-v1.2.2`。本機
 Testing `1.2.4` 先前由 Development `39.0.112` 建立的本機候選已因外部 ICU
-DLL 污染判定無效，不得散布；必須由修正後的 Development `39.0.113` 重新封版、
-建置並通過 Qt runtime gate。既有 Testing `1.2.3` 由 Development `39.0.94`
-建立，兩者都不得冒充或覆寫公開的 `1.2.2`。既有
+DLL 污染判定無效，不得散布；Testing `1.2.5` 改由 Development `39.0.119`
+的乾淨 source freeze 建立，須通過 Qt runtime、版本與 ZIP gate。既有 Testing
+`1.2.3` 由 Development `39.0.94` 建立，所有既有公開版本都不得冒充或覆寫。既有
 [Testing `1.2.1` prerelease](https://github.com/z1379228/MediaManager-/releases/tag/test-v1.2.1)
 及 `Version/Testing/1.2`、`Version/Testing/1.2.1` 保持不可變。
 
